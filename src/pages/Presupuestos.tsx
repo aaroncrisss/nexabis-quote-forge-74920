@@ -1,3 +1,4 @@
+import DashboardLayout from "@/components/DashboardLayout";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -171,6 +172,8 @@ const Presupuestos = () => {
       description: "El enlace del presupuesto se ha copiado al portapapeles",
     });
   };
+
+  const getEstadoBadge = (estado: string) => {
     const badges = {
       pendiente: <Badge className="bg-primary">Pendiente</Badge>,
       aprobado: <Badge className="bg-accent text-accent-foreground">Aprobado</Badge>,
