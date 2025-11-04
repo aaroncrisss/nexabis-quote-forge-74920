@@ -13,6 +13,10 @@ export default {
       },
     },
     extend: {
+      fontFamily: {
+        sans: ['Raleway', 'sans-serif'],
+        heading: ['Montserrat', 'sans-serif'],
+      },
       colors: {
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
@@ -47,16 +51,17 @@ export default {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
         },
-        sidebar: {
-          DEFAULT: "hsl(var(--sidebar-background))",
-          foreground: "hsl(var(--sidebar-foreground))",
-          primary: "hsl(var(--sidebar-primary))",
-          "primary-foreground": "hsl(var(--sidebar-primary-foreground))",
-          accent: "hsl(var(--sidebar-accent))",
-          "accent-foreground": "hsl(var(--sidebar-accent-foreground))",
-          border: "hsl(var(--sidebar-border))",
-          ring: "hsl(var(--sidebar-ring))",
+        coral: {
+          DEFAULT: "#FF5C5C",
+          light: "hsl(4 100% 75%)",
         },
+        nexabis: {
+          orange: "#FF8042",
+          yellow: "#FFC24D",
+        },
+      },
+      backgroundImage: {
+        'gradient-nexabis': 'linear-gradient(135deg, #FF5C5C 0%, #FF8042 50%, #FFC24D 100%)',
       },
       borderRadius: {
         lg: "var(--radius)",
