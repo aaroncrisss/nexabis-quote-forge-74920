@@ -1,11 +1,12 @@
-import { useEffect, useState } from "react";
-import { Card } from "@/components/ui/card";
-import { FileText, TrendingUp, Clock, CheckCircle2 } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import DashboardLayout from "@/components/DashboardLayout";
+import { Card } from "@/components/ui/card";
+import { TrendingUp, FileText, CheckCircle2, Plus } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { useNavigate } from "react-router-dom";
+import { DemoDataButton } from "@/components/DemoDataButton";
 
 const Dashboard = () => {
+  const navigate = useNavigate();
   const [stats, setStats] = useState({
     totalPresupuestos: 0,
     valorTotal: 0,
@@ -117,9 +118,18 @@ const Dashboard = () => {
   return (
     <DashboardLayout>
       <div className="space-y-8">
-        <div>
-          <h1 className="text-4xl font-heading font-bold gradient-text mb-2">Dashboard</h1>
-          <p className="text-muted-foreground">Vista general de tus presupuestos</p>
+        <div className="flex items-center justify-between">
+          <div className="flex-1">
+            <h1 className="text-4xl font-bold gradient-text mb-2">Dashboard</h1>
+            <p className="text-muted-foreground">Vista general de tus presupuestos</p>
+          </div>
+          <div className="flex gap-3">
+            <DemoDataButton />
+            <Button onClick={() => navigate("/crear")} className="gradient-button" size="lg">
+              <Plus className="w-5 h-5 mr-2" />
+              Crear Nuevo Presupuesto
+            </Button>
+          </div>
         </div>
 
         {/* Stats Grid */}

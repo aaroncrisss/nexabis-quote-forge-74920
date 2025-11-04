@@ -80,22 +80,24 @@ All colors MUST be HSL.
   }
   
   .gradient-border {
-    position: relative;
     border: 2px solid transparent;
-    background-clip: padding-box;
+    background-image: linear-gradient(var(--background), var(--background)), 
+                      linear-gradient(135deg, hsl(var(--primary)), hsl(var(--accent)), hsl(var(--warning)));
+    background-origin: border-box;
+    background-clip: padding-box, border-box;
   }
-  
-  .gradient-border::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    padding: 2px;
-    border-radius: inherit;
-    background: var(--gradient-primary);
-    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-    mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-    -webkit-mask-composite: xor;
-    mask-composite: exclude;
+
+  .gradient-button {
+    background: linear-gradient(135deg, hsl(var(--primary)), hsl(var(--accent)), hsl(var(--warning)));
+    color: black;
+    font-weight: 600;
+    transition: all 0.3s ease;
+  }
+
+  .gradient-button:hover {
+    opacity: 0.9;
+    transform: translateY(-1px);
+    box-shadow: 0 10px 30px -10px hsl(var(--primary) / 0.5);
   }
   
   .hover-glow {
