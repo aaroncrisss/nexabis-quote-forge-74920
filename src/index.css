@@ -8,7 +8,54 @@ All colors MUST be HSL.
 
 @layer base {
   :root {
-    /* NEXABIS Brand Colors - Dark Theme */
+    /* Light theme colors */
+    --background: 0 0% 100%;
+    --foreground: 240 10% 3.9%;
+    
+    --card: 0 0% 100%;
+    --card-foreground: 240 10% 3.9%;
+    
+    --popover: 0 0% 100%;
+    --popover-foreground: 240 10% 3.9%;
+    
+    /* Coral - Primary Brand Color */
+    --primary: 4 100% 68%;
+    --primary-foreground: 0 0% 100%;
+    
+    /* Orange - Secondary Brand Color */
+    --secondary: 20 100% 63%;
+    --secondary-foreground: 0 0% 100%;
+    
+    /* Yellow - Accent Brand Color */
+    --accent: 38 100% 65%;
+    --accent-foreground: 0 0% 10%;
+    
+    --muted: 240 4.8% 95.9%;
+    --muted-foreground: 240 3.8% 46.1%;
+    
+    --destructive: 0 85% 60%;
+    --destructive-foreground: 0 0% 98%;
+    
+    --border: 240 5.9% 90%;
+    --input: 240 5.9% 90%;
+    --ring: 4 100% 68%;
+    
+    --radius: 0.75rem;
+    
+    /* Gradients */
+    --gradient-primary: linear-gradient(135deg, hsl(4 100% 68%) 0%, hsl(20 100% 63%) 50%, hsl(38 100% 65%) 100%);
+    --gradient-subtle: linear-gradient(180deg, hsl(0, 0%, 100%), hsl(240, 5%, 96%));
+    
+    /* Shadows */
+    --shadow-glow: 0 0 40px hsla(4 100% 68% / 0.2);
+    --shadow-card: 0 10px 30px -10px hsla(0 0% 0% / 0.1);
+    
+    /* Animations */
+    --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .dark {
+    /* Dark theme colors */
     --background: 0 0% 7%;
     --foreground: 0 0% 95%;
     
@@ -40,8 +87,6 @@ All colors MUST be HSL.
     --input: 0 0% 20%;
     --ring: 4 100% 68%;
     
-    --radius: 0.75rem;
-    
     /* Gradients */
     --gradient-primary: linear-gradient(135deg, hsl(4 100% 68%) 0%, hsl(20 100% 63%) 50%, hsl(38 100% 65%) 100%);
     --gradient-subtle: linear-gradient(180deg, hsl(0 0% 10%) 0%, hsl(0 0% 7%) 100%);
@@ -49,9 +94,6 @@ All colors MUST be HSL.
     /* Shadows with warm glow */
     --shadow-glow: 0 0 40px hsla(4 100% 68% / 0.2);
     --shadow-card: 0 10px 30px -10px hsla(0 0% 0% / 0.5);
-    
-    /* Animations */
-    --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   }
 }
 

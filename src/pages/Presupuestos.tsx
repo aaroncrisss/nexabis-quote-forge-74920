@@ -191,7 +191,7 @@ const Presupuestos = () => {
             <h1 className="text-4xl font-bold gradient-text">Presupuestos</h1>
             <p className="text-muted-foreground">Gestiona todos tus presupuestos</p>
           </div>
-          <Button onClick={() => navigate("/crear")} className="gradient-button" size="lg">
+          <Button onClick={() => navigate("/crear")} variant="default" size="lg">
             <Plus className="w-5 h-5 mr-2" />
             Crear Nuevo
           </Button>
@@ -228,7 +228,7 @@ const Presupuestos = () => {
             <p className="text-muted-foreground mb-4">
               {searchTerm || estadoFilter !== "todos" ? "No se encontraron presupuestos" : "No hay presupuestos aún"}
             </p>
-            <Button onClick={() => navigate("/crear")} className="gradient-button">
+            <Button onClick={() => navigate("/crear")} variant="default">
               Crear tu primer presupuesto
             </Button>
           </Card>

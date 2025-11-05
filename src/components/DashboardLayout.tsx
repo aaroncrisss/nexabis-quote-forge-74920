@@ -1,9 +1,10 @@
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { LayoutDashboard, FileText, Settings, LogOut, Plus } from "lucide-react";
+import { LayoutDashboard, FileText, Settings, LogOut, Plus, Users, Moon, Sun } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import nexabisLogo from "@/assets/Logo-Nexabis.png";
+import { useEffect, useState } from "react";
 
 interface DashboardLayoutProps {
   children: React.ReactNode;
@@ -12,6 +13,21 @@ interface DashboardLayoutProps {
 const DashboardLayout = ({ children }: DashboardLayoutProps) => {
   const location = useLocation();
   const navigate = useNavigate();
+  const [darkMode, setDarkMode] = useState(true);
+
+  useEffect(() => {
+    const stored = localStorage.getItem("darkMode");
+    const isDark = stored === null ? true : stored === "true";
+    setDarkMode(isDark);
+    document.documentElement.classList.toggle("dark", isDark);
+  }, []);
+
+  const toggleDarkMode = () => {
+    const newMode = !darkMode;
+    setDarkMode(newMode);
+    localStorage.setItem("darkMode", String(newMode));
+    document.documentElement.classList.toggle("dark", newMode);
+  };
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -22,6 +38,7 @@ const DashboardLayout = ({ children }: DashboardLayoutProps) => {
   const navItems = [
     { to: "/dashboard", icon: LayoutDashboard, label: "Dashboard" },
     { to: "/presupuestos", icon: FileText, label: "Presupuestos" },
+    { to: "/clientes", icon: Users, label: "Clientes" },
     { to: "/configuracion", icon: Settings, label: "Configuración" },
   ];
 
@@ -35,13 +52,16 @@ const DashboardLayout = ({ children }: DashboardLayoutProps) => {
             <span className="text-lg font-heading font-bold gradient-text">NEXABIS</span>
           </div>
 
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3">
             <Link to="/crear">
-              <Button className="bg-gradient-nexabis hover:opacity-90 transition-opacity gap-2">
+              <Button variant="default" size="default" className="gap-2">
                 <Plus className="w-4 h-4" />
                 Nuevo Presupuesto
               </Button>
             </Link>
+            <Button variant="ghost" size="icon" onClick={toggleDarkMode}>
+              {darkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+            </Button>
             <Button variant="ghost" size="icon" onClick={handleLogout}>
               <LogOut className="w-5 h-5" />
             </Button>
@@ -60,10 +80,8 @@ const DashboardLayout = ({ children }: DashboardLayoutProps) => {
               return (
                 <Link key={item.to} to={item.to}>
                   <Button
-                    variant={isActive ? "secondary" : "ghost"}
-                    className={`w-full justify-start gap-3 ${
-                      isActive ? "bg-gradient-nexabis text-white" : ""
-                    }`}
+                    variant={isActive ? "default" : "ghost"}
+                    className="w-full justify-start gap-3"
                   >
                     <Icon className="w-5 h-5" />
                     {item.label}

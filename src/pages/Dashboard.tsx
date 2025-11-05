@@ -128,7 +128,7 @@ const Dashboard = () => {
           </div>
           <div className="flex gap-3">
             <DemoDataButton />
-            <Button onClick={() => navigate("/crear")} className="gradient-button" size="lg">
+            <Button onClick={() => navigate("/crear")} variant="default" size="lg">
               <Plus className="w-5 h-5 mr-2" />
               Crear Nuevo Presupuesto
             </Button>

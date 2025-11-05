@@ -239,7 +239,7 @@ export default function CrearPresupuesto() {
             <Button
               onClick={() => setStep(step + 1)}
               disabled={!canGoNext()}
-              className="gradient-button"
+              variant="default"
             >
               Siguiente
               <ArrowRight className="w-4 h-4 ml-2" />
@@ -248,7 +248,7 @@ export default function CrearPresupuesto() {
             <Button
               onClick={handleSubmit}
               disabled={loading}
-              className="gradient-button"
+              variant="default"
             >
               <Check className="w-4 h-4 mr-2" />
               {loading ? "Creando..." : "Crear Presupuesto"}

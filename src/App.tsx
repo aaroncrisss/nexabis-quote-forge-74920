@@ -11,6 +11,7 @@ import Presupuestos from "./pages/Presupuestos";
 import CrearPresupuesto from "./pages/CrearPresupuesto";
 import PresupuestoPublico from "./pages/PresupuestoPublico";
 import Configuracion from "./pages/Configuracion";
+import Clientes from "./pages/Clientes";
 import ProtectedRoute from "./components/ProtectedRoute";
 import NotFound from "./pages/NotFound";
 
@@ -28,6 +29,7 @@ const App = () => (
           <Route path="/register" element={<Register />} />
           <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
           <Route path="/presupuestos" element={<ProtectedRoute><Presupuestos /></ProtectedRoute>} />
+          <Route path="/clientes" element={<ProtectedRoute><Clientes /></ProtectedRoute>} />
           <Route path="/crear" element={<ProtectedRoute><CrearPresupuesto /></ProtectedRoute>} />
           <Route path="/presupuesto/:token" element={<PresupuestoPublico />} />
           <Route path="/configuracion" element={<ProtectedRoute><Configuracion /></ProtectedRoute>} />
