@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useEffect, useState } from "react";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase } from "@/integrations/supabase/browserClient";
 import { useNavigate } from "react-router-dom";
 import { Eye, Trash2, Copy, Plus, Search, ExternalLink } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
