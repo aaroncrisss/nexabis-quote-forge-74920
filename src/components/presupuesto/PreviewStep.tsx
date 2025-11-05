@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { supabase } from "@/integrations/supabase/browserClient";
+import { supabase } from "@/integrations/supabase/client";
 import { PresupuestoData } from "@/pages/CrearPresupuesto";
 import { FileText } from "lucide-react";
 

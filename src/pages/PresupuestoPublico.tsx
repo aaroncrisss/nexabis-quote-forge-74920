@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Card } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import { supabase } from "@/integrations/supabase/browserClient";
+import { supabase } from "@/integrations/supabase/client";
 import { CheckCircle, XCircle, FileText, Printer } from "lucide-react";
 
 export default function PresupuestoPublico() {
