@@ -13,7 +13,7 @@ import { ArrowLeft, ArrowRight, Check } from "lucide-react";
 export interface PresupuestoItem {
   descripcion: string;
   cantidad: number;
-  precio_unitario: number;
+  precio_unitario: number | string;
   total: number;
 }
 
@@ -122,7 +122,7 @@ export default function CrearPresupuesto() {
         presupuesto_id: presupuestoData.id,
         descripcion: item.descripcion,
         cantidad: item.cantidad,
-        precio_unitario: item.precio_unitario,
+        precio_unitario: parseFloat(String(item.precio_unitario)) || 0,
         total: item.total,
         orden: index,
       }));

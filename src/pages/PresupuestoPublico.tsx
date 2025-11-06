@@ -5,7 +5,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Card } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import { CheckCircle, XCircle, FileText, Printer } from "lucide-react";
+import { CheckCircle, XCircle, FileText, Printer, Download, Moon, Sun } from "lucide-react";
 
 export default function PresupuestoPublico() {
   const { token } = useParams();
@@ -17,6 +17,7 @@ export default function PresupuestoPublico() {
   const [items, setItems] = useState<any[]>([]);
   const [comentarios, setComentarios] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [darkMode, setDarkMode] = useState(false);
 
   useEffect(() => {
     if (token) {
@@ -121,6 +122,10 @@ export default function PresupuestoPublico() {
     window.print();
   };
 
+  const handleDownloadPDF = () => {
+    window.print();
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -146,7 +151,7 @@ export default function PresupuestoPublico() {
   const yaRespondido = presupuesto.estado !== "pendiente";
 
   return (
-    <div className="min-h-screen bg-background py-8 px-4">
+    <div className={`min-h-screen py-8 px-4 ${darkMode ? 'dark bg-background' : 'bg-gray-50'}`}>
       <div className="container mx-auto max-w-4xl">
         <div className="print:hidden mb-6 flex justify-between items-center">
           <div>
@@ -154,10 +159,19 @@ export default function PresupuestoPublico() {
               <img src={profile.logo_url} alt="Logo" className="h-12" />
             )}
           </div>
-          <Button onClick={handlePrint} variant="outline">
-            <Printer className="w-4 h-4 mr-2" />
-            Imprimir
-          </Button>
+          <div className="flex gap-2">
+            <Button onClick={() => setDarkMode(!darkMode)} variant="outline" size="icon">
+              {darkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+            </Button>
+            <Button onClick={handleDownloadPDF} variant="outline">
+              <Download className="w-4 h-4 mr-2" />
+              Descargar PDF
+            </Button>
+            <Button onClick={handlePrint} variant="outline">
+              <Printer className="w-4 h-4 mr-2" />
+              Imprimir
+            </Button>
+          </div>
         </div>
 
         <Card className="p-8 space-y-6">

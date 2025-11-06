@@ -6,6 +6,7 @@ import { Trash2, Plus } from "lucide-react";
 import { PresupuestoItem } from "@/pages/CrearPresupuesto";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/hooks/use-toast";
 
 interface ItemsStepProps {
   items: PresupuestoItem[];
@@ -27,6 +28,7 @@ export function ItemsStep({
   calculateTotals,
 }: ItemsStepProps) {
   const [promociones, setPromociones] = useState<any[]>([]);
+  const { toast } = useToast();
 
   useEffect(() => {
     loadPromociones();
@@ -43,6 +45,8 @@ export function ItemsStep({
   };
 
   const handlePromocionChange = (value: string) => {
+    const simbolo = moneda === "USD" ? "$" : "$";
+    
     if (value === "ninguna") {
       onUpdate({ 
         promocion_aplicada: null,
@@ -52,6 +56,23 @@ export function ItemsStep({
     } else {
       const promo = promociones.find(p => p.nombre === value);
       if (promo) {
+        const { subtotal } = calculateTotals();
+        
+        // Validar si cumple el monto mínimo
+        if (subtotal < promo.monto_minimo) {
+          toast({
+            title: "Promoción no aplicable",
+            description: `Esta promoción requiere un monto mínimo de ${simbolo} ${promo.monto_minimo.toLocaleString()}`,
+            variant: "destructive",
+          });
+          onUpdate({ 
+            promocion_aplicada: null,
+            descuento_tipo: null,
+            descuento_valor: 0
+          });
+          return;
+        }
+        
         onUpdate({ 
           promocion_aplicada: value,
           descuento_tipo: "porcentaje",
@@ -65,7 +86,7 @@ export function ItemsStep({
     onUpdate({
       items: [
         ...items,
-        { descripcion: "", cantidad: 1, precio_unitario: 0, total: 0 },
+        { descripcion: "", cantidad: 1, precio_unitario: "", total: 0 },
       ],
     });
   };
@@ -75,7 +96,9 @@ export function ItemsStep({
     newItems[index] = { ...newItems[index], [field]: value };
 
     if (field === "cantidad" || field === "precio_unitario") {
-      newItems[index].total = newItems[index].cantidad * newItems[index].precio_unitario;
+      const cantidad = newItems[index].cantidad;
+      const precio = parseFloat(String(newItems[index].precio_unitario)) || 0;
+      newItems[index].total = cantidad * precio;
     }
 
     onUpdate({ items: newItems });
