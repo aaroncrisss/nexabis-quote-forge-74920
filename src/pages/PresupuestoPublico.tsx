@@ -232,27 +232,27 @@ export default function PresupuestoPublico() {
               <div className="flex justify-between text-muted-foreground">
                 <span>Subtotal (sin IVA):</span>
                 <span>
-                  {simbolo} {parseFloat(presupuesto.subtotal).toLocaleString()}
+                  {simbolo} {Math.round(parseFloat(presupuesto.subtotal)).toLocaleString()}
                 </span>
               </div>
               {presupuesto.descuento_total > 0 && (
                 <div className="flex justify-between text-warning">
                   <span>Descuento:</span>
                   <span>
-                    - {simbolo} {parseFloat(presupuesto.descuento_total).toLocaleString()}
+                    - {simbolo} {Math.round(parseFloat(presupuesto.descuento_total)).toLocaleString()}
                   </span>
                 </div>
               )}
               <div className="flex justify-between text-accent">
                 <span>IVA ({presupuesto.iva_porcentaje}%):</span>
                 <span>
-                  {simbolo} {parseFloat(presupuesto.iva_monto).toLocaleString()}
+                  {simbolo} {Math.round(parseFloat(presupuesto.iva_monto)).toLocaleString()}
                 </span>
               </div>
               <div className="flex justify-between text-2xl font-bold gradient-text border-t border-primary/20 pt-2">
                 <span>TOTAL:</span>
                 <span>
-                  {simbolo} {parseFloat(presupuesto.total).toLocaleString()} {presupuesto.moneda}
+                  {simbolo} {Math.round(parseFloat(presupuesto.total)).toLocaleString()} {presupuesto.moneda}
                 </span>
               </div>
             </div>

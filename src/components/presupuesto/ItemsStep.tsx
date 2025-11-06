@@ -42,6 +42,25 @@ export function ItemsStep({
     setPromociones(data || []);
   };
 
+  const handlePromocionChange = (value: string) => {
+    if (value === "ninguna") {
+      onUpdate({ 
+        promocion_aplicada: null,
+        descuento_tipo: null,
+        descuento_valor: 0
+      });
+    } else {
+      const promo = promociones.find(p => p.nombre === value);
+      if (promo) {
+        onUpdate({ 
+          promocion_aplicada: value,
+          descuento_tipo: "porcentaje",
+          descuento_valor: promo.descuento_porcentaje
+        });
+      }
+    }
+  };
+
   const addItem = () => {
     onUpdate({
       items: [
@@ -158,9 +177,7 @@ export function ItemsStep({
             <Label>Promoción (Opcional)</Label>
             <Select
               value={promocionAplicada || "ninguna"}
-              onValueChange={(value) =>
-                onUpdate({ promocion_aplicada: value === "ninguna" ? null : value })
-              }
+              onValueChange={handlePromocionChange}
             >
               <SelectTrigger className="mt-2">
                 <SelectValue placeholder="Seleccionar promoción" />
@@ -219,29 +236,39 @@ export function ItemsStep({
           <div className="flex justify-between text-lg">
             <span className="text-muted-foreground">Subtotal (sin IVA):</span>
             <span className="font-bold">
-              {simbolo} {subtotal.toLocaleString()}
+              {simbolo} {Math.round(subtotal).toLocaleString()}
             </span>
           </div>
           {descuento_total > 0 && (
             <div className="flex justify-between text-lg text-warning">
               <span>Descuento:</span>
               <span className="font-bold">
-                - {simbolo} {descuento_total.toLocaleString()}
+                - {simbolo} {Math.round(descuento_total).toLocaleString()}
               </span>
             </div>
           )}
           <div className="flex justify-between text-lg text-accent">
             <span>IVA (19%):</span>
             <span className="font-bold">
-              {simbolo} {iva_monto.toLocaleString()}
+              {simbolo} {Math.round(iva_monto).toLocaleString()}
             </span>
           </div>
           <div className="flex justify-between text-2xl border-t border-primary/20 pt-2">
             <span className="gradient-text font-bold">TOTAL:</span>
             <span className="gradient-text font-bold">
-              {simbolo} {total.toLocaleString()} {moneda}
+              {simbolo} {Math.round(total).toLocaleString()} {moneda}
             </span>
           </div>
+          {moneda === "CLP" && (
+            <p className="text-xs text-muted-foreground text-right pt-1">
+              ≈ USD ${(total / 950).toFixed(2)} (aprox.)
+            </p>
+          )}
+          {moneda === "USD" && (
+            <p className="text-xs text-muted-foreground text-right pt-1">
+              ≈ ${(total * 950).toLocaleString()} CLP (aprox.)
+            </p>
+          )}
         </div>
       </div>
     </div>

@@ -97,7 +97,7 @@ export default function CrearPresupuesto() {
           usuario_id: userData.user.id,
           cliente_id: presupuesto.cliente_id,
           titulo: presupuesto.titulo,
-          numero: "TEMP",
+          numero: "", // El trigger lo generará automáticamente
           moneda: presupuesto.moneda,
           subtotal,
           descuento_tipo: presupuesto.descuento_tipo,
