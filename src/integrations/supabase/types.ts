@@ -162,6 +162,7 @@ export type Database = {
           iva_porcentaje: number | null
           modo_impresion: string | null
           moneda: string
+          notas_trabajo: string | null
           numero: string
           promocion_aplicada: string | null
           subtotal: number
@@ -190,6 +191,7 @@ export type Database = {
           iva_porcentaje?: number | null
           modo_impresion?: string | null
           moneda?: string
+          notas_trabajo?: string | null
           numero: string
           promocion_aplicada?: string | null
           subtotal?: number
@@ -218,6 +220,7 @@ export type Database = {
           iva_porcentaje?: number | null
           modo_impresion?: string | null
           moneda?: string
+          notas_trabajo?: string | null
           numero?: string
           promocion_aplicada?: string | null
           subtotal?: number

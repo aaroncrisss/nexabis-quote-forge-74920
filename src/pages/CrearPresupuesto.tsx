@@ -27,6 +27,7 @@ export interface PresupuestoData {
   validez_dias: number;
   forma_pago: string;
   terminos: string;
+  notas_trabajo: string;
   iva_porcentaje: number;
   modo_impresion: string;
   promocion_aplicada: string | null;
@@ -48,6 +49,7 @@ export default function CrearPresupuesto() {
     validez_dias: 15,
     forma_pago: "50% anticipo, 50% contra entrega",
     terminos: "",
+    notas_trabajo: "",
     iva_porcentaje: 19,
     modo_impresion: "dark",
     promocion_aplicada: null,
@@ -109,6 +111,7 @@ export default function CrearPresupuesto() {
           validez_dias: presupuesto.validez_dias,
           forma_pago: presupuesto.forma_pago,
           terminos: presupuesto.terminos,
+          notas_trabajo: presupuesto.notas_trabajo,
           estado: "pendiente",
           modo_impresion: presupuesto.modo_impresion,
           promocion_aplicada: presupuesto.promocion_aplicada,
@@ -238,6 +241,7 @@ export default function CrearPresupuesto() {
             validezDias={presupuesto.validez_dias}
             formaPago={presupuesto.forma_pago}
             terminos={presupuesto.terminos}
+            notasTrabajo={presupuesto.notas_trabajo}
             onUpdate={updatePresupuesto}
           />
         )}

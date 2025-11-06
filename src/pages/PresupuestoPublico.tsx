@@ -309,6 +309,13 @@ export default function PresupuestoPublico() {
             </div>
           </div>
 
+          {presupuesto.notas_trabajo && (
+            <div className="border-t border-primary/20 pt-4">
+              <h4 className="font-bold mb-2">Notas del Trabajo:</h4>
+              <p className="text-sm text-muted-foreground whitespace-pre-wrap">{presupuesto.notas_trabajo}</p>
+            </div>
+          )}
+
           {presupuesto.forma_pago && (
             <div className="border-t border-primary/20 pt-4">
               <h4 className="font-bold mb-2">Forma de Pago:</h4>

@@ -8,10 +8,11 @@ interface TermsStepProps {
   validezDias: number;
   formaPago: string;
   terminos: string;
+  notasTrabajo: string;
   onUpdate: (data: any) => void;
 }
 
-export function TermsStep({ validezDias, formaPago, terminos, onUpdate }: TermsStepProps) {
+export function TermsStep({ validezDias, formaPago, terminos, notasTrabajo, onUpdate }: TermsStepProps) {
   useEffect(() => {
     loadDefaultTerminos();
   }, []);
@@ -65,6 +66,21 @@ export function TermsStep({ validezDias, formaPago, terminos, onUpdate }: TermsS
             placeholder="50% anticipo, 50% contra entrega"
             className="mt-2"
           />
+        </div>
+
+        <div>
+          <Label htmlFor="notas_trabajo">Notas del Trabajo (Opcional)</Label>
+          <Textarea
+            id="notas_trabajo"
+            value={notasTrabajo}
+            onChange={(e) => onUpdate({ notas_trabajo: e.target.value })}
+            placeholder="Ejemplo: Se colgará el cuadro en la pared principal, se armará el mueble de la sala, se instalará la lámpara del comedor..."
+            rows={4}
+            className="mt-2"
+          />
+          <p className="text-sm text-muted-foreground mt-1">
+            Descripción detallada del trabajo a realizar
+          </p>
         </div>
 
         <div>
