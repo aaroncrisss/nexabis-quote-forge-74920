@@ -25,6 +25,7 @@ import {
 import { Plus, Pencil, Trash2, Mail, Building, Phone, MapPin } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { z } from "zod";
 
 interface Cliente {
   id: string;
@@ -104,6 +105,29 @@ export default function Clientes() {
         return;
       }
 
+      // Validate client data
+      const clientSchema = z.object({
+        nombre: z.string().min(2).max(100),
+        empresa: z.string().max(100),
+        email: z.string().email("Correo electrónico inválido").max(255).toLowerCase(),
+        telefono: z.string().max(20),
+        direccion: z.string().max(200),
+      });
+
+      const validation = clientSchema.safeParse({
+        nombre: formData.nombre.trim(),
+        empresa: formData.empresa.trim(),
+        email: formData.email.trim(),
+        telefono: formData.telefono.trim(),
+        direccion: formData.direccion.trim(),
+      });
+
+      if (!validation.success) {
+        const error = validation.error.errors[0];
+        toast.error(error?.message || "Por favor verifica los datos ingresados");
+        return;
+      }
+
       const { data: userData } = await supabase.auth.getUser();
       if (!userData.user) return;
 
@@ -111,11 +135,11 @@ export default function Clientes() {
         const { error } = await supabase
           .from("clientes")
           .update({
-            nombre: formData.nombre,
-            empresa: formData.empresa || null,
-            email: formData.email,
-            telefono: formData.telefono || null,
-            direccion: formData.direccion || null,
+            nombre: validation.data.nombre,
+            empresa: validation.data.empresa || null,
+            email: validation.data.email,
+            telefono: validation.data.telefono || null,
+            direccion: validation.data.direccion || null,
           })
           .eq("id", editingCliente.id);
 
@@ -125,11 +149,11 @@ export default function Clientes() {
         const { error } = await supabase.from("clientes").insert([
           {
             usuario_id: userData.user.id,
-            nombre: formData.nombre,
-            empresa: formData.empresa || null,
-            email: formData.email,
-            telefono: formData.telefono || null,
-            direccion: formData.direccion || null,
+            nombre: validation.data.nombre,
+            empresa: validation.data.empresa || null,
+            email: validation.data.email,
+            telefono: validation.data.telefono || null,
+            direccion: validation.data.direccion || null,
           },
         ]);
 

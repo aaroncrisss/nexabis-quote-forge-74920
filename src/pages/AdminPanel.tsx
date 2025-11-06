@@ -11,6 +11,7 @@ import { toast } from "sonner";
 import { Trash2, UserPlus, Users, TrendingUp } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { z } from "zod";
 
 interface UsuarioPermitido {
   id: string;
@@ -91,12 +92,21 @@ export default function AdminPanel() {
     e.preventDefault();
     if (!newEmail) return;
 
+    // Validate email
+    const emailSchema = z.string().email().max(255).toLowerCase();
+    const validation = emailSchema.safeParse(newEmail.trim());
+    
+    if (!validation.success) {
+      toast.error("Por favor ingresa un correo electrónico válido");
+      return;
+    }
+
     setLoading(true);
     const { data: userData } = await supabase.auth.getUser();
 
     const { error } = await supabase.from("usuarios_permitidos").insert([
       {
-        email: newEmail.toLowerCase(),
+        email: validation.data,
         invitado_por: userData.user?.id,
       },
     ]);
@@ -152,13 +162,33 @@ export default function AdminPanel() {
       return;
     }
 
+    // Validate promotion data
+    const promotionSchema = z.object({
+      nombre: z.string().min(1).max(100),
+      descripcion: z.string().max(500),
+      descuento_porcentaje: z.number().min(0).max(100),
+      monto_minimo: z.number().min(0),
+    });
+
+    const validation = promotionSchema.safeParse({
+      nombre: promoForm.nombre,
+      descripcion: promoForm.descripcion,
+      descuento_porcentaje: parseFloat(promoForm.descuento_porcentaje),
+      monto_minimo: parseFloat(promoForm.monto_minimo),
+    });
+
+    if (!validation.success) {
+      toast.error("Por favor verifica que todos los campos sean válidos");
+      return;
+    }
+
     setLoading(true);
     const { error } = await supabase.from("promociones").insert([
       {
-        nombre: promoForm.nombre,
-        descripcion: promoForm.descripcion || null,
-        descuento_porcentaje: parseFloat(promoForm.descuento_porcentaje),
-        monto_minimo: parseFloat(promoForm.monto_minimo),
+        nombre: validation.data.nombre,
+        descripcion: validation.data.descripcion || null,
+        descuento_porcentaje: validation.data.descuento_porcentaje,
+        monto_minimo: validation.data.monto_minimo,
         activa: promoForm.activa,
       },
     ]);

@@ -7,6 +7,7 @@ import { Card } from "@/components/ui/card";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import nexabisLogo from "@/assets/Logo-Nexabis.png";
+import { z } from "zod";
 
 const Register = () => {
   const navigate = useNavigate();
@@ -26,8 +27,22 @@ const Register = () => {
       return;
     }
 
-    if (formData.password.length < 6) {
-      toast.error("La contraseña debe tener al menos 6 caracteres");
+    // Validate registration data
+    const registerSchema = z.object({
+      nombre: z.string().min(2, "El nombre debe tener al menos 2 caracteres").max(100),
+      email: z.string().email("Correo electrónico inválido").max(255).toLowerCase(),
+      password: z.string().min(6, "La contraseña debe tener al menos 6 caracteres").max(100),
+    });
+
+    const validation = registerSchema.safeParse({
+      nombre: formData.nombre.trim(),
+      email: formData.email.trim(),
+      password: formData.password,
+    });
+
+    if (!validation.success) {
+      const error = validation.error.errors[0];
+      toast.error(error?.message || "Por favor verifica los datos ingresados");
       return;
     }
 
@@ -36,7 +51,7 @@ const Register = () => {
     try {
       // Verificar si el email está permitido
       const { data: permitido, error: checkError } = await supabase.rpc("email_permitido", {
-        email_check: formData.email.toLowerCase(),
+        email_check: validation.data.email,
       });
 
       if (checkError) {
@@ -50,11 +65,11 @@ const Register = () => {
       }
 
       const { data, error } = await supabase.auth.signUp({
-        email: formData.email,
-        password: formData.password,
+        email: validation.data.email,
+        password: validation.data.password,
         options: {
           data: {
-            nombre: formData.nombre,
+            nombre: validation.data.nombre,
           },
           emailRedirectTo: `${window.location.origin}/dashboard`,
         },
