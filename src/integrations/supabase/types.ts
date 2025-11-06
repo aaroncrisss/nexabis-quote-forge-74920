@@ -147,6 +147,7 @@ export type Database = {
       presupuestos: {
         Row: {
           cliente_id: string
+          codigo_auto: string | null
           comentarios_cliente: string | null
           created_at: string | null
           descuento_tipo: string | null
@@ -157,8 +158,12 @@ export type Database = {
           fecha_vencimiento: string | null
           forma_pago: string | null
           id: string
+          iva_monto: number | null
+          iva_porcentaje: number | null
+          modo_impresion: string | null
           moneda: string
           numero: string
+          promocion_aplicada: string | null
           subtotal: number
           terminos: string | null
           titulo: string
@@ -170,6 +175,7 @@ export type Database = {
         }
         Insert: {
           cliente_id: string
+          codigo_auto?: string | null
           comentarios_cliente?: string | null
           created_at?: string | null
           descuento_tipo?: string | null
@@ -180,8 +186,12 @@ export type Database = {
           fecha_vencimiento?: string | null
           forma_pago?: string | null
           id?: string
+          iva_monto?: number | null
+          iva_porcentaje?: number | null
+          modo_impresion?: string | null
           moneda?: string
           numero: string
+          promocion_aplicada?: string | null
           subtotal?: number
           terminos?: string | null
           titulo: string
@@ -193,6 +203,7 @@ export type Database = {
         }
         Update: {
           cliente_id?: string
+          codigo_auto?: string | null
           comentarios_cliente?: string | null
           created_at?: string | null
           descuento_tipo?: string | null
@@ -203,8 +214,12 @@ export type Database = {
           fecha_vencimiento?: string | null
           forma_pago?: string | null
           id?: string
+          iva_monto?: number | null
+          iva_porcentaje?: number | null
+          modo_impresion?: string | null
           moneda?: string
           numero?: string
+          promocion_aplicada?: string | null
           subtotal?: number
           terminos?: string | null
           titulo?: string
@@ -233,6 +248,7 @@ export type Database = {
       }
       profiles: {
         Row: {
+          activo: boolean | null
           created_at: string | null
           direccion: string | null
           email: string
@@ -247,6 +263,7 @@ export type Database = {
           updated_at: string | null
         }
         Insert: {
+          activo?: boolean | null
           created_at?: string | null
           direccion?: string | null
           email: string
@@ -261,6 +278,7 @@ export type Database = {
           updated_at?: string | null
         }
         Update: {
+          activo?: boolean | null
           created_at?: string | null
           direccion?: string | null
           email?: string
@@ -276,15 +294,109 @@ export type Database = {
         }
         Relationships: []
       }
+      promociones: {
+        Row: {
+          activa: boolean | null
+          created_at: string | null
+          descripcion: string | null
+          descuento_porcentaje: number
+          fecha_fin: string | null
+          fecha_inicio: string | null
+          id: string
+          monto_minimo: number
+          nombre: string
+          updated_at: string | null
+        }
+        Insert: {
+          activa?: boolean | null
+          created_at?: string | null
+          descripcion?: string | null
+          descuento_porcentaje: number
+          fecha_fin?: string | null
+          fecha_inicio?: string | null
+          id?: string
+          monto_minimo: number
+          nombre: string
+          updated_at?: string | null
+        }
+        Update: {
+          activa?: boolean | null
+          created_at?: string | null
+          descripcion?: string | null
+          descuento_porcentaje?: number
+          fecha_fin?: string | null
+          fecha_inicio?: string | null
+          id?: string
+          monto_minimo?: number
+          nombre?: string
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
+      user_roles: {
+        Row: {
+          created_at: string | null
+          id: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
+        }
+        Relationships: []
+      }
+      usuarios_permitidos: {
+        Row: {
+          activo: boolean | null
+          created_at: string | null
+          email: string
+          fecha_invitacion: string | null
+          id: string
+          invitado_por: string | null
+        }
+        Insert: {
+          activo?: boolean | null
+          created_at?: string | null
+          email: string
+          fecha_invitacion?: string | null
+          id?: string
+          invitado_por?: string | null
+        }
+        Update: {
+          activo?: boolean | null
+          created_at?: string | null
+          email?: string
+          fecha_invitacion?: string | null
+          id?: string
+          invitado_por?: string | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      email_permitido: { Args: { email_check: string }; Returns: boolean }
+      has_role: {
+        Args: {
+          _role: Database["public"]["Enums"]["app_role"]
+          _user_id: string
+        }
+        Returns: boolean
+      }
     }
     Enums: {
-      [_ in never]: never
+      app_role: "admin" | "usuario"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -411,6 +523,8 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      app_role: ["admin", "usuario"],
+    },
   },
 } as const
