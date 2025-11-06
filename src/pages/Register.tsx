@@ -34,6 +34,21 @@ const Register = () => {
     setLoading(true);
 
     try {
+      // Verificar si el email está permitido
+      const { data: permitido, error: checkError } = await supabase.rpc("email_permitido", {
+        email_check: formData.email.toLowerCase(),
+      });
+
+      if (checkError) {
+        toast.error("Error al verificar el email");
+        return;
+      }
+
+      if (!permitido) {
+        toast.error("Tu correo no está autorizado. Contacta con el administrador.");
+        return;
+      }
+
       const { data, error } = await supabase.auth.signUp({
         email: formData.email,
         password: formData.password,
@@ -69,7 +84,7 @@ const Register = () => {
             Crear Cuenta
           </h1>
           <p className="text-muted-foreground">
-            Comienza gratis con NEXABIS
+            Registra tu cuenta (solo por invitación)
           </p>
         </div>
 
@@ -131,7 +146,7 @@ const Register = () => {
             className="w-full bg-gradient-nexabis hover:opacity-90 transition-opacity"
             disabled={loading}
           >
-            {loading ? "Creando cuenta..." : "Crear Cuenta Gratis"}
+            {loading ? "Creando cuenta..." : "Crear Cuenta"}
           </Button>
         </form>
 

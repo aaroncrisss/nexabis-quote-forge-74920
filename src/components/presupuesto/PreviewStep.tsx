@@ -5,7 +5,7 @@ import { FileText } from "lucide-react";
 
 interface PreviewStepProps {
   presupuesto: PresupuestoData;
-  totals: { subtotal: number; descuento_total: number; total: number };
+  totals: { subtotal: number; descuento_total: number; iva_monto: number; total: number };
 }
 
 export function PreviewStep({ presupuesto, totals }: PreviewStepProps) {
@@ -126,6 +126,12 @@ export function PreviewStep({ presupuesto, totals }: PreviewStepProps) {
                 </span>
               </div>
             )}
+            <div className="flex justify-between text-accent">
+              <span>IVA (19%):</span>
+              <span>
+                + {simbolo} {totals.iva_monto.toLocaleString()}
+              </span>
+            </div>
             <div className="flex justify-between text-2xl font-bold gradient-text border-t border-primary/20 pt-2">
               <span>TOTAL:</span>
               <span>

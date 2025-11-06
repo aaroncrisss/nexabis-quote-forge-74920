@@ -1,10 +1,11 @@
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { LayoutDashboard, FileText, Settings, LogOut, Plus, Users, Moon, Sun } from "lucide-react";
+import { LayoutDashboard, FileText, Settings, LogOut, Plus, Users, Moon, Sun, Shield } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import nexabisLogo from "@/assets/Logo-Nexabis.png";
 import { useEffect, useState } from "react";
+import { useAuth } from "@/hooks/useAuth";
 
 interface DashboardLayoutProps {
   children: React.ReactNode;
@@ -14,6 +15,7 @@ const DashboardLayout = ({ children }: DashboardLayoutProps) => {
   const location = useLocation();
   const navigate = useNavigate();
   const [darkMode, setDarkMode] = useState(true);
+  const { isAdmin } = useAuth();
 
   useEffect(() => {
     const stored = localStorage.getItem("darkMode");
@@ -40,6 +42,7 @@ const DashboardLayout = ({ children }: DashboardLayoutProps) => {
     { to: "/presupuestos", icon: FileText, label: "Presupuestos" },
     { to: "/clientes", icon: Users, label: "Clientes" },
     { to: "/configuracion", icon: Settings, label: "Configuración" },
+    ...(isAdmin ? [{ to: "/admin", icon: Shield, label: "Admin" }] : []),
   ];
 
   return (

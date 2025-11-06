@@ -1,10 +1,27 @@
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { FileText, TrendingUp, Clock, Check } from "lucide-react";
+import { FileText, TrendingUp, Clock, Check, Moon, Sun } from "lucide-react";
 import nexabisLogo from "@/assets/Logo-Nexabis.png";
+import { useEffect, useState } from "react";
 
 const Landing = () => {
+  const [darkMode, setDarkMode] = useState(true);
+
+  useEffect(() => {
+    const stored = localStorage.getItem("darkMode");
+    const isDark = stored === null ? true : stored === "true";
+    setDarkMode(isDark);
+    document.documentElement.classList.toggle("dark", isDark);
+  }, []);
+
+  const toggleDarkMode = () => {
+    const newMode = !darkMode;
+    setDarkMode(newMode);
+    localStorage.setItem("darkMode", String(newMode));
+    document.documentElement.classList.toggle("dark", newMode);
+  };
+
   return (
     <div className="min-h-screen bg-background">
       {/* Navigation */}
@@ -14,13 +31,16 @@ const Landing = () => {
             <img src={nexabisLogo} alt="NEXABIS" className="h-10 w-10" />
             <span className="text-xl font-heading font-bold gradient-text">NEXABIS</span>
           </div>
-          <div className="flex gap-3">
+          <div className="flex items-center gap-3">
+            <Button variant="ghost" size="icon" onClick={toggleDarkMode}>
+              {darkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+            </Button>
             <Link to="/login">
               <Button variant="ghost">Iniciar Sesión</Button>
             </Link>
             <Link to="/register">
               <Button className="bg-gradient-nexabis hover:opacity-90 transition-opacity">
-                Prueba Gratis
+                Registrarse
               </Button>
             </Link>
           </div>
@@ -36,18 +56,13 @@ const Landing = () => {
             en minutos
           </h1>
           <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
-            Simplifica la gestión de cotizaciones para tu negocio. Crea, envía y rastrea presupuestos 
-            profesionales con una plataforma moderna diseñada para pequeñas empresas, freelancers y agencias.
+            Sistema exclusivo por invitación para empresas. Crea, envía y gestiona presupuestos 
+            profesionales con cálculo automático de IVA, promociones inteligentes y nomenclatura profesional.
           </p>
           <div className="flex gap-4 justify-center">
-            <Link to="/register">
-              <Button size="lg" className="bg-gradient-nexabis hover:opacity-90 transition-opacity text-lg px-8">
-                Comienza Gratis
-              </Button>
-            </Link>
             <Link to="/login">
-              <Button size="lg" variant="outline" className="gradient-border text-lg px-8">
-                Ver Demo
+              <Button size="lg" className="bg-gradient-nexabis hover:opacity-90 transition-opacity text-lg px-8">
+                Iniciar Sesión
               </Button>
             </Link>
           </div>
@@ -100,14 +115,14 @@ const Landing = () => {
           </h2>
           <div className="space-y-6">
             {[
-              "Presupuestos con tu marca y logo",
+              "Nomenclatura profesional automática (NEX-2025-0001)",
+              "Cálculo automático de IVA 19%",
+              "Promociones inteligentes configurables",
+              "Control de acceso por invitación",
               "Múltiples monedas (USD/CLP)",
-              "Descuentos y promociones flexibles",
-              "Enlaces compartibles para clientes",
-              "Notificaciones automáticas",
-              "Análisis y reportes completos",
-              "Sin límite de presupuestos",
-              "Soporte prioritario"
+              "Modo oscuro/claro para impresión",
+              "Enlaces compartibles seguros",
+              "Gestión completa de clientes"
             ].map((benefit, index) => (
               <div key={index} className="flex items-center gap-4 p-4 rounded-lg bg-card/50 border border-border">
                 <div className="w-8 h-8 rounded-full bg-gradient-nexabis flex items-center justify-center flex-shrink-0">
@@ -124,14 +139,14 @@ const Landing = () => {
       <section className="container mx-auto px-4 py-20">
         <Card className="p-12 text-center bg-gradient-nexabis animate-gradient">
           <h2 className="text-4xl font-heading font-bold text-white mb-4">
-            ¿Listo para transformar tu proceso de cotización?
+            ¿Tu empresa necesita presupuestos profesionales?
           </h2>
           <p className="text-xl text-white/90 mb-8 max-w-2xl mx-auto">
-            Únete a cientos de negocios que ya confían en NEXABIS para gestionar sus presupuestos.
+            NEXABIS Quotes es un sistema exclusivo por invitación para empresas que buscan profesionalizar su proceso comercial.
           </p>
-          <Link to="/register">
+          <Link to="/login">
             <Button size="lg" className="bg-background text-foreground hover:bg-background/90 text-lg px-8">
-              Comenzar Ahora - Es Gratis
+              Iniciar Sesión
             </Button>
           </Link>
         </Card>

@@ -12,6 +12,7 @@ import CrearPresupuesto from "./pages/CrearPresupuesto";
 import PresupuestoPublico from "./pages/PresupuestoPublico";
 import Configuracion from "./pages/Configuracion";
 import Clientes from "./pages/Clientes";
+import AdminPanel from "./pages/AdminPanel";
 import ProtectedRoute from "./components/ProtectedRoute";
 import NotFound from "./pages/NotFound";
 
@@ -33,6 +34,7 @@ const App = () => (
           <Route path="/crear" element={<ProtectedRoute><CrearPresupuesto /></ProtectedRoute>} />
           <Route path="/presupuesto/:token" element={<PresupuestoPublico />} />
           <Route path="/configuracion" element={<ProtectedRoute><Configuracion /></ProtectedRoute>} />
+          <Route path="/admin" element={<ProtectedRoute><AdminPanel /></ProtectedRoute>} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>

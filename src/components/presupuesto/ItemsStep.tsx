@@ -11,7 +11,7 @@ interface ItemsStepProps {
   descuentoTipo: string | null;
   descuentoValor: number;
   onUpdate: (data: any) => void;
-  calculateTotals: () => { subtotal: number; descuento_total: number; total: number };
+  calculateTotals: () => { subtotal: number; descuento_total: number; iva_monto: number; total: number };
 }
 
 export function ItemsStep({
@@ -46,7 +46,7 @@ export function ItemsStep({
     onUpdate({ items: items.filter((_, i) => i !== index) });
   };
 
-  const { subtotal, descuento_total, total } = calculateTotals();
+  const { subtotal, descuento_total, iva_monto, total } = calculateTotals();
   const simbolo = moneda === "USD" ? "$" : "$";
 
   return (
@@ -181,6 +181,12 @@ export function ItemsStep({
               </span>
             </div>
           )}
+          <div className="flex justify-between text-lg text-accent">
+            <span>IVA (19%):</span>
+            <span className="font-bold">
+              + {simbolo} {iva_monto.toLocaleString()}
+            </span>
+          </div>
           <div className="flex justify-between text-2xl border-t border-primary/20 pt-2">
             <span className="gradient-text font-bold">TOTAL:</span>
             <span className="gradient-text font-bold">

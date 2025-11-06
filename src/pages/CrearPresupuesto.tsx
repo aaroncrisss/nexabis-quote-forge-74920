@@ -27,6 +27,9 @@ export interface PresupuestoData {
   validez_dias: number;
   forma_pago: string;
   terminos: string;
+  iva_porcentaje: number;
+  modo_impresion: string;
+  promocion_aplicada: string | null;
 }
 
 export default function CrearPresupuesto() {
@@ -45,6 +48,9 @@ export default function CrearPresupuesto() {
     validez_dias: 15,
     forma_pago: "50% anticipo, 50% contra entrega",
     terminos: "",
+    iva_porcentaje: 19,
+    modo_impresion: "dark",
+    promocion_aplicada: null,
   });
 
   const updatePresupuesto = (data: Partial<PresupuestoData>) => {
@@ -61,8 +67,11 @@ export default function CrearPresupuesto() {
       descuento_total = presupuesto.descuento_valor;
     }
 
-    const total = subtotal - descuento_total;
-    return { subtotal, descuento_total, total };
+    const subtotal_con_descuento = subtotal - descuento_total;
+    const iva_monto = (subtotal_con_descuento * presupuesto.iva_porcentaje) / 100;
+    const total = subtotal_con_descuento + iva_monto;
+
+    return { subtotal, descuento_total, iva_monto, total };
   };
 
   const handleSubmit = async () => {
@@ -71,7 +80,7 @@ export default function CrearPresupuesto() {
       const { data: userData } = await supabase.auth.getUser();
       if (!userData.user) throw new Error("No autenticado");
 
-      const { subtotal, descuento_total, total } = calculateTotals();
+      const { subtotal, descuento_total, iva_monto, total } = calculateTotals();
 
       const { data: presupuestoData, error: presupuestoError } = await supabase
         .from("presupuestos")
@@ -85,11 +94,15 @@ export default function CrearPresupuesto() {
           descuento_tipo: presupuesto.descuento_tipo,
           descuento_valor: presupuesto.descuento_valor,
           descuento_total,
+          iva_porcentaje: presupuesto.iva_porcentaje,
+          iva_monto,
           total,
           validez_dias: presupuesto.validez_dias,
           forma_pago: presupuesto.forma_pago,
           terminos: presupuesto.terminos,
           estado: "pendiente",
+          modo_impresion: presupuesto.modo_impresion,
+          promocion_aplicada: presupuesto.promocion_aplicada,
         }])
         .select()
         .single();
