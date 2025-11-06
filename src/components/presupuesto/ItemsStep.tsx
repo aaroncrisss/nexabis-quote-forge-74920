@@ -4,12 +4,15 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Trash2, Plus } from "lucide-react";
 import { PresupuestoItem } from "@/pages/CrearPresupuesto";
+import { useEffect, useState } from "react";
+import { supabase } from "@/integrations/supabase/client";
 
 interface ItemsStepProps {
   items: PresupuestoItem[];
   moneda: string;
   descuentoTipo: string | null;
   descuentoValor: number;
+  promocionAplicada: string | null;
   onUpdate: (data: any) => void;
   calculateTotals: () => { subtotal: number; descuento_total: number; iva_monto: number; total: number };
 }
@@ -19,9 +22,26 @@ export function ItemsStep({
   moneda,
   descuentoTipo,
   descuentoValor,
+  promocionAplicada,
   onUpdate,
   calculateTotals,
 }: ItemsStepProps) {
+  const [promociones, setPromociones] = useState<any[]>([]);
+
+  useEffect(() => {
+    loadPromociones();
+  }, []);
+
+  const loadPromociones = async () => {
+    const { data } = await supabase
+      .from("promociones")
+      .select("*")
+      .eq("activa", true)
+      .order("nombre");
+    
+    setPromociones(data || []);
+  };
+
   const addItem = () => {
     onUpdate({
       items: [
@@ -133,42 +153,71 @@ export function ItemsStep({
       </div>
 
       <div className="border-t border-primary/20 pt-6 space-y-4">
-        <div className="flex gap-4">
-          <div className="flex-1">
-            <Label>Tipo de Descuento</Label>
+        <div className="space-y-4">
+          <div>
+            <Label>Promoción (Opcional)</Label>
             <Select
-              value={descuentoTipo || "ninguno"}
+              value={promocionAplicada || "ninguna"}
               onValueChange={(value) =>
-                onUpdate({ descuento_tipo: value === "ninguno" ? null : value })
+                onUpdate({ promocion_aplicada: value === "ninguna" ? null : value })
               }
             >
               <SelectTrigger className="mt-2">
-                <SelectValue />
+                <SelectValue placeholder="Seleccionar promoción" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="ninguno">Sin descuento</SelectItem>
-                <SelectItem value="porcentaje">Porcentaje (%)</SelectItem>
-                <SelectItem value="fijo">Valor fijo</SelectItem>
+                <SelectItem value="ninguna">Sin promoción</SelectItem>
+                {promociones.map((promo) => (
+                  <SelectItem key={promo.id} value={promo.nombre}>
+                    {promo.nombre} ({promo.descuento_porcentaje}% off)
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
+            {promocionAplicada && promociones.find(p => p.nombre === promocionAplicada) && (
+              <p className="text-xs text-muted-foreground mt-1">
+                {promociones.find(p => p.nombre === promocionAplicada)?.descripcion}
+              </p>
+            )}
           </div>
-          {descuentoTipo && descuentoTipo !== "ninguno" && (
+
+          <div className="flex gap-4">
             <div className="flex-1">
-              <Label>Valor del Descuento</Label>
-              <Input
-                type="number"
-                value={descuentoValor}
-                onChange={(e) => onUpdate({ descuento_valor: parseFloat(e.target.value) || 0 })}
-                placeholder={descuentoTipo === "porcentaje" ? "10" : "5000"}
-                className="mt-2"
-              />
+              <Label>Tipo de Descuento Adicional</Label>
+              <Select
+                value={descuentoTipo || "ninguno"}
+                onValueChange={(value) =>
+                  onUpdate({ descuento_tipo: value === "ninguno" ? null : value })
+                }
+              >
+                <SelectTrigger className="mt-2">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ninguno">Sin descuento</SelectItem>
+                  <SelectItem value="porcentaje">Porcentaje (%)</SelectItem>
+                  <SelectItem value="fijo">Valor fijo</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
-          )}
+            {descuentoTipo && descuentoTipo !== "ninguno" && (
+              <div className="flex-1">
+                <Label>Valor del Descuento</Label>
+                <Input
+                  type="number"
+                  value={descuentoValor}
+                  onChange={(e) => onUpdate({ descuento_valor: parseFloat(e.target.value) || 0 })}
+                  placeholder={descuentoTipo === "porcentaje" ? "10" : "5000"}
+                  className="mt-2"
+                />
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="bg-gradient-to-r from-primary/10 via-accent/10 to-warning/10 p-6 rounded-lg space-y-2">
           <div className="flex justify-between text-lg">
-            <span className="text-muted-foreground">Subtotal:</span>
+            <span className="text-muted-foreground">Subtotal (sin IVA):</span>
             <span className="font-bold">
               {simbolo} {subtotal.toLocaleString()}
             </span>
@@ -184,7 +233,7 @@ export function ItemsStep({
           <div className="flex justify-between text-lg text-accent">
             <span>IVA (19%):</span>
             <span className="font-bold">
-              + {simbolo} {iva_monto.toLocaleString()}
+              {simbolo} {iva_monto.toLocaleString()}
             </span>
           </div>
           <div className="flex justify-between text-2xl border-t border-primary/20 pt-2">

@@ -230,7 +230,7 @@ export default function PresupuestoPublico() {
           <div className="flex justify-end">
             <div className="w-72 space-y-2">
               <div className="flex justify-between text-muted-foreground">
-                <span>Subtotal:</span>
+                <span>Subtotal (sin IVA):</span>
                 <span>
                   {simbolo} {parseFloat(presupuesto.subtotal).toLocaleString()}
                 </span>
@@ -243,6 +243,12 @@ export default function PresupuestoPublico() {
                   </span>
                 </div>
               )}
+              <div className="flex justify-between text-accent">
+                <span>IVA ({presupuesto.iva_porcentaje}%):</span>
+                <span>
+                  {simbolo} {parseFloat(presupuesto.iva_monto).toLocaleString()}
+                </span>
+              </div>
               <div className="flex justify-between text-2xl font-bold gradient-text border-t border-primary/20 pt-2">
                 <span>TOTAL:</span>
                 <span>
@@ -321,7 +327,7 @@ export default function PresupuestoPublico() {
                 <Button
                   onClick={() => handleResponse("aprobado")}
                   disabled={submitting}
-                  className="flex-1 gradient-button"
+                  className="flex-1 bg-gradient-to-r from-primary via-secondary to-accent text-white font-semibold hover:opacity-90 transition-all"
                   size="lg"
                 >
                   <CheckCircle className="w-5 h-5 mr-2" />

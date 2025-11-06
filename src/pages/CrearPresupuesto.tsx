@@ -58,20 +58,29 @@ export default function CrearPresupuesto() {
   };
 
   const calculateTotals = () => {
-    const subtotal = presupuesto.items.reduce((sum, item) => sum + item.total, 0);
+    // Los precios de items YA incluyen IVA
+    const total_con_iva = presupuesto.items.reduce((sum, item) => sum + item.total, 0);
     let descuento_total = 0;
 
     if (presupuesto.descuento_tipo === "porcentaje") {
-      descuento_total = (subtotal * presupuesto.descuento_valor) / 100;
+      descuento_total = (total_con_iva * presupuesto.descuento_valor) / 100;
     } else if (presupuesto.descuento_tipo === "fijo") {
       descuento_total = presupuesto.descuento_valor;
     }
 
-    const subtotal_con_descuento = subtotal - descuento_total;
-    const iva_monto = (subtotal_con_descuento * presupuesto.iva_porcentaje) / 100;
-    const total = subtotal_con_descuento + iva_monto;
-
-    return { subtotal, descuento_total, iva_monto, total };
+    const total_con_descuento = total_con_iva - descuento_total;
+    
+    // Extraer el IVA del total (precios incluyen IVA)
+    const factor_iva = presupuesto.iva_porcentaje / 100;
+    const subtotal_sin_iva = total_con_descuento / (1 + factor_iva);
+    const iva_monto = total_con_descuento - subtotal_sin_iva;
+    
+    return { 
+      subtotal: subtotal_sin_iva, 
+      descuento_total, 
+      iva_monto, 
+      total: total_con_descuento 
+    };
   };
 
   const handleSubmit = async () => {
@@ -219,6 +228,7 @@ export default function CrearPresupuesto() {
             moneda={presupuesto.moneda}
             descuentoTipo={presupuesto.descuento_tipo}
             descuentoValor={presupuesto.descuento_valor}
+            promocionAplicada={presupuesto.promocion_aplicada}
             onUpdate={updatePresupuesto}
             calculateTotals={calculateTotals}
           />

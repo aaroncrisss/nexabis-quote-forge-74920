@@ -47,8 +47,7 @@ export function DemoDataButton() {
     <Button
       onClick={handleCreateDemoData}
       disabled={loading}
-      variant="outline"
-      className="gradient-border"
+      className="bg-gradient-to-r from-primary via-secondary to-accent text-primary-foreground font-semibold hover:opacity-90 transition-all hover:shadow-lg"
     >
       <Database className="w-4 h-4 mr-2" />
       {loading ? "Creando datos..." : "Generar Datos Demo"}

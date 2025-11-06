@@ -8,9 +8,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { Upload, X } from "lucide-react";
 
 const Configuracion = () => {
   const [loading, setLoading] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [profile, setProfile] = useState({
     nombre: "",
     email: "",
@@ -20,6 +22,7 @@ const Configuracion = () => {
     rut: "",
     plantilla_tyc: "",
     moneda_predeterminada: "CLP",
+    logo_url: "",
   });
 
   useEffect(() => {
@@ -37,6 +40,69 @@ const Configuracion = () => {
       .single();
 
     if (data) setProfile(data);
+  };
+
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      toast.error("Por favor selecciona una imagen");
+      return;
+    }
+
+    setUploading(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${user.id}/logo.${fileExt}`;
+
+      // Delete old logo if exists
+      if (profile.logo_url) {
+        const oldPath = profile.logo_url.split('/logos/')[1];
+        if (oldPath) {
+          await supabase.storage.from('logos').remove([oldPath]);
+        }
+      }
+
+      const { error: uploadError, data } = await supabase.storage
+        .from('logos')
+        .upload(fileName, file, { upsert: true });
+
+      if (uploadError) throw uploadError;
+
+      const { data: { publicUrl } } = supabase.storage
+        .from('logos')
+        .getPublicUrl(fileName);
+
+      setProfile({ ...profile, logo_url: publicUrl });
+      toast.success("Logo subido exitosamente");
+    } catch (error: any) {
+      toast.error(error.message);
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleRemoveLogo = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      if (profile.logo_url) {
+        const oldPath = profile.logo_url.split('/logos/')[1];
+        if (oldPath) {
+          await supabase.storage.from('logos').remove([oldPath]);
+        }
+      }
+
+      setProfile({ ...profile, logo_url: "" });
+      toast.success("Logo eliminado");
+    } catch (error: any) {
+      toast.error(error.message);
+    }
   };
 
   const handleSave = async () => {
@@ -65,6 +131,32 @@ const Configuracion = () => {
         <h1 className="text-4xl font-heading font-bold gradient-text">Configuración</h1>
 
         <Card className="p-6 space-y-6 bg-card/50 border-border">
+          <div className="space-y-2">
+            <Label>Logo de Empresa</Label>
+            {profile.logo_url ? (
+              <div className="flex items-center gap-4">
+                <img src={profile.logo_url} alt="Logo" className="h-20 object-contain border border-border rounded p-2" />
+                <Button type="button" variant="outline" size="sm" onClick={handleRemoveLogo}>
+                  <X className="w-4 h-4 mr-2" />
+                  Eliminar
+                </Button>
+              </div>
+            ) : (
+              <div>
+                <Input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleLogoUpload}
+                  disabled={uploading}
+                  className="cursor-pointer"
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  Sube el logo de tu empresa (max 2MB)
+                </p>
+              </div>
+            )}
+          </div>
+
           <div className="space-y-2">
             <Label>Nombre Completo</Label>
             <Input value={profile.nombre} onChange={(e) => setProfile({ ...profile, nombre: e.target.value })} />
