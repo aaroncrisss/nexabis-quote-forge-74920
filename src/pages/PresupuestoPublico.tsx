@@ -123,7 +123,31 @@ export default function PresupuestoPublico() {
   };
 
   const handleDownloadPDF = () => {
-    window.print();
+    // Create a temporary iframe for printing
+    const printFrame = document.createElement('iframe');
+    printFrame.style.position = 'fixed';
+    printFrame.style.right = '0';
+    printFrame.style.bottom = '0';
+    printFrame.style.width = '0';
+    printFrame.style.height = '0';
+    printFrame.style.border = '0';
+    document.body.appendChild(printFrame);
+
+    const content = document.documentElement.outerHTML;
+    const doc = printFrame.contentWindow?.document;
+    
+    if (doc) {
+      doc.open();
+      doc.write(content);
+      doc.close();
+      
+      setTimeout(() => {
+        printFrame.contentWindow?.print();
+        setTimeout(() => {
+          document.body.removeChild(printFrame);
+        }, 100);
+      }, 250);
+    }
   };
 
   if (loading) {
@@ -160,14 +184,27 @@ export default function PresupuestoPublico() {
             )}
           </div>
           <div className="flex gap-2">
-            <Button onClick={() => setDarkMode(!darkMode)} variant="outline" size="icon">
+            <Button 
+              onClick={() => setDarkMode(!darkMode)} 
+              variant="outline" 
+              size="icon"
+              className={darkMode ? 'text-white border-white hover:bg-white/10' : ''}
+            >
               {darkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
             </Button>
-            <Button onClick={handleDownloadPDF} variant="outline">
+            <Button 
+              onClick={handleDownloadPDF} 
+              variant="outline"
+              className={darkMode ? 'text-white border-white hover:bg-white/10' : ''}
+            >
               <Download className="w-4 h-4 mr-2" />
               Descargar PDF
             </Button>
-            <Button onClick={handlePrint} variant="outline">
+            <Button 
+              onClick={handlePrint} 
+              variant="outline"
+              className={darkMode ? 'text-white border-white hover:bg-white/10' : ''}
+            >
               <Printer className="w-4 h-4 mr-2" />
               Imprimir
             </Button>

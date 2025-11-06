@@ -73,6 +73,41 @@ export function ItemsStep({
           return;
         }
         
+        // Validar fechas de vigencia
+        const now = new Date();
+        if (promo.fecha_inicio) {
+          const inicio = new Date(promo.fecha_inicio);
+          if (now < inicio) {
+            toast({
+              title: "Promoción no disponible",
+              description: `Esta promoción estará disponible a partir del ${inicio.toLocaleDateString()}`,
+              variant: "destructive",
+            });
+            onUpdate({ 
+              promocion_aplicada: null,
+              descuento_tipo: null,
+              descuento_valor: 0
+            });
+            return;
+          }
+        }
+        if (promo.fecha_fin) {
+          const fin = new Date(promo.fecha_fin);
+          if (now > fin) {
+            toast({
+              title: "Promoción expirada",
+              description: `Esta promoción expiró el ${fin.toLocaleDateString()}`,
+              variant: "destructive",
+            });
+            onUpdate({ 
+              promocion_aplicada: null,
+              descuento_tipo: null,
+              descuento_valor: 0
+            });
+            return;
+          }
+        }
+        
         onUpdate({ 
           promocion_aplicada: value,
           descuento_tipo: "porcentaje",
@@ -86,19 +121,25 @@ export function ItemsStep({
     onUpdate({
       items: [
         ...items,
-        { descripcion: "", cantidad: 1, precio_unitario: "", total: 0 },
+        { descripcion: "", cantidad: "", precio_unitario: "", total: 0 },
       ],
     });
   };
 
   const updateItem = (index: number, field: string, value: any) => {
     const newItems = [...items];
-    newItems[index] = { ...newItems[index], [field]: value };
-
+    
     if (field === "cantidad" || field === "precio_unitario") {
-      const cantidad = newItems[index].cantidad;
-      const precio = parseFloat(String(newItems[index].precio_unitario)) || 0;
+      // Keep the value as is (including empty string)
+      newItems[index] = { ...newItems[index], [field]: value };
+      // Calculate total only with numeric values
+      const cantidadStr = field === 'cantidad' ? value : String(newItems[index].cantidad || '');
+      const precioStr = field === 'precio_unitario' ? value : String(newItems[index].precio_unitario || '');
+      const cantidad = cantidadStr === '' ? 0 : (parseFloat(cantidadStr) || 0);
+      const precio = precioStr === '' ? 0 : (parseFloat(precioStr) || 0);
       newItems[index].total = cantidad * precio;
+    } else {
+      newItems[index] = { ...newItems[index], [field]: value };
     }
 
     onUpdate({ items: newItems });
@@ -151,7 +192,7 @@ export function ItemsStep({
                 <Input
                   type="number"
                   value={item.cantidad}
-                  onChange={(e) => updateItem(index, "cantidad", parseFloat(e.target.value) || 0)}
+                  onChange={(e) => updateItem(index, "cantidad", e.target.value)}
                   min="1"
                   className="mt-1"
                 />
@@ -161,7 +202,7 @@ export function ItemsStep({
                 <Input
                   type="number"
                   value={item.precio_unitario}
-                  onChange={(e) => updateItem(index, "precio_unitario", parseFloat(e.target.value) || 0)}
+                  onChange={(e) => updateItem(index, "precio_unitario", e.target.value)}
                   min="0"
                   className="mt-1"
                 />

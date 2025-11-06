@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "react-router-dom";
-import { Eye, Trash2, Copy, Plus, Search, ExternalLink } from "lucide-react";
+import { Eye, Trash2, Copy, Plus, Search, ExternalLink, Grid3x3, List } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import {
   AlertDialog,
@@ -28,6 +28,7 @@ const Presupuestos = () => {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [estadoFilter, setEstadoFilter] = useState("todos");
+  const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -45,7 +46,8 @@ const Presupuestos = () => {
       filtered = filtered.filter((p) =>
         p.titulo?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         p.numero?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        p.clientes?.nombre?.toLowerCase().includes(searchTerm.toLowerCase())
+        p.clientes?.nombre?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        p.clientes?.empresa?.toLowerCase().includes(searchTerm.toLowerCase())
       );
     }
 
@@ -201,7 +203,7 @@ const Presupuestos = () => {
           <div className="flex-1 relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
             <Input
-              placeholder="Buscar por cliente, número o título..."
+              placeholder="Buscar por número, empresa o nombre de cliente..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="pl-10"
@@ -219,6 +221,22 @@ const Presupuestos = () => {
               <SelectItem value="vencido">Vencido</SelectItem>
             </SelectContent>
           </Select>
+          <div className="flex gap-2">
+            <Button
+              variant={viewMode === "grid" ? "default" : "outline"}
+              size="icon"
+              onClick={() => setViewMode("grid")}
+            >
+              <Grid3x3 className="w-4 h-4" />
+            </Button>
+            <Button
+              variant={viewMode === "list" ? "default" : "outline"}
+              size="icon"
+              onClick={() => setViewMode("list")}
+            >
+              <List className="w-4 h-4" />
+            </Button>
+          </div>
         </div>
 
         {loading ? (
@@ -232,7 +250,7 @@ const Presupuestos = () => {
               Crear tu primer presupuesto
             </Button>
           </Card>
-        ) : (
+        ) : viewMode === "grid" ? (
           <div className="space-y-4">
             {filteredPresupuestos.map((p) => (
               <Card key={p.id} className="p-6 bg-card/50 border-primary/20 hover-glow transition-all">
@@ -289,6 +307,76 @@ const Presupuestos = () => {
                         <Trash2 className="w-4 h-4" />
                       </Button>
                     </div>
+                  </div>
+                </div>
+              </Card>
+            ))}
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {filteredPresupuestos.map((p) => (
+              <Card key={p.id} className="p-4 bg-card/50 border-primary/20 hover-glow transition-all">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-6 flex-1">
+                    <div className="min-w-[120px]">
+                      <p className="text-sm text-muted-foreground">Número</p>
+                      <p className="font-mono font-semibold">{p.numero}</p>
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-sm text-muted-foreground">Título</p>
+                      <p className="font-semibold">{p.titulo}</p>
+                    </div>
+                    <div className="min-w-[180px]">
+                      <p className="text-sm text-muted-foreground">Cliente</p>
+                      <p>{p.clientes?.nombre}</p>
+                      {p.clientes?.empresa && (
+                        <p className="text-sm text-muted-foreground">{p.clientes.empresa}</p>
+                      )}
+                    </div>
+                    <div className="min-w-[120px]">
+                      <p className="text-sm text-muted-foreground">Total</p>
+                      <p className="font-semibold text-lg">
+                        {p.moneda === "USD" ? "$" : "$"} {Number(p.total).toLocaleString()}
+                      </p>
+                    </div>
+                    <div className="min-w-[100px]">
+                      {getEstadoBadge(p.estado)}
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => copyLink(p.token)}
+                      title="Copiar enlace"
+                    >
+                      <ExternalLink className="w-4 h-4" />
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => window.open(`/presupuesto/${p.token}`, "_blank")}
+                      title="Ver presupuesto"
+                    >
+                      <Eye className="w-4 h-4" />
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => handleDuplicate(p)}
+                      title="Duplicar"
+                    >
+                      <Copy className="w-4 h-4" />
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setDeleteId(p.id)}
+                      className="text-destructive hover:bg-destructive/10"
+                      title="Eliminar"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
                   </div>
                 </div>
               </Card>

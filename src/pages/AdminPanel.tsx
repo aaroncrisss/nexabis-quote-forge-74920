@@ -45,6 +45,8 @@ export default function AdminPanel() {
     descripcion: "",
     descuento_porcentaje: "",
     monto_minimo: "",
+    fecha_inicio: "",
+    fecha_fin: "",
     activa: true,
   });
 
@@ -189,6 +191,8 @@ export default function AdminPanel() {
         descripcion: validation.data.descripcion || null,
         descuento_porcentaje: validation.data.descuento_porcentaje,
         monto_minimo: validation.data.monto_minimo,
+        fecha_inicio: promoForm.fecha_inicio || null,
+        fecha_fin: promoForm.fecha_fin || null,
         activa: promoForm.activa,
       },
     ]);
@@ -202,6 +206,8 @@ export default function AdminPanel() {
         descripcion: "",
         descuento_porcentaje: "",
         monto_minimo: "",
+        fecha_inicio: "",
+        fecha_fin: "",
         activa: true,
       });
       loadPromociones();
@@ -377,6 +383,24 @@ export default function AdminPanel() {
                       required
                     />
                   </div>
+                  <div>
+                    <Label htmlFor="fecha_inicio">Fecha Inicio (opcional)</Label>
+                    <Input
+                      id="fecha_inicio"
+                      type="date"
+                      value={promoForm.fecha_inicio}
+                      onChange={(e) => setPromoForm({ ...promoForm, fecha_inicio: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="fecha_fin">Fecha Fin (opcional)</Label>
+                    <Input
+                      id="fecha_fin"
+                      type="date"
+                      value={promoForm.fecha_fin}
+                      onChange={(e) => setPromoForm({ ...promoForm, fecha_fin: e.target.value })}
+                    />
+                  </div>
                   <div className="flex items-center gap-2 pt-6">
                     <Switch
                       checked={promoForm.activa}
@@ -418,6 +442,11 @@ export default function AdminPanel() {
                         <p className="text-sm text-muted-foreground">
                           {promo.descuento_porcentaje}% descuento en compras sobre ${promo.monto_minimo.toLocaleString()}
                         </p>
+                        {(promo.fecha_inicio || promo.fecha_fin) && (
+                          <p className="text-sm text-muted-foreground">
+                            Vigencia: {promo.fecha_inicio ? new Date(promo.fecha_inicio).toLocaleDateString() : "Sin inicio"} - {promo.fecha_fin ? new Date(promo.fecha_fin).toLocaleDateString() : "Sin fin"}
+                          </p>
+                        )}
                         {promo.descripcion && (
                           <p className="text-sm text-muted-foreground mt-1">{promo.descripcion}</p>
                         )}

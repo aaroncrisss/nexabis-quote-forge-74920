@@ -22,7 +22,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Plus, Pencil, Trash2, Mail, Building, Phone, MapPin } from "lucide-react";
+import { Plus, Pencil, Trash2, Mail, Building, Phone, MapPin, Search, Grid3x3, List } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { z } from "zod";
@@ -38,11 +38,14 @@ interface Cliente {
 
 export default function Clientes() {
   const [clientes, setClientes] = useState<Cliente[]>([]);
+  const [filteredClientes, setFilteredClientes] = useState<Cliente[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [editingCliente, setEditingCliente] = useState<Cliente | null>(null);
   const [clienteToDelete, setClienteToDelete] = useState<string | null>(null);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [formData, setFormData] = useState({
     nombre: "",
     empresa: "",
@@ -54,6 +57,19 @@ export default function Clientes() {
   useEffect(() => {
     loadClientes();
   }, []);
+
+  useEffect(() => {
+    const filtered = clientes.filter((cliente) => {
+      const searchLower = searchTerm.toLowerCase();
+      return (
+        cliente.nombre.toLowerCase().includes(searchLower) ||
+        cliente.email.toLowerCase().includes(searchLower) ||
+        (cliente.empresa && cliente.empresa.toLowerCase().includes(searchLower)) ||
+        (cliente.telefono && cliente.telefono.toLowerCase().includes(searchLower))
+      );
+    });
+    setFilteredClientes(filtered);
+  }, [searchTerm, clientes]);
 
   const loadClientes = async () => {
     try {
@@ -215,8 +231,38 @@ export default function Clientes() {
           </Button>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {clientes.map((cliente) => (
+        {/* Search and View Toggle */}
+        <div className="flex gap-4 items-center">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
+            <Input
+              placeholder="Buscar por nombre, email, empresa..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-10"
+            />
+          </div>
+          <div className="flex gap-2">
+            <Button
+              variant={viewMode === "grid" ? "default" : "outline"}
+              size="icon"
+              onClick={() => setViewMode("grid")}
+            >
+              <Grid3x3 className="w-4 h-4" />
+            </Button>
+            <Button
+              variant={viewMode === "list" ? "default" : "outline"}
+              size="icon"
+              onClick={() => setViewMode("list")}
+            >
+              <List className="w-4 h-4" />
+            </Button>
+          </div>
+        </div>
+
+        {viewMode === "grid" ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {filteredClientes.map((cliente) => (
             <Card key={cliente.id} className="p-6 bg-card/50 border-border hover-glow transition-all">
               <div className="space-y-4">
                 <div className="flex items-start justify-between">
@@ -270,8 +316,61 @@ export default function Clientes() {
                 </div>
               </div>
             </Card>
-          ))}
-        </div>
+            ))}
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {filteredClientes.map((cliente) => (
+              <Card key={cliente.id} className="p-4 bg-card/50 border-border hover-glow transition-all">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-4 flex-1">
+                    <div className="flex-1">
+                      <h3 className="font-semibold">{cliente.nombre}</h3>
+                      {cliente.empresa && (
+                        <p className="text-sm text-muted-foreground">{cliente.empresa}</p>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <Mail className="w-4 h-4" />
+                      {cliente.email}
+                    </div>
+                    {cliente.telefono && (
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <Phone className="w-4 h-4" />
+                        {cliente.telefono}
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => handleOpenDialog(cliente)}
+                    >
+                      <Pencil className="w-4 h-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => {
+                        setClienteToDelete(cliente.id);
+                        setDeleteDialogOpen(true);
+                      }}
+                    >
+                      <Trash2 className="w-4 h-4 text-destructive" />
+                    </Button>
+                  </div>
+                </div>
+              </Card>
+            ))}
+          </div>
+        )}
+
+        {filteredClientes.length === 0 && clientes.length > 0 && (
+          <Card className="p-12 bg-card/50 border-border text-center">
+            <p className="text-muted-foreground mb-4">No se encontraron clientes</p>
+          </Card>
+        )}
 
         {clientes.length === 0 && (
           <Card className="p-12 bg-card/50 border-border text-center">
