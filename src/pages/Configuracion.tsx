@@ -8,11 +8,17 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { Upload, X } from "lucide-react";
+import { Upload, X, Lock } from "lucide-react";
 
 const Configuracion = () => {
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [changingPassword, setChangingPassword] = useState(false);
+  const [passwordData, setPasswordData] = useState({
+    currentPassword: "",
+    newPassword: "",
+    confirmPassword: "",
+  });
   const [profile, setProfile] = useState({
     nombre: "",
     email: "",
@@ -102,6 +108,34 @@ const Configuracion = () => {
       toast.success("Logo eliminado");
     } catch (error: any) {
       toast.error(error.message);
+    }
+  };
+
+  const handleChangePassword = async () => {
+    if (passwordData.newPassword !== passwordData.confirmPassword) {
+      toast.error("Las contraseñas no coinciden");
+      return;
+    }
+
+    if (passwordData.newPassword.length < 6) {
+      toast.error("La contraseña debe tener al menos 6 caracteres");
+      return;
+    }
+
+    setChangingPassword(true);
+    try {
+      const { error } = await supabase.auth.updateUser({
+        password: passwordData.newPassword
+      });
+
+      if (error) throw error;
+      
+      setPasswordData({ currentPassword: "", newPassword: "", confirmPassword: "" });
+      toast.success("Contraseña actualizada exitosamente");
+    } catch (error: any) {
+      toast.error(error.message);
+    } finally {
+      setChangingPassword(false);
     }
   };
 
@@ -211,6 +245,41 @@ const Configuracion = () => {
 
           <Button onClick={handleSave} disabled={loading} className="bg-gradient-nexabis w-full">
             {loading ? "Guardando..." : "Guardar Cambios"}
+          </Button>
+        </Card>
+
+        <Card className="p-6 space-y-6 bg-card/50 border-border">
+          <div className="flex items-center gap-2">
+            <Lock className="w-5 h-5 text-primary" />
+            <h2 className="text-2xl font-heading font-bold">Cambiar Contraseña</h2>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Nueva Contraseña</Label>
+            <Input 
+              type="password" 
+              value={passwordData.newPassword}
+              onChange={(e) => setPasswordData({ ...passwordData, newPassword: e.target.value })}
+              placeholder="Mínimo 6 caracteres"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label>Confirmar Nueva Contraseña</Label>
+            <Input 
+              type="password" 
+              value={passwordData.confirmPassword}
+              onChange={(e) => setPasswordData({ ...passwordData, confirmPassword: e.target.value })}
+              placeholder="Repite la contraseña"
+            />
+          </div>
+
+          <Button 
+            onClick={handleChangePassword} 
+            disabled={changingPassword || !passwordData.newPassword || !passwordData.confirmPassword}
+            className="bg-gradient-nexabis w-full"
+          >
+            {changingPassword ? "Actualizando..." : "Cambiar Contraseña"}
           </Button>
         </Card>
       </div>
