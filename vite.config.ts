@@ -7,25 +7,25 @@ import { componentTagger } from "lovable-tagger";
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
 
-  // Robust fallbacks: prefer VITE_* from .env, then process.env VITE_*, then secrets without prefix, and finally hardcoded public defaults
+  // Robust fallbacks: prefer VITE_* from .env, then process.env VITE_*, then secrets without prefix, and finally hardcoded self-hosted defaults
   const supaUrl =
     env.VITE_SUPABASE_URL ||
     process.env.VITE_SUPABASE_URL ||
     process.env.SUPABASE_URL ||
-    "https://rgbylwefvhlijfrrdvhi.supabase.co"; // final safe fallback (public URL)
+    "http://supabasekong-okowks8g00ss0ks4c080o40s.31.97.163.113.sslip.io"; // final safe fallback (self-hosted URL)
 
   const supaKey =
     env.VITE_SUPABASE_PUBLISHABLE_KEY ||
     process.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
     process.env.SUPABASE_PUBLISHABLE_KEY ||
     process.env.SUPABASE_ANON_KEY ||
-    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJnYnlsd2VmdmhsaWpmcnJkdmhpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjIyNjY2OTIsImV4cCI6MjA3Nzg0MjY5Mn0.jtyilhKoJKce5g4EO5AqKASNT4_evz_GEJGGeG_Eyvs"; // final safe fallback (anon key)
+    "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJzdXBhYmFzZSIsImlhdCI6MTc2MjY2ODkwMCwiZXhwIjo0OTE4MzQyNTAwLCJyb2xlIjoiYW5vbiJ9.zQ5AXvDcfrC-ZVnaCPsT0kyUC2kFNU0vk8Bm0Yz5I4o"; // final safe fallback (self-hosted anon key)
 
   const supaProject =
     env.VITE_SUPABASE_PROJECT_ID ||
     process.env.VITE_SUPABASE_PROJECT_ID ||
     process.env.SUPABASE_PROJECT_ID ||
-    "rgbylwefvhlijfrrdvhi"; // final safe fallback (project id)
+    "supabasekong-okowks8g00ss0ks4c080o40s"; // final safe fallback (self-hosted project id)
 
   return {
     server: {
