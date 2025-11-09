@@ -20,125 +20,7 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE TYPE public.app_role AS ENUM ('admin', 'usuario');
 
 -- =====================================================
--- 3. FUNCIONES AUXILIARES
--- =====================================================
-
--- Función para actualizar updated_at automáticamente
-CREATE OR REPLACE FUNCTION public.update_updated_at_column()
-RETURNS TRIGGER
-LANGUAGE plpgsql
-SET search_path = 'public'
-AS $$
-BEGIN
-  NEW.updated_at = now();
-  RETURN NEW;
-END;
-$$;
-
--- Función para calcular fecha de vencimiento
-CREATE OR REPLACE FUNCTION public.calculate_fecha_vencimiento()
-RETURNS TRIGGER
-LANGUAGE plpgsql
-SET search_path = 'public'
-AS $$
-BEGIN
-  NEW.fecha_vencimiento = NEW.fecha + (NEW.validez_dias || ' days')::INTERVAL;
-  RETURN NEW;
-END;
-$$;
-
--- Función para generar número de presupuesto
-CREATE OR REPLACE FUNCTION public.generate_quote_number()
-RETURNS TRIGGER
-LANGUAGE plpgsql
-SET search_path = 'public'
-AS $$
-DECLARE
-  year_part TEXT;
-  counter INTEGER;
-BEGIN
-  year_part := TO_CHAR(CURRENT_DATE, 'YYYY');
-  
-  SELECT COALESCE(MAX(CAST(SPLIT_PART(numero, '-', 3) AS INTEGER)), 0) + 1
-  INTO counter
-  FROM public.presupuestos
-  WHERE usuario_id = NEW.usuario_id
-  AND numero LIKE 'NEX-' || year_part || '-%';
-  
-  NEW.numero := 'NEX-' || year_part || '-' || LPAD(counter::TEXT, 4, '0');
-  NEW.codigo_auto := NEW.numero;
-  RETURN NEW;
-END;
-$$;
-
--- Función para verificar si un email está permitido
-CREATE OR REPLACE FUNCTION public.email_permitido(email_check text)
-RETURNS boolean
-LANGUAGE sql
-STABLE
-SECURITY DEFINER
-SET search_path = 'public'
-AS $$
-  SELECT EXISTS (
-    SELECT 1
-    FROM public.usuarios_permitidos
-    WHERE email = email_check
-      AND activo = TRUE
-  )
-$$;
-
--- Función para verificar si un usuario tiene un rol específico
-CREATE OR REPLACE FUNCTION public.has_role(_user_id uuid, _role app_role)
-RETURNS boolean
-LANGUAGE sql
-STABLE
-SECURITY DEFINER
-SET search_path = 'public'
-AS $$
-  SELECT EXISTS (
-    SELECT 1
-    FROM public.user_roles
-    WHERE user_id = _user_id
-      AND role = _role
-  )
-$$;
-
--- Función para verificar acceso por token
-CREATE OR REPLACE FUNCTION public.can_view_presupuesto_by_token(presupuesto_id uuid, provided_token text)
-RETURNS boolean
-LANGUAGE sql
-STABLE
-SECURITY DEFINER
-SET search_path = 'public'
-AS $$
-  SELECT EXISTS (
-    SELECT 1
-    FROM public.presupuestos
-    WHERE id = presupuesto_id
-      AND token = provided_token
-  )
-$$;
-
--- Función para crear perfil al registrar usuario
-CREATE OR REPLACE FUNCTION public.handle_new_user()
-RETURNS TRIGGER
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = 'public'
-AS $$
-BEGIN
-  INSERT INTO public.profiles (id, nombre, email)
-  VALUES (
-    NEW.id,
-    COALESCE(NEW.raw_user_meta_data->>'nombre', 'Usuario'),
-    NEW.email
-  );
-  RETURN NEW;
-END;
-$$;
-
--- =====================================================
--- 4. TABLAS
+-- 3. TABLAS
 -- =====================================================
 
 -- Tabla: profiles
@@ -257,6 +139,124 @@ CREATE TABLE public.notificaciones (
   visto boolean DEFAULT false,
   created_at timestamp with time zone DEFAULT now()
 );
+
+-- =====================================================
+-- 4. FUNCIONES AUXILIARES
+-- =====================================================
+
+-- Función para actualizar updated_at automáticamente
+CREATE OR REPLACE FUNCTION public.update_updated_at_column()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SET search_path = 'public'
+AS $$
+BEGIN
+  NEW.updated_at = now();
+  RETURN NEW;
+END;
+$$;
+
+-- Función para calcular fecha de vencimiento
+CREATE OR REPLACE FUNCTION public.calculate_fecha_vencimiento()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SET search_path = 'public'
+AS $$
+BEGIN
+  NEW.fecha_vencimiento = NEW.fecha + (NEW.validez_dias || ' days')::INTERVAL;
+  RETURN NEW;
+END;
+$$;
+
+-- Función para generar número de presupuesto
+CREATE OR REPLACE FUNCTION public.generate_quote_number()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SET search_path = 'public'
+AS $$
+DECLARE
+  year_part TEXT;
+  counter INTEGER;
+BEGIN
+  year_part := TO_CHAR(CURRENT_DATE, 'YYYY');
+  
+  SELECT COALESCE(MAX(CAST(SPLIT_PART(numero, '-', 3) AS INTEGER)), 0) + 1
+  INTO counter
+  FROM public.presupuestos
+  WHERE usuario_id = NEW.usuario_id
+  AND numero LIKE 'NEX-' || year_part || '-%';
+  
+  NEW.numero := 'NEX-' || year_part || '-' || LPAD(counter::TEXT, 4, '0');
+  NEW.codigo_auto := NEW.numero;
+  RETURN NEW;
+END;
+$$;
+
+-- Función para verificar si un email está permitido
+CREATE OR REPLACE FUNCTION public.email_permitido(email_check text)
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = 'public'
+AS $$
+  SELECT EXISTS (
+    SELECT 1
+    FROM public.usuarios_permitidos
+    WHERE email = email_check
+      AND activo = TRUE
+  )
+$$;
+
+-- Función para verificar si un usuario tiene un rol específico
+CREATE OR REPLACE FUNCTION public.has_role(_user_id uuid, _role app_role)
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = 'public'
+AS $$
+  SELECT EXISTS (
+    SELECT 1
+    FROM public.user_roles
+    WHERE user_id = _user_id
+      AND role = _role
+  )
+$$;
+
+-- Función para verificar acceso por token
+CREATE OR REPLACE FUNCTION public.can_view_presupuesto_by_token(presupuesto_id uuid, provided_token text)
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = 'public'
+AS $$
+  SELECT EXISTS (
+    SELECT 1
+    FROM public.presupuestos
+    WHERE id = presupuesto_id
+      AND token = provided_token
+  )
+$$;
+
+-- Función para crear perfil al registrar usuario
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = 'public'
+AS $$
+BEGIN
+  INSERT INTO public.profiles (id, nombre, email)
+  VALUES (
+    NEW.id,
+    COALESCE(NEW.raw_user_meta_data->>'nombre', 'Usuario'),
+    NEW.email
+  );
+  RETURN NEW;
+END;
+$$;
 
 -- =====================================================
 -- 5. TRIGGERS
