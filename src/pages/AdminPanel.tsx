@@ -8,11 +8,10 @@ import { Label } from "@/components/ui/label";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { Trash2, UserPlus, Users, TrendingUp, Key, Eye, EyeOff } from "lucide-react";
+import { Trash2, UserPlus, Users, TrendingUp } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { z } from "zod";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 interface UsuarioPermitido {
   id: string;
@@ -32,28 +31,13 @@ interface Promocion {
   fecha_fin: string | null;
 }
 
-interface UserProfile {
-  id: string;
-  nombre: string;
-  email: string;
-  created_at: string;
-}
-
 export default function AdminPanel() {
   const { isAdmin, loading: authLoading } = useAuth();
   const navigate = useNavigate();
   const [usuariosPermitidos, setUsuariosPermitidos] = useState<UsuarioPermitido[]>([]);
   const [promociones, setPromociones] = useState<Promocion[]>([]);
-  const [userProfiles, setUserProfiles] = useState<UserProfile[]>([]);
   const [newEmail, setNewEmail] = useState("");
   const [loading, setLoading] = useState(false);
-  
-  // Password reset dialog
-  const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
-  const [selectedUser, setSelectedUser] = useState<UserProfile | null>(null);
-  const [newPassword, setNewPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
 
   // Formulario de promociones
   const [promoForm, setPromoForm] = useState({
@@ -77,7 +61,6 @@ export default function AdminPanel() {
     if (isAdmin) {
       loadUsuariosPermitidos();
       loadPromociones();
-      loadUserProfiles();
     }
   }, [isAdmin]);
 
@@ -104,19 +87,6 @@ export default function AdminPanel() {
       toast.error("Error al cargar promociones");
     } else {
       setPromociones(data || []);
-    }
-  };
-
-  const loadUserProfiles = async () => {
-    const { data, error } = await supabase
-      .from("profiles")
-      .select("id, nombre, email, created_at")
-      .order("created_at", { ascending: false });
-
-    if (error) {
-      toast.error("Error al cargar usuarios");
-    } else {
-      setUserProfiles(data || []);
     }
   };
 
@@ -272,58 +242,6 @@ export default function AdminPanel() {
     }
   };
 
-  const handleOpenPasswordDialog = (user: UserProfile) => {
-    setSelectedUser(user);
-    setNewPassword("");
-    setConfirmPassword("");
-    setShowPassword(false);
-    setPasswordDialogOpen(true);
-  };
-
-  const handleResetPassword = async () => {
-    if (!selectedUser) return;
-
-    if (newPassword.length < 6) {
-      toast.error("La contraseña debe tener al menos 6 caracteres");
-      return;
-    }
-
-    if (newPassword !== confirmPassword) {
-      toast.error("Las contraseñas no coinciden");
-      return;
-    }
-
-    setLoading(true);
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-reset-password`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${session?.access_token}`,
-        },
-        body: JSON.stringify({
-          userId: selectedUser.id,
-          newPassword: newPassword,
-        }),
-      });
-
-      const result = await response.json();
-
-      if (!response.ok) {
-        throw new Error(result.error || "Error al cambiar contraseña");
-      }
-
-      toast.success(`Contraseña actualizada para ${selectedUser.email}`);
-      setPasswordDialogOpen(false);
-    } catch (error: any) {
-      toast.error(error.message || "Error al cambiar contraseña");
-    } finally {
-      setLoading(false);
-    }
-  };
-
   if (authLoading) {
     return (
       <DashboardLayout>
@@ -347,14 +265,10 @@ export default function AdminPanel() {
         </div>
 
         <Tabs defaultValue="usuarios" className="w-full">
-          <TabsList className="grid w-full grid-cols-3">
+          <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="usuarios" className="gap-2">
               <Users className="w-4 h-4" />
               Usuarios Permitidos
-            </TabsTrigger>
-            <TabsTrigger value="passwords" className="gap-2">
-              <Key className="w-4 h-4" />
-              Contraseñas
             </TabsTrigger>
             <TabsTrigger value="promociones" className="gap-2">
               <TrendingUp className="w-4 h-4" />
@@ -423,43 +337,6 @@ export default function AdminPanel() {
                           <Trash2 className="w-4 h-4 text-destructive" />
                         </Button>
                       </div>
-                    </div>
-                  ))
-                )}
-              </div>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="passwords" className="space-y-6">
-            <Card className="p-6 bg-card/50 backdrop-blur border-primary/20">
-              <h2 className="text-xl font-semibold mb-4">Gestión de Contraseñas ({userProfiles.length})</h2>
-              <p className="text-sm text-muted-foreground mb-4">
-                Aquí puedes resetear la contraseña de cualquier usuario registrado
-              </p>
-              <div className="space-y-2">
-                {userProfiles.length === 0 ? (
-                  <p className="text-muted-foreground text-center py-8">No hay usuarios registrados</p>
-                ) : (
-                  userProfiles.map((user) => (
-                    <div
-                      key={user.id}
-                      className="flex items-center justify-between p-4 bg-background/50 rounded-lg border border-border"
-                    >
-                      <div className="flex-1">
-                        <p className="font-medium">{user.nombre}</p>
-                        <p className="text-sm text-muted-foreground">{user.email}</p>
-                        <p className="text-xs text-muted-foreground">
-                          Registrado el {new Date(user.created_at).toLocaleDateString()}
-                        </p>
-                      </div>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleOpenPasswordDialog(user)}
-                      >
-                        <Key className="w-4 h-4 mr-2" />
-                        Cambiar Contraseña
-                      </Button>
                     </div>
                   ))
                 )}
@@ -600,64 +477,6 @@ export default function AdminPanel() {
             </Card>
           </TabsContent>
         </Tabs>
-
-        {/* Password Reset Dialog */}
-        <Dialog open={passwordDialogOpen} onOpenChange={setPasswordDialogOpen}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Cambiar Contraseña</DialogTitle>
-              <DialogDescription>
-                Cambiando contraseña para: <strong>{selectedUser?.email}</strong>
-              </DialogDescription>
-            </DialogHeader>
-            
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="new-password">Nueva Contraseña</Label>
-                <div className="relative">
-                  <Input
-                    id="new-password"
-                    type={showPassword ? "text" : "password"}
-                    value={newPassword}
-                    onChange={(e) => setNewPassword(e.target.value)}
-                    placeholder="Mínimo 6 caracteres"
-                    disabled={loading}
-                  />
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="absolute right-0 top-0 h-full px-3"
-                    onClick={() => setShowPassword(!showPassword)}
-                  >
-                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                  </Button>
-                </div>
-              </div>
-              
-              <div className="space-y-2">
-                <Label htmlFor="confirm-password">Confirmar Contraseña</Label>
-                <Input
-                  id="confirm-password"
-                  type={showPassword ? "text" : "password"}
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  placeholder="Repite la contraseña"
-                  disabled={loading}
-                />
-              </div>
-            </div>
-
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setPasswordDialogOpen(false)} disabled={loading}>
-                Cancelar
-              </Button>
-              <Button onClick={handleResetPassword} disabled={loading}>
-                {loading ? "Cambiando..." : "Cambiar Contraseña"}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
       </div>
     </DashboardLayout>
   );
