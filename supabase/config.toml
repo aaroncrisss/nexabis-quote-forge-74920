@@ -1,1 +1,4 @@
 project_id = "xrncxmtscasysbqvmvkz"
+
+[functions.change-user-password]
+verify_jwt = true

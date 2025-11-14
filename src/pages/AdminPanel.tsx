@@ -20,6 +20,12 @@ interface UsuarioPermitido {
   activo: boolean;
 }
 
+interface UserWithProfile {
+  id: string;
+  email: string;
+  created_at: string;
+}
+
 interface Promocion {
   id: string;
   nombre: string;
@@ -36,8 +42,11 @@ export default function AdminPanel() {
   const navigate = useNavigate();
   const [usuariosPermitidos, setUsuariosPermitidos] = useState<UsuarioPermitido[]>([]);
   const [promociones, setPromociones] = useState<Promocion[]>([]);
+  const [registeredUsers, setRegisteredUsers] = useState<UserWithProfile[]>([]);
   const [newEmail, setNewEmail] = useState("");
   const [loading, setLoading] = useState(false);
+  const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
+  const [newPassword, setNewPassword] = useState("");
 
   // Formulario de promociones
   const [promoForm, setPromoForm] = useState({
@@ -61,6 +70,7 @@ export default function AdminPanel() {
     if (isAdmin) {
       loadUsuariosPermitidos();
       loadPromociones();
+      loadRegisteredUsers();
     }
   }, [isAdmin]);
 
@@ -87,6 +97,19 @@ export default function AdminPanel() {
       toast.error("Error al cargar promociones");
     } else {
       setPromociones(data || []);
+    }
+  };
+
+  const loadRegisteredUsers = async () => {
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("id, email, created_at")
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      toast.error("Error al cargar usuarios registrados");
+    } else {
+      setRegisteredUsers(data || []);
     }
   };
 
@@ -242,6 +265,37 @@ export default function AdminPanel() {
     }
   };
 
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedUserId || !newPassword) return;
+
+    if (newPassword.length < 6) {
+      toast.error("La contraseña debe tener al menos 6 caracteres");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('change-user-password', {
+        body: { 
+          userId: selectedUserId, 
+          newPassword: newPassword 
+        }
+      });
+
+      if (error) throw error;
+
+      toast.success("Contraseña actualizada exitosamente");
+      setNewPassword("");
+      setSelectedUserId(null);
+    } catch (error) {
+      console.error('Error changing password:', error);
+      toast.error("Error al cambiar la contraseña");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   if (authLoading) {
     return (
       <DashboardLayout>
@@ -265,10 +319,14 @@ export default function AdminPanel() {
         </div>
 
         <Tabs defaultValue="usuarios" className="w-full">
-          <TabsList className="grid w-full grid-cols-2">
+          <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="usuarios" className="gap-2">
               <Users className="w-4 h-4" />
               Usuarios Permitidos
+            </TabsTrigger>
+            <TabsTrigger value="registrados" className="gap-2">
+              <Users className="w-4 h-4" />
+              Usuarios Registrados
             </TabsTrigger>
             <TabsTrigger value="promociones" className="gap-2">
               <TrendingUp className="w-4 h-4" />
@@ -336,6 +394,68 @@ export default function AdminPanel() {
                         >
                           <Trash2 className="w-4 h-4 text-destructive" />
                         </Button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="registrados" className="space-y-6">
+            {/* Formulario de cambio de contraseña */}
+            <Card className="p-6 bg-card/50 backdrop-blur border-primary/20">
+              <form onSubmit={handleChangePassword} className="space-y-4">
+                <div>
+                  <Label htmlFor="user-select">Cambiar Contraseña de Usuario</Label>
+                  <div className="space-y-2 mt-2">
+                    <select
+                      id="user-select"
+                      className="w-full p-2 rounded-md border bg-background"
+                      value={selectedUserId || ""}
+                      onChange={(e) => setSelectedUserId(e.target.value)}
+                      required
+                    >
+                      <option value="">Selecciona un usuario</option>
+                      {registeredUsers.map((user) => (
+                        <option key={user.id} value={user.id}>
+                          {user.email}
+                        </option>
+                      ))}
+                    </select>
+                    <Input
+                      type="password"
+                      placeholder="Nueva contraseña (mín. 6 caracteres)"
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      required
+                      minLength={6}
+                    />
+                    <Button type="submit" disabled={loading || !selectedUserId}>
+                      Cambiar Contraseña
+                    </Button>
+                  </div>
+                </div>
+              </form>
+            </Card>
+
+            {/* Lista de usuarios registrados */}
+            <Card className="p-6 bg-card/50 backdrop-blur border-primary/20">
+              <h2 className="text-xl font-semibold mb-4">Usuarios Registrados ({registeredUsers.length})</h2>
+              <div className="space-y-2">
+                {registeredUsers.length === 0 ? (
+                  <p className="text-muted-foreground text-center py-8">No hay usuarios registrados</p>
+                ) : (
+                  registeredUsers.map((user) => (
+                    <div
+                      key={user.id}
+                      className="flex items-center justify-between p-4 bg-background/50 rounded-lg border border-border"
+                    >
+                      <div className="flex-1">
+                        <p className="font-medium">{user.email}</p>
+                        <p className="text-sm text-muted-foreground">
+                          Registrado el {new Date(user.created_at).toLocaleDateString()}
+                        </p>
                       </div>
                     </div>
                   ))
