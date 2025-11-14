@@ -12,20 +12,20 @@ export default defineConfig(({ mode }) => {
     env.VITE_SUPABASE_URL ||
     process.env.VITE_SUPABASE_URL ||
     process.env.SUPABASE_URL ||
-    "http://supabasekong-okowks8g00ss0ks4c080o40s.31.97.163.113.sslip.io"; // final safe fallback (self-hosted URL)
+    "https://supabase.nexabistech.com"; // final safe fallback (self-hosted URL)
 
   const supaKey =
     env.VITE_SUPABASE_PUBLISHABLE_KEY ||
     process.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
     process.env.SUPABASE_PUBLISHABLE_KEY ||
     process.env.SUPABASE_ANON_KEY ||
-    "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJzdXBhYmFzZSIsImlhdCI6MTc2MjY2ODkwMCwiZXhwIjo0OTE4MzQyNTAwLCJyb2xlIjoiYW5vbiJ9.zQ5AXvDcfrC-ZVnaCPsT0kyUC2kFNU0vk8Bm0Yz5I4o"; // final safe fallback (self-hosted anon key)
+    "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJzdXBhYmFzZSIsImlhdCI6MTc2MzEyOTUyMCwiZXhwIjo0OTE4ODAzMTIwLCJyb2xlIjoiYW5vbiJ9.f5Z5rJ36MnDe8nt7yGIBhxSZPQMsq_-0kpEFedYSoPY"; // final safe fallback (self-hosted anon key)
 
   const supaProject =
     env.VITE_SUPABASE_PROJECT_ID ||
     process.env.VITE_SUPABASE_PROJECT_ID ||
     process.env.SUPABASE_PROJECT_ID ||
-    "supabasekong-okowks8g00ss0ks4c080o40s"; // final safe fallback (self-hosted project id)
+    "supabasekong-r8w4w4ckogk0s8oko8cwoo0c"; // final safe fallback (self-hosted project id)
 
   return {
     server: {
