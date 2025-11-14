@@ -19,7 +19,7 @@ export default defineConfig(({ mode }) => {
     process.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
     process.env.SUPABASE_PUBLISHABLE_KEY ||
     process.env.SUPABASE_ANON_KEY ||
-    "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJzdXBhYmFzZSIsImlhdCI6MTc2MzEyOTUyMCwiZXhwIjo0OTE4ODAzMTIwLCJyb2xlIjoiYW5vbiJ9.f5Z5rJ36MnDe8nt7yGIBhxSZPQMsq_-0kpEFedYSoPY"; // final safe fallback (self-hosted anon key)
+    "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJzdXBhYmFzZSIsImlhdCI6MTc2MzEzMTU2MCwiZXhwIjo0OTE4ODA1MTYwLCJyb2xlIjoiYW5vbiJ9.AqizZuZKilSwv5aiPwaWx5wooHg-5KjoH8rNZAnymCY"; // final safe fallback (self-hosted anon key)
 
   const supaProject =
     env.VITE_SUPABASE_PROJECT_ID ||
