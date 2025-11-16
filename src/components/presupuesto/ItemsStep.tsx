@@ -121,7 +121,7 @@ export function ItemsStep({
     onUpdate({
       items: [
         ...items,
-        { descripcion: "", cantidad: "", precio_unitario: "", total: 0 },
+        { descripcion: "", cantidad: "", precio_unitario: "", total: "" },
       ],
     });
   };
@@ -153,15 +153,15 @@ export function ItemsStep({
   const simbolo = moneda === "USD" ? "$" : "$";
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 md:space-y-6">
       <div>
-        <h2 className="text-2xl font-bold gradient-text mb-4">Paso 2: Agregar Items</h2>
-        <p className="text-muted-foreground mb-6">Defina los productos o servicios del presupuesto</p>
+        <h2 className="text-xl md:text-2xl font-bold gradient-text mb-3 md:mb-4">Paso 2: Agregar Items</h2>
+        <p className="text-sm md:text-base text-muted-foreground mb-4 md:mb-6">Defina los productos o servicios del presupuesto</p>
       </div>
 
-      <div className="flex gap-4 mb-6">
+      <div className="flex flex-col sm:flex-row gap-4 mb-4 md:mb-6">
         <div className="flex-1">
-          <Label>Moneda</Label>
+          <Label className="text-sm md:text-base">Moneda</Label>
           <Select value={moneda} onValueChange={(value) => onUpdate({ moneda: value })}>
             <SelectTrigger className="mt-2">
               <SelectValue />
@@ -174,12 +174,12 @@ export function ItemsStep({
         </div>
       </div>
 
-      <div className="space-y-4">
+      <div className="space-y-3 md:space-y-4">
         {items.map((item, index) => (
-          <div key={index} className="p-4 bg-muted/30 rounded-lg border border-primary/10 space-y-3">
+          <div key={index} className="p-3 md:p-4 bg-muted/30 rounded-lg border border-primary/10 space-y-3">
             <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
               <div className="md:col-span-5">
-                <Label>Descripción</Label>
+                <Label className="text-sm">Descripción</Label>
                 <Input
                   value={item.descripcion}
                   onChange={(e) => updateItem(index, "descripcion", e.target.value)}
@@ -188,27 +188,29 @@ export function ItemsStep({
                 />
               </div>
               <div className="md:col-span-2">
-                <Label>Cantidad</Label>
+                <Label className="text-sm">Cantidad</Label>
                 <Input
                   type="number"
                   value={item.cantidad}
                   onChange={(e) => updateItem(index, "cantidad", e.target.value)}
+                  placeholder=""
                   min="1"
                   className="mt-1"
                 />
               </div>
               <div className="md:col-span-2">
-                <Label>Precio Unit.</Label>
+                <Label className="text-sm">Precio Unit.</Label>
                 <Input
                   type="number"
                   value={item.precio_unitario}
                   onChange={(e) => updateItem(index, "precio_unitario", e.target.value)}
+                  placeholder=""
                   min="0"
                   className="mt-1"
                 />
               </div>
               <div className="md:col-span-2">
-                <Label>Total</Label>
+                <Label className="text-sm">Total</Label>
                 <Input
                   value={`${simbolo} ${item.total.toLocaleString()}`}
                   disabled
@@ -235,10 +237,10 @@ export function ItemsStep({
         </Button>
       </div>
 
-      <div className="border-t border-primary/20 pt-6 space-y-4">
+      <div className="border-t border-primary/20 pt-4 md:pt-6 space-y-4">
         <div className="space-y-4">
           <div>
-            <Label>Promoción (Opcional)</Label>
+            <Label className="text-sm md:text-base">Promoción (Opcional)</Label>
             <Select
               value={promocionAplicada || "ninguna"}
               onValueChange={handlePromocionChange}
@@ -262,9 +264,9 @@ export function ItemsStep({
             )}
           </div>
 
-          <div className="flex gap-4">
+          <div className="flex flex-col sm:flex-row gap-4">
             <div className="flex-1">
-              <Label>Tipo de Descuento Adicional</Label>
+              <Label className="text-sm md:text-base">Tipo de Descuento Adicional</Label>
               <Select
                 value={descuentoTipo || "ninguno"}
                 onValueChange={(value) =>
@@ -283,7 +285,7 @@ export function ItemsStep({
             </div>
             {descuentoTipo && descuentoTipo !== "ninguno" && (
               <div className="flex-1">
-                <Label>Valor del Descuento</Label>
+                <Label className="text-sm md:text-base">Valor del Descuento</Label>
                 <Input
                   type="number"
                   value={descuentoValor}
@@ -296,28 +298,28 @@ export function ItemsStep({
           </div>
         </div>
 
-        <div className="bg-gradient-to-r from-primary/10 via-accent/10 to-warning/10 p-6 rounded-lg space-y-2">
-          <div className="flex justify-between text-lg">
+        <div className="bg-gradient-to-r from-primary/10 via-accent/10 to-warning/10 p-4 md:p-6 rounded-lg space-y-2">
+          <div className="flex justify-between text-base md:text-lg">
             <span className="text-muted-foreground">Subtotal (sin IVA):</span>
             <span className="font-bold">
               {simbolo} {Math.round(subtotal).toLocaleString()}
             </span>
           </div>
           {descuento_total > 0 && (
-            <div className="flex justify-between text-lg text-warning">
+            <div className="flex justify-between text-base md:text-lg text-warning">
               <span>Descuento:</span>
               <span className="font-bold">
                 - {simbolo} {Math.round(descuento_total).toLocaleString()}
               </span>
             </div>
           )}
-          <div className="flex justify-between text-lg text-accent">
+          <div className="flex justify-between text-base md:text-lg text-accent">
             <span>IVA (19%):</span>
             <span className="font-bold">
               {simbolo} {Math.round(iva_monto).toLocaleString()}
             </span>
           </div>
-          <div className="flex justify-between text-2xl border-t border-primary/20 pt-2">
+          <div className="flex justify-between text-xl md:text-2xl border-t border-primary/20 pt-2">
             <span className="gradient-text font-bold">TOTAL:</span>
             <span className="gradient-text font-bold">
               {simbolo} {Math.round(total).toLocaleString()} {moneda}

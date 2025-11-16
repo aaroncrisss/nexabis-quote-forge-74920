@@ -35,15 +35,15 @@ export function TermsStep({ validezDias, formaPago, terminos, notasTrabajo, onUp
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 md:space-y-6">
       <div>
-        <h2 className="text-2xl font-bold gradient-text mb-4">Paso 3: Términos y Condiciones</h2>
-        <p className="text-muted-foreground mb-6">Configure la validez y condiciones del presupuesto</p>
+        <h2 className="text-xl md:text-2xl font-bold gradient-text mb-3 md:mb-4">Paso 3: Términos y Condiciones</h2>
+        <p className="text-sm md:text-base text-muted-foreground mb-4 md:mb-6">Configure la validez y condiciones del presupuesto</p>
       </div>
 
       <div className="space-y-4">
         <div>
-          <Label htmlFor="validez">Validez del Presupuesto (días)</Label>
+          <Label htmlFor="validez" className="text-sm md:text-base">Validez del Presupuesto (días)</Label>
           <Input
             id="validez"
             type="number"
@@ -52,13 +52,13 @@ export function TermsStep({ validezDias, formaPago, terminos, notasTrabajo, onUp
             min="1"
             className="mt-2"
           />
-          <p className="text-sm text-muted-foreground mt-1">
+          <p className="text-xs md:text-sm text-muted-foreground mt-1">
             El presupuesto será válido por {validezDias} días desde su creación
           </p>
         </div>
 
         <div>
-          <Label htmlFor="forma_pago">Forma de Pago</Label>
+          <Label htmlFor="forma_pago" className="text-sm md:text-base">Forma de Pago</Label>
           <Input
             id="forma_pago"
             value={formaPago}
@@ -69,7 +69,7 @@ export function TermsStep({ validezDias, formaPago, terminos, notasTrabajo, onUp
         </div>
 
         <div>
-          <Label htmlFor="notas_trabajo">Notas del Trabajo (Opcional)</Label>
+          <Label htmlFor="notas_trabajo" className="text-sm md:text-base">Notas del Trabajo (Opcional)</Label>
           <Textarea
             id="notas_trabajo"
             value={notasTrabajo}
@@ -78,13 +78,13 @@ export function TermsStep({ validezDias, formaPago, terminos, notasTrabajo, onUp
             rows={4}
             className="mt-2"
           />
-          <p className="text-sm text-muted-foreground mt-1">
+          <p className="text-xs md:text-sm text-muted-foreground mt-1">
             Descripción detallada del trabajo a realizar
           </p>
         </div>
 
         <div>
-          <Label htmlFor="terminos">Términos y Condiciones</Label>
+          <Label htmlFor="terminos" className="text-sm md:text-base">Términos y Condiciones</Label>
           <Textarea
             id="terminos"
             value={terminos}
@@ -93,7 +93,7 @@ export function TermsStep({ validezDias, formaPago, terminos, notasTrabajo, onUp
             rows={6}
             className="mt-2"
           />
-          <p className="text-sm text-muted-foreground mt-1">
+          <p className="text-xs md:text-sm text-muted-foreground mt-1">
             Estos términos aparecerán en el presupuesto enviado al cliente
           </p>
         </div>

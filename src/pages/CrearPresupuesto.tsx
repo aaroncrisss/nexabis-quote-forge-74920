@@ -187,17 +187,17 @@ export default function CrearPresupuesto() {
   ];
 
   return (
-    <div className="container mx-auto py-8 px-4 max-w-6xl">
-      <div className="mb-8">
-        <h1 className="text-4xl font-bold gradient-text mb-2">Crear Nuevo Presupuesto</h1>
-        <p className="text-muted-foreground">Complete los pasos para generar su presupuesto profesional</p>
+    <div className="container mx-auto py-4 md:py-8 px-4 max-w-6xl">
+      <div className="mb-6 md:mb-8">
+        <h1 className="text-2xl md:text-4xl font-bold gradient-text mb-2">Crear Nuevo Presupuesto</h1>
+        <p className="text-sm md:text-base text-muted-foreground">Complete los pasos para generar su presupuesto profesional</p>
       </div>
 
-      <div className="flex items-center justify-center mb-8 gap-2">
+      <div className="flex items-center justify-center mb-6 md:mb-8 gap-1 md:gap-2 overflow-x-auto">
         {steps.map((s, idx) => (
-          <div key={s.number} className="flex items-center">
+          <div key={s.number} className="flex items-center flex-shrink-0">
             <div
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-all ${
+              className={`flex items-center gap-1 md:gap-2 px-2 md:px-4 py-2 rounded-lg transition-all ${
                 step === s.number
                   ? "bg-gradient-to-r from-primary via-accent to-warning text-black"
                   : step > s.number
@@ -205,19 +205,19 @@ export default function CrearPresupuesto() {
                   : "bg-muted text-muted-foreground"
               }`}
             >
-              <div className="w-6 h-6 rounded-full bg-background/20 flex items-center justify-center font-bold">
-                {step > s.number ? <Check className="w-4 h-4" /> : s.number}
+              <div className="w-5 h-5 md:w-6 md:h-6 rounded-full bg-background/20 flex items-center justify-center font-bold text-xs md:text-sm">
+                {step > s.number ? <Check className="w-3 h-3 md:w-4 md:h-4" /> : s.number}
               </div>
-              <span className="font-semibold hidden sm:inline">{s.title}</span>
+              <span className="font-semibold text-xs md:text-sm hidden sm:inline">{s.title}</span>
             </div>
             {idx < steps.length - 1 && (
-              <div className="w-12 h-0.5 bg-muted mx-2" />
+              <div className="w-6 md:w-12 h-0.5 bg-muted mx-1 md:mx-2" />
             )}
           </div>
         ))}
       </div>
 
-      <Card className="p-6 bg-card/50 backdrop-blur border-primary/20">
+      <Card className="p-4 md:p-6 bg-card/50 backdrop-blur border-primary/20">
         {step === 1 && (
           <ClienteStep
             clienteId={presupuesto.cliente_id}
@@ -252,11 +252,12 @@ export default function CrearPresupuesto() {
           />
         )}
 
-        <div className="flex justify-between mt-8">
+        <div className="flex flex-col sm:flex-row justify-between gap-3 mt-6 md:mt-8">
           <Button
             variant="outline"
             onClick={() => step > 1 ? setStep(step - 1) : navigate("/presupuestos")}
             disabled={loading}
+            className="w-full sm:w-auto"
           >
             <ArrowLeft className="w-4 h-4 mr-2" />
             {step === 1 ? "Cancelar" : "Anterior"}
@@ -267,6 +268,7 @@ export default function CrearPresupuesto() {
               onClick={() => setStep(step + 1)}
               disabled={!canGoNext()}
               variant="default"
+              className="w-full sm:w-auto"
             >
               Siguiente
               <ArrowRight className="w-4 h-4 ml-2" />
@@ -276,6 +278,7 @@ export default function CrearPresupuesto() {
               onClick={handleSubmit}
               disabled={loading}
               variant="default"
+              className="w-full sm:w-auto"
             >
               <Check className="w-4 h-4 mr-2" />
               {loading ? "Creando..." : "Crear Presupuesto"}
