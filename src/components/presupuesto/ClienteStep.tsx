@@ -98,18 +98,18 @@ export function ClienteStep({ clienteId, titulo, onUpdate }: ClienteStepProps) {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 md:space-y-6">
       <div>
-        <h2 className="text-2xl font-bold gradient-text mb-4">Paso 1: Seleccionar Cliente</h2>
-        <p className="text-muted-foreground mb-6">Elija un cliente existente o cree uno nuevo</p>
+        <h2 className="text-xl md:text-2xl font-bold gradient-text mb-3 md:mb-4">Paso 1: Seleccionar Cliente</h2>
+        <p className="text-sm md:text-base text-muted-foreground mb-4 md:mb-6">Elija un cliente existente o cree uno nuevo</p>
       </div>
 
       <div className="space-y-4">
         <div>
-          <Label htmlFor="cliente">Cliente</Label>
-          <div className="flex gap-2 mt-2">
+          <Label htmlFor="cliente" className="text-sm md:text-base">Cliente</Label>
+          <div className="flex flex-col sm:flex-row gap-2 mt-2">
             <Select value={clienteId} onValueChange={(value) => onUpdate({ cliente_id: value })}>
-              <SelectTrigger className="flex-1">
+              <SelectTrigger className="flex-1 w-full">
                 <SelectValue placeholder="Seleccione un cliente" />
               </SelectTrigger>
               <SelectContent>
@@ -134,55 +134,60 @@ export function ClienteStep({ clienteId, titulo, onUpdate }: ClienteStepProps) {
                   Nuevo
                 </Button>
               </DialogTrigger>
-              <DialogContent>
+              <DialogContent className="max-w-md mx-4 md:mx-auto">
                 <DialogHeader>
-                  <DialogTitle>Crear Nuevo Cliente</DialogTitle>
+                  <DialogTitle className="text-lg md:text-xl">Crear Nuevo Cliente</DialogTitle>
                 </DialogHeader>
                 <div className="space-y-4">
                   <div>
-                    <Label htmlFor="nombre">Nombre *</Label>
+                    <Label htmlFor="nombre" className="text-sm">Nombre *</Label>
                     <Input
                       id="nombre"
                       value={nuevoCliente.nombre}
                       onChange={(e) => setNuevoCliente({ ...nuevoCliente, nombre: e.target.value })}
                       placeholder="Juan Pérez"
+                      className="mt-1"
                     />
                   </div>
                   <div>
-                    <Label htmlFor="empresa">Empresa</Label>
+                    <Label htmlFor="empresa" className="text-sm">Empresa</Label>
                     <Input
                       id="empresa"
                       value={nuevoCliente.empresa}
                       onChange={(e) => setNuevoCliente({ ...nuevoCliente, empresa: e.target.value })}
                       placeholder="Empresa S.A."
+                      className="mt-1"
                     />
                   </div>
                   <div>
-                    <Label htmlFor="email">Email *</Label>
+                    <Label htmlFor="email" className="text-sm">Email *</Label>
                     <Input
                       id="email"
                       type="email"
                       value={nuevoCliente.email}
                       onChange={(e) => setNuevoCliente({ ...nuevoCliente, email: e.target.value })}
                       placeholder="cliente@email.com"
+                      className="mt-1"
                     />
                   </div>
                   <div>
-                    <Label htmlFor="telefono">Teléfono</Label>
+                    <Label htmlFor="telefono" className="text-sm">Teléfono</Label>
                     <Input
                       id="telefono"
                       value={nuevoCliente.telefono}
                       onChange={(e) => setNuevoCliente({ ...nuevoCliente, telefono: e.target.value })}
                       placeholder="+56 9 1234 5678"
+                      className="mt-1"
                     />
                   </div>
                   <div>
-                    <Label htmlFor="direccion">Dirección</Label>
+                    <Label htmlFor="direccion" className="text-sm">Dirección</Label>
                     <Input
                       id="direccion"
                       value={nuevoCliente.direccion}
                       onChange={(e) => setNuevoCliente({ ...nuevoCliente, direccion: e.target.value })}
                       placeholder="Av. Principal 123"
+                      className="mt-1"
                     />
                   </div>
                   <Button onClick={handleCreateCliente} className="w-full gradient-button">
@@ -195,7 +200,7 @@ export function ClienteStep({ clienteId, titulo, onUpdate }: ClienteStepProps) {
         </div>
 
         <div>
-          <Label htmlFor="titulo">Título del Presupuesto *</Label>
+          <Label htmlFor="titulo" className="text-sm md:text-base">Título del Presupuesto *</Label>
           <Input
             id="titulo"
             value={titulo}

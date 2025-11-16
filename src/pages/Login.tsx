@@ -64,16 +64,16 @@ const Login = () => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background p-4">
-      <Card className="w-full max-w-md p-8 space-y-6 bg-card/50 backdrop-blur-sm">
+    <div className="min-h-screen flex items-center justify-center bg-background p-4 md:p-6">
+      <Card className="w-full max-w-md p-6 md:p-8 space-y-4 md:space-y-6 bg-card/50 backdrop-blur-sm">
         <div className="text-center space-y-2">
-          <div className="flex justify-center mb-4">
-            <img src={nexabisLogo} alt="NEXABIS" className="h-16 w-16" />
+          <div className="flex justify-center mb-3 md:mb-4">
+            <img src={nexabisLogo} alt="NEXABIS" className="h-12 w-12 md:h-16 md:w-16" />
           </div>
-          <h1 className="text-3xl font-heading font-bold gradient-text">
+          <h1 className="text-2xl md:text-3xl font-heading font-bold gradient-text">
             Iniciar Sesión
           </h1>
-          <p className="text-muted-foreground">
+          <p className="text-sm md:text-base text-muted-foreground">
             Ingresa a tu cuenta de NEXABIS
           </p>
         </div>
