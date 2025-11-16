@@ -312,35 +312,37 @@ export default function AdminPanel() {
 
   return (
     <DashboardLayout>
-      <div className="space-y-6">
+      <div className="space-y-4 md:space-y-6">
         <div>
-          <h1 className="text-4xl font-bold gradient-text mb-2">Panel de Administración</h1>
-          <p className="text-muted-foreground">Gestiona usuarios e invitaciones para NEXABIS Quotes</p>
+          <h1 className="text-2xl md:text-3xl lg:text-4xl font-bold gradient-text mb-2">Panel de Administración</h1>
+          <p className="text-sm md:text-base text-muted-foreground">Gestiona usuarios e invitaciones para NEXABIS Quotes</p>
         </div>
 
         <Tabs defaultValue="usuarios" className="w-full">
-          <TabsList className="grid w-full grid-cols-3">
-            <TabsTrigger value="usuarios" className="gap-2">
-              <Users className="w-4 h-4" />
-              Usuarios Permitidos
+          <TabsList className="grid w-full grid-cols-3 h-auto">
+            <TabsTrigger value="usuarios" className="gap-1 md:gap-2 flex-col md:flex-row py-2 md:py-3 text-xs md:text-sm">
+              <Users className="w-3 h-3 md:w-4 md:h-4" />
+              <span className="hidden sm:inline">Usuarios Permitidos</span>
+              <span className="sm:hidden">Permitidos</span>
             </TabsTrigger>
-            <TabsTrigger value="registrados" className="gap-2">
-              <Users className="w-4 h-4" />
-              Usuarios Registrados
+            <TabsTrigger value="registrados" className="gap-1 md:gap-2 flex-col md:flex-row py-2 md:py-3 text-xs md:text-sm">
+              <Users className="w-3 h-3 md:w-4 md:h-4" />
+              <span className="hidden sm:inline">Usuarios Registrados</span>
+              <span className="sm:hidden">Registrados</span>
             </TabsTrigger>
-            <TabsTrigger value="promociones" className="gap-2">
-              <TrendingUp className="w-4 h-4" />
-              Promociones
+            <TabsTrigger value="promociones" className="gap-1 md:gap-2 flex-col md:flex-row py-2 md:py-3 text-xs md:text-sm">
+              <TrendingUp className="w-3 h-3 md:w-4 md:h-4" />
+              <span>Promociones</span>
             </TabsTrigger>
           </TabsList>
 
-          <TabsContent value="usuarios" className="space-y-6">
+          <TabsContent value="usuarios" className="space-y-4 md:space-y-6">
             {/* Formulario de invitación */}
-            <Card className="p-6 bg-card/50 backdrop-blur border-primary/20">
+            <Card className="p-4 md:p-6 bg-card/50 backdrop-blur border-primary/20">
               <form onSubmit={handleInviteUser} className="space-y-4">
                 <div>
-                  <Label htmlFor="email">Invitar Usuario por Email</Label>
-                  <div className="flex gap-2 mt-2">
+                  <Label htmlFor="email" className="text-sm md:text-base">Invitar Usuario por Email</Label>
+                  <div className="flex flex-col sm:flex-row gap-2 mt-2">
                     <Input
                       id="email"
                       type="email"
@@ -348,8 +350,9 @@ export default function AdminPanel() {
                       value={newEmail}
                       onChange={(e) => setNewEmail(e.target.value)}
                       required
+                      className="flex-1"
                     />
-                    <Button type="submit" disabled={loading}>
+                    <Button type="submit" disabled={loading} className="w-full sm:w-auto">
                       <UserPlus className="w-4 h-4 mr-2" />
                       Invitar
                     </Button>
@@ -359,26 +362,26 @@ export default function AdminPanel() {
             </Card>
 
             {/* Lista de usuarios permitidos */}
-            <Card className="p-6 bg-card/50 backdrop-blur border-primary/20">
-              <h2 className="text-xl font-semibold mb-4">Usuarios Permitidos ({usuariosPermitidos.length})</h2>
+            <Card className="p-4 md:p-6 bg-card/50 backdrop-blur border-primary/20">
+              <h2 className="text-lg md:text-xl font-semibold mb-4">Usuarios Permitidos ({usuariosPermitidos.length})</h2>
               <div className="space-y-2">
                 {usuariosPermitidos.length === 0 ? (
-                  <p className="text-muted-foreground text-center py-8">No hay usuarios invitados</p>
+                  <p className="text-sm md:text-base text-muted-foreground text-center py-8">No hay usuarios invitados</p>
                 ) : (
                   usuariosPermitidos.map((usuario) => (
                     <div
                       key={usuario.id}
-                      className="flex items-center justify-between p-4 bg-background/50 rounded-lg border border-border"
+                      className="flex flex-col sm:flex-row sm:items-center justify-between p-3 md:p-4 bg-background/50 rounded-lg border border-border gap-3"
                     >
                       <div className="flex-1">
-                        <p className="font-medium">{usuario.email}</p>
-                        <p className="text-sm text-muted-foreground">
+                        <p className="font-medium text-sm md:text-base">{usuario.email}</p>
+                        <p className="text-xs md:text-sm text-muted-foreground">
                           Invitado el {new Date(usuario.fecha_invitacion).toLocaleDateString()}
                         </p>
                       </div>
-                      <div className="flex items-center gap-4">
+                      <div className="flex items-center gap-3 md:gap-4">
                         <div className="flex items-center gap-2">
-                          <Label htmlFor={`active-${usuario.id}`} className="text-sm">
+                          <Label htmlFor={`active-${usuario.id}`} className="text-xs md:text-sm">
                             {usuario.activo ? "Activo" : "Inactivo"}
                           </Label>
                           <Switch
@@ -402,16 +405,16 @@ export default function AdminPanel() {
             </Card>
           </TabsContent>
 
-          <TabsContent value="registrados" className="space-y-6">
+          <TabsContent value="registrados" className="space-y-4 md:space-y-6">
             {/* Formulario de cambio de contraseña */}
-            <Card className="p-6 bg-card/50 backdrop-blur border-primary/20">
+            <Card className="p-4 md:p-6 bg-card/50 backdrop-blur border-primary/20">
               <form onSubmit={handleChangePassword} className="space-y-4">
                 <div>
-                  <Label htmlFor="user-select">Cambiar Contraseña de Usuario</Label>
+                  <Label htmlFor="user-select" className="text-sm md:text-base">Cambiar Contraseña de Usuario</Label>
                   <div className="space-y-2 mt-2">
                     <select
                       id="user-select"
-                      className="w-full p-2 rounded-md border bg-background"
+                      className="w-full p-2 rounded-md border bg-background text-sm md:text-base"
                       value={selectedUserId || ""}
                       onChange={(e) => setSelectedUserId(e.target.value)}
                       required
@@ -431,7 +434,7 @@ export default function AdminPanel() {
                       required
                       minLength={6}
                     />
-                    <Button type="submit" disabled={loading || !selectedUserId}>
+                    <Button type="submit" disabled={loading || !selectedUserId} className="w-full sm:w-auto">
                       Cambiar Contraseña
                     </Button>
                   </div>
@@ -440,20 +443,20 @@ export default function AdminPanel() {
             </Card>
 
             {/* Lista de usuarios registrados */}
-            <Card className="p-6 bg-card/50 backdrop-blur border-primary/20">
-              <h2 className="text-xl font-semibold mb-4">Usuarios Registrados ({registeredUsers.length})</h2>
+            <Card className="p-4 md:p-6 bg-card/50 backdrop-blur border-primary/20">
+              <h2 className="text-lg md:text-xl font-semibold mb-4">Usuarios Registrados ({registeredUsers.length})</h2>
               <div className="space-y-2">
                 {registeredUsers.length === 0 ? (
-                  <p className="text-muted-foreground text-center py-8">No hay usuarios registrados</p>
+                  <p className="text-sm md:text-base text-muted-foreground text-center py-8">No hay usuarios registrados</p>
                 ) : (
                   registeredUsers.map((user) => (
                     <div
                       key={user.id}
-                      className="flex items-center justify-between p-4 bg-background/50 rounded-lg border border-border"
+                      className="flex items-center justify-between p-3 md:p-4 bg-background/50 rounded-lg border border-border"
                     >
                       <div className="flex-1">
-                        <p className="font-medium">{user.email}</p>
-                        <p className="text-sm text-muted-foreground">
+                        <p className="font-medium text-sm md:text-base">{user.email}</p>
+                        <p className="text-xs md:text-sm text-muted-foreground">
                           Registrado el {new Date(user.created_at).toLocaleDateString()}
                         </p>
                       </div>
@@ -464,14 +467,14 @@ export default function AdminPanel() {
             </Card>
           </TabsContent>
 
-          <TabsContent value="promociones" className="space-y-6">
+          <TabsContent value="promociones" className="space-y-4 md:space-y-6">
             {/* Formulario de promociones */}
-            <Card className="p-6 bg-card/50 backdrop-blur border-primary/20">
+            <Card className="p-4 md:p-6 bg-card/50 backdrop-blur border-primary/20">
               <form onSubmit={handleCreatePromocion} className="space-y-4">
-                <h2 className="text-xl font-semibold mb-4">Crear Nueva Promoción</h2>
+                <h2 className="text-lg md:text-xl font-semibold mb-4">Crear Nueva Promoción</h2>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <Label htmlFor="nombre">Nombre *</Label>
+                    <Label htmlFor="nombre" className="text-sm md:text-base">Nombre *</Label>
                     <Input
                       id="nombre"
                       value={promoForm.nombre}
@@ -481,7 +484,7 @@ export default function AdminPanel() {
                     />
                   </div>
                   <div>
-                    <Label htmlFor="descuento">Descuento (%) *</Label>
+                    <Label htmlFor="descuento" className="text-sm md:text-base">Descuento (%) *</Label>
                     <Input
                       id="descuento"
                       type="number"
@@ -493,7 +496,7 @@ export default function AdminPanel() {
                     />
                   </div>
                   <div>
-                    <Label htmlFor="monto">Monto Mínimo *</Label>
+                    <Label htmlFor="monto" className="text-sm md:text-base">Monto Mínimo *</Label>
                     <Input
                       id="monto"
                       type="number"
@@ -504,7 +507,7 @@ export default function AdminPanel() {
                     />
                   </div>
                   <div>
-                    <Label htmlFor="fecha_inicio">Fecha Inicio (opcional)</Label>
+                    <Label htmlFor="fecha_inicio" className="text-sm md:text-base">Fecha Inicio (opcional)</Label>
                     <Input
                       id="fecha_inicio"
                       type="date"
@@ -513,7 +516,7 @@ export default function AdminPanel() {
                     />
                   </div>
                   <div>
-                    <Label htmlFor="fecha_fin">Fecha Fin (opcional)</Label>
+                    <Label htmlFor="fecha_fin" className="text-sm md:text-base">Fecha Fin (opcional)</Label>
                     <Input
                       id="fecha_fin"
                       type="date"
@@ -521,7 +524,7 @@ export default function AdminPanel() {
                       onChange={(e) => setPromoForm({ ...promoForm, fecha_fin: e.target.value })}
                     />
                   </div>
-                  <div className="flex items-center gap-2 pt-6">
+                  <div className="flex items-center gap-2 pt-0 md:pt-6">
                     <Switch
                       checked={promoForm.activa}
                       onCheckedChange={(checked) => setPromoForm({ ...promoForm, activa: checked })}
@@ -530,7 +533,7 @@ export default function AdminPanel() {
                   </div>
                 </div>
                 <div>
-                  <Label htmlFor="descripcion">Descripción</Label>
+                  <Label htmlFor="descripcion" className="text-sm md:text-base">Descripción</Label>
                   <Input
                     id="descripcion"
                     value={promoForm.descripcion}
@@ -538,7 +541,7 @@ export default function AdminPanel() {
                     placeholder="Descripción de la promoción"
                   />
                 </div>
-                <Button type="submit" disabled={loading}>
+                <Button type="submit" disabled={loading} className="w-full sm:w-auto">
                   <TrendingUp className="w-4 h-4 mr-2" />
                   Crear Promoción
                 </Button>
@@ -546,34 +549,34 @@ export default function AdminPanel() {
             </Card>
 
             {/* Lista de promociones */}
-            <Card className="p-6 bg-card/50 backdrop-blur border-primary/20">
-              <h2 className="text-xl font-semibold mb-4">Promociones Actuales ({promociones.length})</h2>
+            <Card className="p-4 md:p-6 bg-card/50 backdrop-blur border-primary/20">
+              <h2 className="text-lg md:text-xl font-semibold mb-4">Promociones Actuales ({promociones.length})</h2>
               <div className="space-y-2">
                 {promociones.length === 0 ? (
-                  <p className="text-muted-foreground text-center py-8">No hay promociones creadas</p>
+                  <p className="text-sm md:text-base text-muted-foreground text-center py-8">No hay promociones creadas</p>
                 ) : (
                   promociones.map((promo) => (
                     <div
                       key={promo.id}
-                      className="flex items-center justify-between p-4 bg-background/50 rounded-lg border border-border"
+                      className="flex flex-col sm:flex-row sm:items-center justify-between p-3 md:p-4 bg-background/50 rounded-lg border border-border gap-3"
                     >
                       <div className="flex-1">
-                        <p className="font-medium">{promo.nombre}</p>
-                        <p className="text-sm text-muted-foreground">
+                        <p className="font-medium text-sm md:text-base">{promo.nombre}</p>
+                        <p className="text-xs md:text-sm text-muted-foreground">
                           {promo.descuento_porcentaje}% descuento en compras sobre ${promo.monto_minimo.toLocaleString()}
                         </p>
                         {(promo.fecha_inicio || promo.fecha_fin) && (
-                          <p className="text-sm text-muted-foreground">
+                          <p className="text-xs md:text-sm text-muted-foreground">
                             Vigencia: {promo.fecha_inicio ? new Date(promo.fecha_inicio).toLocaleDateString() : "Sin inicio"} - {promo.fecha_fin ? new Date(promo.fecha_fin).toLocaleDateString() : "Sin fin"}
                           </p>
                         )}
                         {promo.descripcion && (
-                          <p className="text-sm text-muted-foreground mt-1">{promo.descripcion}</p>
+                          <p className="text-xs md:text-sm text-muted-foreground mt-1">{promo.descripcion}</p>
                         )}
                       </div>
-                      <div className="flex items-center gap-4">
+                      <div className="flex items-center gap-3 md:gap-4">
                         <div className="flex items-center gap-2">
-                          <Label htmlFor={`promo-${promo.id}`} className="text-sm">
+                          <Label htmlFor={`promo-${promo.id}`} className="text-xs md:text-sm">
                             {promo.activa ? "Activa" : "Inactiva"}
                           </Label>
                           <Switch
