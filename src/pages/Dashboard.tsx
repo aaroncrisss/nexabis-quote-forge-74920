@@ -120,89 +120,89 @@ const Dashboard = () => {
 
   return (
     <DashboardLayout>
-      <div className="space-y-8">
-        <div className="flex items-center justify-between">
+      <div className="space-y-6 md:space-y-8">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex-1">
-            <h1 className="text-4xl font-bold gradient-text mb-2">Dashboard</h1>
-            <p className="text-muted-foreground">Vista general de tus presupuestos</p>
+            <h1 className="text-2xl md:text-3xl lg:text-4xl font-bold gradient-text mb-2">Dashboard</h1>
+            <p className="text-sm md:text-base text-muted-foreground">Vista general de tus presupuestos</p>
           </div>
-          <div className="flex gap-3">
+          <div className="flex flex-col sm:flex-row gap-3">
             <DemoDataButton />
-            <Button onClick={() => navigate("/crear")} variant="default" size="lg">
+            <Button onClick={() => navigate("/crear")} variant="default" size="default" className="w-full sm:w-auto">
               <Plus className="w-5 h-5 mr-2" />
-              Crear Nuevo Presupuesto
+              Crear Nuevo
             </Button>
           </div>
         </div>
 
         {/* Stats Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <Card className="p-6 bg-card/50 border-border hover-glow transition-all">
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 rounded-lg bg-gradient-nexabis flex items-center justify-center">
-                <FileText className="w-6 h-6 text-white" />
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
+          <Card className="p-4 md:p-6 bg-card/50 border-border hover-glow transition-all">
+            <div className="flex items-center gap-3 md:gap-4">
+              <div className="w-10 h-10 md:w-12 md:h-12 rounded-lg bg-gradient-nexabis flex items-center justify-center flex-shrink-0">
+                <FileText className="w-5 h-5 md:w-6 md:h-6 text-white" />
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">Total Enviados</p>
-                <p className="text-3xl font-heading font-bold">{stats.totalPresupuestos}</p>
+                <p className="text-xs md:text-sm text-muted-foreground">Total Enviados</p>
+                <p className="text-2xl md:text-3xl font-heading font-bold">{stats.totalPresupuestos}</p>
               </div>
             </div>
           </Card>
 
-          <Card className="p-6 bg-card/50 border-border hover-glow transition-all">
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 rounded-lg bg-gradient-nexabis flex items-center justify-center">
-                <TrendingUp className="w-6 h-6 text-white" />
+          <Card className="p-4 md:p-6 bg-card/50 border-border hover-glow transition-all">
+            <div className="flex items-center gap-3 md:gap-4">
+              <div className="w-10 h-10 md:w-12 md:h-12 rounded-lg bg-gradient-nexabis flex items-center justify-center flex-shrink-0">
+                <TrendingUp className="w-5 h-5 md:w-6 md:h-6 text-white" />
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">Valor Total</p>
-                <p className="text-3xl font-heading font-bold">
+                <p className="text-xs md:text-sm text-muted-foreground">Valor Total</p>
+                <p className="text-2xl md:text-3xl font-heading font-bold">
                   ${stats.valorTotal.toLocaleString()}
                 </p>
               </div>
             </div>
           </Card>
 
-          <Card className="p-6 bg-card/50 border-border hover-glow transition-all">
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 rounded-lg bg-gradient-nexabis flex items-center justify-center">
-                <CheckCircle2 className="w-6 h-6 text-white" />
+          <Card className="p-4 md:p-6 bg-card/50 border-border hover-glow transition-all">
+            <div className="flex items-center gap-3 md:gap-4">
+              <div className="w-10 h-10 md:w-12 md:h-12 rounded-lg bg-gradient-nexabis flex items-center justify-center flex-shrink-0">
+                <CheckCircle2 className="w-5 h-5 md:w-6 md:h-6 text-white" />
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">Tasa de Aprobación</p>
-                <p className="text-3xl font-heading font-bold">{stats.tasaAprobacion}%</p>
+                <p className="text-xs md:text-sm text-muted-foreground">Tasa de Aprobación</p>
+                <p className="text-2xl md:text-3xl font-heading font-bold">{stats.tasaAprobacion}%</p>
               </div>
             </div>
           </Card>
         </div>
 
         {/* Status Counters */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <Card className="p-6 bg-card/50 border-border">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
+          <Card className="p-4 md:p-6 bg-card/50 border-border">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground mb-1">Pendientes</p>
-                <p className="text-2xl font-heading font-bold">{stats.pendientes}</p>
+                <p className="text-xs md:text-sm text-muted-foreground mb-1">Pendientes</p>
+                <p className="text-xl md:text-2xl font-heading font-bold">{stats.pendientes}</p>
               </div>
               <div className="w-3 h-3 rounded-full bg-primary"></div>
             </div>
           </Card>
 
-          <Card className="p-6 bg-card/50 border-border">
+          <Card className="p-4 md:p-6 bg-card/50 border-border">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground mb-1">Aprobados esta semana</p>
-                <p className="text-2xl font-heading font-bold">{stats.aprobadosSemana}</p>
+                <p className="text-xs md:text-sm text-muted-foreground mb-1">Aprobados esta semana</p>
+                <p className="text-xl md:text-2xl font-heading font-bold">{stats.aprobadosSemana}</p>
               </div>
               <div className="w-3 h-3 rounded-full bg-accent"></div>
             </div>
           </Card>
 
-          <Card className="p-6 bg-card/50 border-border">
+          <Card className="p-4 md:p-6 bg-card/50 border-border">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground mb-1">Por vencer (3 días)</p>
-                <p className="text-2xl font-heading font-bold">{stats.porVencer}</p>
+                <p className="text-xs md:text-sm text-muted-foreground mb-1">Por vencer (3 días)</p>
+                <p className="text-xl md:text-2xl font-heading font-bold">{stats.porVencer}</p>
               </div>
               <div className="w-3 h-3 rounded-full bg-secondary"></div>
             </div>
@@ -210,38 +210,45 @@ const Dashboard = () => {
         </div>
 
         {/* Chart */}
-        <Card className="p-6 bg-card/50 border-border">
-          <h2 className="text-2xl font-heading font-bold mb-6">Últimos 6 meses</h2>
-          <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={chartData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-              <XAxis 
-                dataKey="mes" 
-                stroke="hsl(var(--muted-foreground))"
-                style={{ fontSize: '12px' }}
-              />
-              <YAxis 
-                stroke="hsl(var(--muted-foreground))"
-                style={{ fontSize: '12px' }}
-              />
-              <Tooltip 
-                contentStyle={{
-                  backgroundColor: 'hsl(var(--card))',
-                  border: '1px solid hsl(var(--border))',
-                  borderRadius: '8px',
-                  color: 'hsl(var(--foreground))'
-                }}
-              />
-              <Bar dataKey="total" fill="url(#colorGradient)" radius={[8, 8, 0, 0]} />
-              <defs>
-                <linearGradient id="colorGradient" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#FF5C5C" />
-                  <stop offset="50%" stopColor="#FF8042" />
-                  <stop offset="100%" stopColor="#FFC24D" />
-                </linearGradient>
-              </defs>
-            </BarChart>
-          </ResponsiveContainer>
+        <Card className="p-4 md:p-6 bg-card/50 border-border">
+          <h2 className="text-xl md:text-2xl font-heading font-bold mb-4 md:mb-6">Últimos 6 meses</h2>
+          <div className="overflow-x-auto -mx-4 md:mx-0">
+            <div className="min-w-[300px] px-4 md:px-0">
+              <ResponsiveContainer width="100%" height={250} className="md:h-[300px]">
+                <BarChart data={chartData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                  <XAxis 
+                    dataKey="mes" 
+                    stroke="hsl(var(--muted-foreground))"
+                    style={{ fontSize: '10px' }}
+                    className="md:text-xs"
+                  />
+                  <YAxis 
+                    stroke="hsl(var(--muted-foreground))"
+                    style={{ fontSize: '10px' }}
+                    className="md:text-xs"
+                  />
+                  <Tooltip 
+                    contentStyle={{
+                      backgroundColor: 'hsl(var(--card))',
+                      border: '1px solid hsl(var(--border))',
+                      borderRadius: '8px',
+                      color: 'hsl(var(--foreground))',
+                      fontSize: '12px'
+                    }}
+                  />
+                  <Bar dataKey="total" fill="url(#colorGradient)" radius={[8, 8, 0, 0]} />
+                  <defs>
+                    <linearGradient id="colorGradient" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#FF5C5C" />
+                      <stop offset="50%" stopColor="#FF8042" />
+                      <stop offset="100%" stopColor="#FFC24D" />
+                    </linearGradient>
+                  </defs>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
         </Card>
       </div>
     </DashboardLayout>
