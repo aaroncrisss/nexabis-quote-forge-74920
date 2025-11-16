@@ -219,20 +219,20 @@ export default function Clientes() {
 
   return (
     <DashboardLayout>
-      <div className="space-y-8">
-        <div className="flex items-center justify-between">
+      <div className="space-y-6 md:space-y-8">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
-            <h1 className="text-4xl font-bold gradient-text mb-2">Clientes</h1>
-            <p className="text-muted-foreground">Gestiona tu cartera de clientes</p>
+            <h1 className="text-2xl md:text-3xl lg:text-4xl font-bold gradient-text mb-2">Clientes</h1>
+            <p className="text-sm md:text-base text-muted-foreground">Gestiona tu cartera de clientes</p>
           </div>
-          <Button onClick={() => handleOpenDialog()} variant="default" size="lg">
+          <Button onClick={() => handleOpenDialog()} variant="default" size="default" className="w-full sm:w-auto">
             <Plus className="w-5 h-5 mr-2" />
             Nuevo Cliente
           </Button>
         </div>
 
         {/* Search and View Toggle */}
-        <div className="flex gap-4 items-center">
+        <div className="flex flex-col md:flex-row gap-3 md:gap-4 items-stretch md:items-center">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
             <Input
@@ -261,21 +261,21 @@ export default function Clientes() {
         </div>
 
         {viewMode === "grid" ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
             {filteredClientes.map((cliente) => (
-            <Card key={cliente.id} className="p-6 bg-card/50 border-border hover-glow transition-all">
-              <div className="space-y-4">
+            <Card key={cliente.id} className="p-4 md:p-6 bg-card/50 border-border hover-glow transition-all">
+              <div className="space-y-3 md:space-y-4">
                 <div className="flex items-start justify-between">
-                  <div className="space-y-1">
-                    <h3 className="font-semibold text-lg">{cliente.nombre}</h3>
+                  <div className="space-y-1 flex-1">
+                    <h3 className="font-semibold text-base md:text-lg">{cliente.nombre}</h3>
                     {cliente.empresa && (
-                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <div className="flex items-center gap-2 text-xs md:text-sm text-muted-foreground">
                         <Building className="w-4 h-4" />
                         {cliente.empresa}
                       </div>
                     )}
                   </div>
-                  <div className="flex gap-2">
+                  <div className="flex gap-2 flex-shrink-0">
                     <Button
                       variant="ghost"
                       size="icon"
