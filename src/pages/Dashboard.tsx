@@ -12,7 +12,8 @@ const Dashboard = () => {
   const navigate = useNavigate();
   const [stats, setStats] = useState({
     totalPresupuestos: 0,
-    valorTotal: 0,
+    valorAprobado: 0,
+    valorRechazado: 0,
     tasaAprobacion: 0,
     pendientes: 0,
     aprobadosSemana: 0,
@@ -40,7 +41,13 @@ const Dashboard = () => {
         const total = presupuestos.length;
         const aprobados = presupuestos.filter(p => p.estado === "aprobado").length;
         const pendientes = presupuestos.filter(p => p.estado === "pendiente").length;
-        const valorTotal = presupuestos.reduce((sum, p) => sum + Number(p.total), 0);
+        const valorAprobado = presupuestos
+          .filter(p => p.estado === "aprobado")
+          .reduce((sum, p) => sum + Number(p.total), 0);
+
+        const valorRechazado = presupuestos
+          .filter(p => p.estado === "rechazado")
+          .reduce((sum, p) => sum + Number(p.total), 0);
         
         // Approved this week
         const weekAgo = new Date();
@@ -60,7 +67,8 @@ const Dashboard = () => {
 
         setStats({
           totalPresupuestos: total,
-          valorTotal,
+          valorAprobado,
+          valorRechazado,
           tasaAprobacion: total > 0 ? Math.round((aprobados / total) * 100) : 0,
           pendientes,
           aprobadosSemana,
@@ -155,10 +163,15 @@ const Dashboard = () => {
                 <TrendingUp className="w-5 h-5 md:w-6 md:h-6 text-white" />
               </div>
               <div>
-                <p className="text-xs md:text-sm text-muted-foreground">Valor Total</p>
-                <p className="text-2xl md:text-3xl font-heading font-bold">
-                  ${stats.valorTotal.toLocaleString()}
-                </p>
+                <p className="text-xs md:text-sm text-muted-foreground">Valor por estado</p>
+                <div className="space-y-1">
+                  <p className="text-sm md:text-base text-foreground">
+                    <span className="font-semibold">Aprobados:</span> ${stats.valorAprobado.toLocaleString()}
+                  </p>
+                  <p className="text-sm md:text-base text-foreground">
+                    <span className="font-semibold">Rechazados:</span> ${stats.valorRechazado.toLocaleString()}
+                  </p>
+                </div>
               </div>
             </div>
           </Card>
