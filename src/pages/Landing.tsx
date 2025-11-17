@@ -26,20 +26,20 @@ const Landing = () => {
     <div className="min-h-screen bg-background">
       {/* Navigation */}
       <nav className="border-b border-border bg-card/50 backdrop-blur-sm">
-        <div className="container mx-auto px-4 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
+        <div className="container mx-auto px-4 py-4 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-3 flex-shrink-0">
             <img src={nexabisLogo} alt="NEXABIS" className="h-10 w-10" />
             <span className="text-xl font-heading font-bold gradient-text">NEXABIS</span>
           </div>
-          <div className="flex items-center gap-3">
-            <Button variant="ghost" size="icon" onClick={toggleDarkMode}>
+          <div className="flex items-center gap-2 flex-wrap justify-between sm:justify-end w-full sm:w-auto">
+            <Button variant="ghost" size="icon" onClick={toggleDarkMode} className="flex-shrink-0">
               {darkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
             </Button>
             <Link to="/login">
-              <Button variant="ghost">Iniciar Sesión</Button>
+              <Button variant="ghost" className="w-full sm:w-auto">Iniciar Sesión</Button>
             </Link>
             <Link to="/register">
-              <Button className="bg-gradient-nexabis hover:opacity-90 transition-opacity">
+              <Button className="bg-gradient-nexabis hover:opacity-90 transition-opacity w-full sm:w-auto">
                 Registrarse
               </Button>
             </Link>
