@@ -2,3 +2,9 @@ project_id = "xrncxmtscasysbqvmvkz"
 
 [functions.change-user-password]
 verify_jwt = true
+
+[functions.cotizador]
+verify_jwt = true
+
+[functions.seed-demo-data]
+verify_jwt = false
