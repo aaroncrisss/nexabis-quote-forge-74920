@@ -1,7 +1,7 @@
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
-import { LayoutDashboard, FileText, Settings, LogOut, Plus, Users, Moon, Sun, Shield, Menu } from "lucide-react";
+import { LayoutDashboard, FileText, Settings, LogOut, Plus, Users, Moon, Sun, Shield, Menu, Calculator } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import nexabisLogo from "@/assets/Logo-Nexabis.png";
@@ -41,6 +41,7 @@ const DashboardLayout = ({ children }: DashboardLayoutProps) => {
 
   const navItems = [
     { to: "/dashboard", icon: LayoutDashboard, label: "Dashboard" },
+    { to: "/cotizador", icon: Calculator, label: "Cotizador" },
     { to: "/presupuestos", icon: FileText, label: "Presupuestos" },
     { to: "/clientes", icon: Users, label: "Clientes" },
     { to: "/configuracion", icon: Settings, label: "Configuración" },
