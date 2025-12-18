@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState, useEffect } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
@@ -33,27 +33,53 @@ export interface PresupuestoData {
   promocion_aplicada: string | null;
 }
 
+interface LocationState {
+  fromCotizador?: boolean;
+  clienteId?: string;
+  titulo?: string;
+  items?: PresupuestoItem[];
+  descripcion?: string;
+}
+
 export default function CrearPresupuesto() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { toast } = useToast();
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
 
+  // Check if coming from cotizador
+  const locationState = location.state as LocationState | null;
+
   const [presupuesto, setPresupuesto] = useState<PresupuestoData>({
-    cliente_id: "",
-    titulo: "",
-    items: [],
+    cliente_id: locationState?.clienteId || "",
+    titulo: locationState?.titulo || "",
+    items: locationState?.items || [],
     moneda: "CLP",
     descuento_tipo: null,
     descuento_valor: 0,
     validez_dias: 15,
     forma_pago: "50% anticipo, 50% contra entrega",
     terminos: "",
-    notas_trabajo: "",
+    notas_trabajo: locationState?.descripcion || "",
     iva_porcentaje: 19,
     modo_impresion: "dark",
     promocion_aplicada: null,
   });
+
+  // Si viene del cotizador con datos, saltar al paso 2 (items)
+  useEffect(() => {
+    if (locationState?.fromCotizador && locationState.items && locationState.items.length > 0) {
+      // Si ya tiene cliente, ir directo a items
+      if (locationState.clienteId) {
+        setStep(2);
+      }
+      toast({
+        title: "Datos importados del cotizador",
+        description: "Puedes editar los items y precios antes de continuar",
+      });
+    }
+  }, []);
 
   const updatePresupuesto = (data: Partial<PresupuestoData>) => {
     setPresupuesto((prev) => ({ ...prev, ...data }));

@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,7 +22,9 @@ import {
   User,
   Sparkles,
   FileText,
-  Zap
+  Zap,
+  ArrowRight,
+  DollarSign
 } from "lucide-react";
 
 interface Modulo {
@@ -65,6 +68,8 @@ const NIVELES_URGENCIA = [
 ];
 
 const Cotizador = () => {
+  const navigate = useNavigate();
+  
   // Form state
   const [tipoProyecto, setTipoProyecto] = useState("");
   const [descripcion, setDescripcion] = useState("");
@@ -87,6 +92,7 @@ const Cotizador = () => {
   // UI state
   const [isLoading, setIsLoading] = useState(false);
   const [estimacion, setEstimacion] = useState<Estimacion | null>(null);
+  const [costoPorHora, setCostoPorHora] = useState(25000); // CLP por defecto
 
   useEffect(() => {
     loadClientes();
@@ -221,6 +227,35 @@ const Cotizador = () => {
       case "bajo": return <AlertTriangle className="w-5 h-5 text-red-400" />;
       default: return null;
     }
+  };
+
+  const calcularCostoTotal = () => {
+    if (!estimacion) return 0;
+    return estimacion.horasTotales * costoPorHora;
+  };
+
+  const convertirAPresupuesto = () => {
+    if (!estimacion) return;
+
+    const items = estimacion.modulos.map((modulo) => ({
+      descripcion: `${modulo.nombre} - ${modulo.justificacion}`,
+      cantidad: modulo.horasEstimadas,
+      precio_unitario: costoPorHora,
+      total: modulo.horasEstimadas * costoPorHora,
+    }));
+
+    // Obtener el tipo de proyecto legible
+    const tipoLabel = TIPOS_PROYECTO.find(t => t.value === tipoProyecto)?.label || tipoProyecto;
+
+    navigate("/crear", {
+      state: {
+        fromCotizador: true,
+        clienteId,
+        titulo: `${tipoLabel} - Estimación IA`,
+        items,
+        descripcion,
+      },
+    });
   };
 
   return (
@@ -457,7 +492,7 @@ const Cotizador = () => {
                       </Badge>
                     </CardTitle>
                   </CardHeader>
-                  <CardContent className="p-4 md:p-6 pt-0">
+                  <CardContent className="p-4 md:p-6 pt-0 space-y-4">
                     <div className="grid grid-cols-2 gap-4">
                       <div className="text-center p-4 bg-primary/10 rounded-lg">
                         <Clock className="w-6 h-6 mx-auto mb-2 text-primary" />
@@ -472,6 +507,35 @@ const Cotizador = () => {
                         <p className="text-xs md:text-sm text-muted-foreground">Nivel de confianza</p>
                       </div>
                     </div>
+
+                    {/* Costo por hora editable */}
+                    <div className="p-4 bg-accent/10 rounded-lg border border-accent/30">
+                      <Label className="text-sm flex items-center gap-2 mb-2">
+                        <DollarSign className="w-4 h-4" />
+                        Costo por hora (CLP)
+                      </Label>
+                      <Input
+                        type="number"
+                        value={costoPorHora}
+                        onChange={(e) => setCostoPorHora(Number(e.target.value))}
+                        className="mb-3"
+                      />
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm text-muted-foreground">Costo total estimado:</span>
+                        <span className="text-xl font-bold text-primary">
+                          ${calcularCostoTotal().toLocaleString("es-CL")} CLP
+                        </span>
+                      </div>
+                    </div>
+
+                    <Button 
+                      onClick={convertirAPresupuesto} 
+                      className="w-full gradient-button gap-2"
+                      size="lg"
+                    >
+                      <ArrowRight className="w-4 h-4" />
+                      Convertir a Presupuesto
+                    </Button>
                   </CardContent>
                 </Card>
 
