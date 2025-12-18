@@ -11,20 +11,21 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { 
-  Calculator, 
-  Plus, 
-  X, 
-  Loader2, 
-  AlertTriangle, 
-  CheckCircle, 
-  Clock, 
+import {
+  Calculator,
+  Plus,
+  X,
+  Loader2,
+  AlertTriangle,
+  CheckCircle,
+  Clock,
   User,
   Sparkles,
   FileText,
   Zap,
   ArrowRight,
-  DollarSign
+  DollarSign,
+  PieChart
 } from "lucide-react";
 
 interface Modulo {
@@ -32,6 +33,14 @@ interface Modulo {
   horasEstimadas: number;
   nivelRiesgo: "bajo" | "medio" | "alto";
   justificacion: string;
+  esencial?: boolean;
+}
+
+interface AjustePresupuesto {
+  excedePresupuesto: boolean;
+  mensajeAjuste: string;
+  modulosRecomendados: string[];
+  modulosExcluidos: string[];
 }
 
 interface Estimacion {
@@ -41,6 +50,7 @@ interface Estimacion {
   riesgosClave: string[];
   suposiciones: string[];
   nivelConfianza: "alto" | "medio" | "bajo";
+  ajustePresupuesto?: AjustePresupuesto;
 }
 
 interface Cliente {
@@ -69,14 +79,14 @@ const NIVELES_URGENCIA = [
 
 const Cotizador = () => {
   const navigate = useNavigate();
-  
+
   // Form state
   const [tipoProyecto, setTipoProyecto] = useState("");
   const [descripcion, setDescripcion] = useState("");
   const [funcionalidades, setFuncionalidades] = useState<string[]>([]);
   const [nuevaFuncionalidad, setNuevaFuncionalidad] = useState("");
   const [urgencia, setUrgencia] = useState("");
-  
+
   // Client state
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [clienteId, setClienteId] = useState("");
@@ -88,11 +98,12 @@ const Cotizador = () => {
     telefono: "",
     direccion: "",
   });
-  
+
   // UI state
   const [isLoading, setIsLoading] = useState(false);
   const [estimacion, setEstimacion] = useState<Estimacion | null>(null);
   const [costoPorHora, setCostoPorHora] = useState(25000); // CLP por defecto
+  const [presupuestoCliente, setPresupuestoCliente] = useState<string>("");
 
   useEffect(() => {
     loadClientes();
@@ -159,6 +170,12 @@ const Cotizador = () => {
     setIsLoading(true);
     setEstimacion(null);
 
+    // Calcular horas maximas basadas en presupuesto
+    let horasMaximas = undefined;
+    if (presupuestoCliente && !isNaN(Number(presupuestoCliente))) {
+      horasMaximas = Math.floor(Number(presupuestoCliente) / costoPorHora);
+    }
+
     try {
       // Llamar directamente al endpoint de Lovable Cloud
       const response = await fetch(
@@ -173,6 +190,7 @@ const Cotizador = () => {
             descripcion,
             funcionalidades,
             urgencia: urgencia || "media",
+            horasMaximas
           }),
         }
       );
@@ -237,7 +255,12 @@ const Cotizador = () => {
   const convertirAPresupuesto = () => {
     if (!estimacion) return;
 
-    const items = estimacion.modulos.map((modulo) => ({
+    // Solo incluir módulos recomendados si hubo ajuste de presupuesto
+    const modulosFinales = estimacion.ajustePresupuesto?.excedePresupuesto
+      ? estimacion.modulos.filter(m => estimacion.ajustePresupuesto?.modulosRecomendados.includes(m.nombre))
+      : estimacion.modulos;
+
+    const items = modulosFinales.map((modulo) => ({
       descripcion: `${modulo.nombre} - ${modulo.justificacion}`,
       cantidad: modulo.horasEstimadas,
       precio_unitario: costoPorHora,
@@ -269,7 +292,7 @@ const Cotizador = () => {
               Cotizador Inteligente
             </h1>
             <p className="text-sm md:text-base text-muted-foreground mt-1">
-              Estima horas y complejidad antes de crear un presupuesto
+              Estima horas, complejidad y ajusta al presupuesto de tu cliente
             </p>
           </div>
         </div>
@@ -283,7 +306,7 @@ const Cotizador = () => {
                 Datos del Proyecto
               </CardTitle>
               <CardDescription className="text-xs md:text-sm">
-                Ingresa los requerimientos del cliente para generar una estimación
+                Ingresa los requerimientos y el presupuesto disponible
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4 p-4 md:p-6 pt-0">
@@ -383,6 +406,29 @@ const Cotizador = () => {
                 </Select>
               </div>
 
+              {/* Presupuesto y Costo Hora */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label className="text-sm">Costo Hora (CLP)</Label>
+                  <Input
+                    type="number"
+                    value={costoPorHora}
+                    onChange={(e) => setCostoPorHora(Number(e.target.value))}
+                    className="mt-1.5"
+                  />
+                </div>
+                <div>
+                  <Label className="text-sm">Presupuesto Cliente</Label>
+                  <Input
+                    type="number"
+                    value={presupuestoCliente}
+                    onChange={(e) => setPresupuestoCliente(e.target.value)}
+                    placeholder="Opcional"
+                    className="mt-1.5"
+                  />
+                </div>
+              </div>
+
               {/* Descripción */}
               <div>
                 <Label className="text-sm">Descripción del Requerimiento *</Label>
@@ -442,8 +488,8 @@ const Cotizador = () => {
                 </Select>
               </div>
 
-              <Button 
-                onClick={handleEstimar} 
+              <Button
+                onClick={handleEstimar}
                 disabled={isLoading || !tipoProyecto || !descripcion}
                 className="w-full gradient-button gap-2"
                 size="lg"
@@ -508,28 +554,39 @@ const Cotizador = () => {
                       </div>
                     </div>
 
-                    {/* Costo por hora editable */}
-                    <div className="p-4 bg-accent/10 rounded-lg border border-accent/30">
-                      <Label className="text-sm flex items-center gap-2 mb-2">
-                        <DollarSign className="w-4 h-4" />
-                        Costo por hora (CLP)
-                      </Label>
-                      <Input
-                        type="number"
-                        value={costoPorHora}
-                        onChange={(e) => setCostoPorHora(Number(e.target.value))}
-                        className="mb-3"
-                      />
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm text-muted-foreground">Costo total estimado:</span>
-                        <span className="text-xl font-bold text-primary">
-                          ${calcularCostoTotal().toLocaleString("es-CL")} CLP
-                        </span>
-                      </div>
+                    <div className="p-4 bg-accent/10 rounded-lg border border-accent/30 flex items-center justify-between">
+                      <span className="text-sm text-muted-foreground">Costo estimado:</span>
+                      <span className="text-xl font-bold text-primary">
+                        ${calcularCostoTotal().toLocaleString("es-CL")} CLP
+                      </span>
                     </div>
 
-                    <Button 
-                      onClick={convertirAPresupuesto} 
+                    {/* Ajuste de Presupuesto */}
+                    {estimacion.ajustePresupuesto && estimacion.ajustePresupuesto.excedePresupuesto && (
+                      <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-lg space-y-2">
+                        <div className="flex items-center gap-2 text-red-400 font-medium">
+                          <AlertTriangle className="w-5 h-5" />
+                          <span>Excede Presupuesto Cliente</span>
+                        </div>
+                        <p className="text-sm text-muted-foreground">
+                          {estimacion.ajustePresupuesto.mensajeAjuste}
+                        </p>
+                      </div>
+                    )}
+                    {estimacion.ajustePresupuesto && !estimacion.ajustePresupuesto.excedePresupuesto && presupuestoCliente && (
+                      <div className="p-4 bg-green-500/10 border border-green-500/20 rounded-lg space-y-2">
+                        <div className="flex items-center gap-2 text-green-400 font-medium">
+                          <CheckCircle className="w-5 h-5" />
+                          <span>Dentro del Presupuesto</span>
+                        </div>
+                        <p className="text-sm text-muted-foreground">
+                          El proyecto es viable con el presupuesto actual.
+                        </p>
+                      </div>
+                    )}
+
+                    <Button
+                      onClick={convertirAPresupuesto}
                       className="w-full gradient-button gap-2"
                       size="lg"
                     >
@@ -545,24 +602,31 @@ const Cotizador = () => {
                     <CardTitle className="text-lg md:text-xl">Desglose por Módulo</CardTitle>
                   </CardHeader>
                   <CardContent className="p-4 md:p-6 pt-0 space-y-3">
-                    {estimacion.modulos.map((modulo, index) => (
-                      <div key={index} className="p-3 bg-secondary/30 rounded-lg">
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="flex-1">
-                            <p className="font-medium text-sm md:text-base">{modulo.nombre}</p>
-                            <p className="text-xs md:text-sm text-muted-foreground mt-1">
-                              {modulo.justificacion}
-                            </p>
-                          </div>
-                          <div className="text-right shrink-0">
-                            <p className="font-bold text-primary">{modulo.horasEstimadas}h</p>
-                            <p className={`text-xs capitalize ${getRiesgoColor(modulo.nivelRiesgo)}`}>
-                              Riesgo {modulo.nivelRiesgo}
-                            </p>
+                    {estimacion.modulos.map((modulo, index) => {
+                      const isExcluded = estimacion.ajustePresupuesto?.modulosExcluidos.includes(modulo.nombre);
+                      return (
+                        <div key={index} className={`p-3 rounded-lg border ${isExcluded ? 'bg-red-500/5 border-red-500/20 opacity-70' : 'bg-secondary/30 border-transparent'}`}>
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2">
+                                <p className={`font-medium text-sm md:text-base ${isExcluded ? 'line-through text-muted-foreground' : ''}`}>{modulo.nombre}</p>
+                                {modulo.esencial && <Badge variant="outline" className="text-xs h-5">Esencial</Badge>}
+                                {isExcluded && <Badge variant="destructive" className="text-xs h-5">Excluido por Presupuesto</Badge>}
+                              </div>
+                              <p className="text-xs md:text-sm text-muted-foreground mt-1">
+                                {modulo.justificacion}
+                              </p>
+                            </div>
+                            <div className="text-right shrink-0">
+                              <p className="font-bold text-primary">{modulo.horasEstimadas}h</p>
+                              <p className={`text-xs capitalize ${getRiesgoColor(modulo.nivelRiesgo)}`}>
+                                Riesgo {modulo.nivelRiesgo}
+                              </p>
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    ))}
+                      )
+                    })}
                   </CardContent>
                 </Card>
 
@@ -621,7 +685,7 @@ const Cotizador = () => {
                     Completa el formulario para generar una estimación
                   </p>
                   <p className="text-sm text-muted-foreground/70 mt-1">
-                    El análisis con IA te dará horas estimadas, riesgos y más
+                    El análisis con IA te dará horas estimadas, riesgos y ajustes de presupuesto
                   </p>
                 </CardContent>
               </Card>

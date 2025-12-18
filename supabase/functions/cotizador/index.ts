@@ -14,6 +14,10 @@ REGLAS OBLIGATORIAS:
 - Detectas riesgos técnicos reales
 - Justificas cada estimación de forma breve y técnica
 - Si hay ambigüedad, marcas nivel de confianza bajo y agregas suposiciones
+- Si se proporciona un límite de horas (horasMaximas), debes ajustar el alcance:
+  - Identifica módulos ESENCIALES (MVP) y OPCIONALES.
+  - Si la estimación total supera las horas máximas, sugiere EXCLUIR los módulos opcionales.
+  - Genera un mensaje empático y profesional explicando el ajuste.
 - SIEMPRE devuelves ÚNICAMENTE JSON válido, sin texto adicional
 
 Tu respuesta DEBE ser un JSON con esta estructura exacta:
@@ -24,13 +28,20 @@ Tu respuesta DEBE ser un JSON con esta estructura exacta:
       "nombre": "Nombre del módulo",
       "horasEstimadas": número,
       "nivelRiesgo": "bajo | medio | alto",
-      "justificacion": "Texto breve y técnico"
+      "justificacion": "Texto breve y técnico",
+      "esencial": boolean
     }
   ],
   "horasTotales": número,
   "riesgosClave": ["Riesgo identificado"],
   "suposiciones": ["Supuesto realizado para la estimación"],
-  "nivelConfianza": "alto | medio | bajo"
+  "nivelConfianza": "alto | medio | bajo",
+  "ajustePresupuesto": {
+    "excedePresupuesto": boolean,
+    "mensajeAjuste": "Mensaje explicando qué se puede hacer con el presupuesto y qué quedaría fuera...",
+    "modulosRecomendados": ["Nombre módulo 1", "Nombre módulo 2"],
+    "modulosExcluidos": ["Nombre módulo 3"]
+  }
 }`;
 
 interface CotizadorRequest {
@@ -38,6 +49,7 @@ interface CotizadorRequest {
   descripcion: string;
   funcionalidades: string[];
   urgencia: string;
+  horasMaximas?: number;
 }
 
 serve(async (req) => {
@@ -46,7 +58,7 @@ serve(async (req) => {
   }
 
   try {
-    const { tipoProyecto, descripcion, funcionalidades, urgencia }: CotizadorRequest = await req.json();
+    const { tipoProyecto, descripcion, funcionalidades, urgencia, horasMaximas }: CotizadorRequest = await req.json();
 
     if (!tipoProyecto || !descripcion) {
       return new Response(
@@ -75,6 +87,8 @@ FUNCIONALIDADES SOLICITADAS:
 ${funcionalidades.length > 0 ? funcionalidades.map((f, i) => `${i + 1}. ${f}`).join('\n') : 'No especificadas'}
 
 NIVEL DE URGENCIA: ${urgencia}
+
+${horasMaximas ? `LÍMITE DE HORAS (PRESUPUESTO): ${horasMaximas} horas. Ajusta el alcance si es necesario.` : 'Sin límite de presupuesto especificado.'}
 
 Genera la estimación en formato JSON según la estructura requerida.`;
 
