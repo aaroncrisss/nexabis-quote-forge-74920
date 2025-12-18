@@ -154,18 +154,29 @@ const Cotizador = () => {
     setEstimacion(null);
 
     try {
-      const { data, error } = await supabase.functions.invoke("cotizador", {
-        body: {
-          tipoProyecto,
-          descripcion,
-          funcionalidades,
-          urgencia: urgencia || "media",
-        },
-      });
+      // Llamar directamente al endpoint de Lovable Cloud
+      const response = await fetch(
+        "https://xrncxmtscasysbqvmvkz.supabase.co/functions/v1/cotizador",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+          },
+          body: JSON.stringify({
+            tipoProyecto,
+            descripcion,
+            funcionalidades,
+            urgencia: urgencia || "media",
+          }),
+        }
+      );
 
-      if (error) {
-        console.error("Function error:", error);
-        toast.error(error.message || "Error al generar la estimación");
+      const data = await response.json();
+
+      if (!response.ok) {
+        console.error("Function error:", data);
+        toast.error(data.error || "Error al generar la estimación");
         return;
       }
 
