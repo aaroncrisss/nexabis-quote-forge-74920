@@ -4,7 +4,7 @@ project_id = "xrncxmtscasysbqvmvkz"
 verify_jwt = true
 
 [functions.cotizador]
-verify_jwt = true
+verify_jwt = false
 
 [functions.seed-demo-data]
 verify_jwt = false
