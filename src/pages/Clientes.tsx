@@ -32,6 +32,7 @@ interface Cliente {
   nombre: string;
   empresa: string | null;
   email: string;
+  rut?: string;
   telefono: string | null;
   direccion: string | null;
 }
@@ -50,6 +51,7 @@ export default function Clientes() {
     nombre: "",
     empresa: "",
     email: "",
+    rut: "",
     telefono: "",
     direccion: "",
   });
@@ -98,6 +100,7 @@ export default function Clientes() {
         nombre: cliente.nombre,
         empresa: cliente.empresa || "",
         email: cliente.email,
+        rut: cliente.rut || "",
         telefono: cliente.telefono || "",
         direccion: cliente.direccion || "",
       });
@@ -107,6 +110,7 @@ export default function Clientes() {
         nombre: "",
         empresa: "",
         email: "",
+        rut: "",
         telefono: "",
         direccion: "",
       });
@@ -126,6 +130,7 @@ export default function Clientes() {
         nombre: z.string().min(2).max(100),
         empresa: z.string().max(100),
         email: z.string().email("Correo electrónico inválido").max(255).toLowerCase(),
+        rut: z.string().max(20).optional(),
         telefono: z.string().max(20),
         direccion: z.string().max(200),
       });
@@ -134,6 +139,7 @@ export default function Clientes() {
         nombre: formData.nombre.trim(),
         empresa: formData.empresa.trim(),
         email: formData.email.trim(),
+        rut: formData.rut?.trim(),
         telefono: formData.telefono.trim(),
         direccion: formData.direccion.trim(),
       });
@@ -154,6 +160,7 @@ export default function Clientes() {
             nombre: validation.data.nombre,
             empresa: validation.data.empresa || null,
             email: validation.data.email,
+            rut: validation.data.rut || null,
             telefono: validation.data.telefono || null,
             direccion: validation.data.direccion || null,
           })
@@ -168,6 +175,7 @@ export default function Clientes() {
             nombre: validation.data.nombre,
             empresa: validation.data.empresa || null,
             email: validation.data.email,
+            rut: validation.data.rut || null,
             telefono: validation.data.telefono || null,
             direccion: validation.data.direccion || null,
           },
@@ -263,59 +271,64 @@ export default function Clientes() {
         {viewMode === "grid" ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
             {filteredClientes.map((cliente) => (
-            <Card key={cliente.id} className="p-4 md:p-6 bg-card/50 border-border hover-glow transition-all">
-              <div className="space-y-3 md:space-y-4">
-                <div className="flex items-start justify-between">
-                  <div className="space-y-1 flex-1">
-                    <h3 className="font-semibold text-base md:text-lg">{cliente.nombre}</h3>
-                    {cliente.empresa && (
-                      <div className="flex items-center gap-2 text-xs md:text-sm text-muted-foreground">
-                        <Building className="w-4 h-4" />
-                        {cliente.empresa}
+              <Card key={cliente.id} className="p-4 md:p-6 bg-card/50 border-border hover-glow transition-all">
+                <div className="space-y-3 md:space-y-4">
+                  <div className="flex items-start justify-between">
+                    <div className="space-y-1 flex-1">
+                      <h3 className="font-semibold text-base md:text-lg">{cliente.nombre}</h3>
+                      {cliente.empresa && (
+                        <div className="flex items-center gap-2 text-xs md:text-sm text-muted-foreground">
+                          <Building className="w-4 h-4" />
+                          {cliente.empresa}
+                        </div>
+                      )}
+                      {cliente.rut && (
+                        <div className="flex items-center gap-2 text-xs md:text-sm text-muted-foreground">
+                          <span className="font-semibold">RUT:</span> {cliente.rut}
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex gap-2 flex-shrink-0">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleOpenDialog(cliente)}
+                      >
+                        <Pencil className="w-4 h-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => {
+                          setClienteToDelete(cliente.id);
+                          setDeleteDialogOpen(true);
+                        }}
+                      >
+                        <Trash2 className="w-4 h-4 text-destructive" />
+                      </Button>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2 text-sm">
+                    <div className="flex items-center gap-2 text-muted-foreground">
+                      <Mail className="w-4 h-4" />
+                      {cliente.email}
+                    </div>
+                    {cliente.telefono && (
+                      <div className="flex items-center gap-2 text-muted-foreground">
+                        <Phone className="w-4 h-4" />
+                        {cliente.telefono}
+                      </div>
+                    )}
+                    {cliente.direccion && (
+                      <div className="flex items-center gap-2 text-muted-foreground">
+                        <MapPin className="w-4 h-4" />
+                        {cliente.direccion}
                       </div>
                     )}
                   </div>
-                  <div className="flex gap-2 flex-shrink-0">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => handleOpenDialog(cliente)}
-                    >
-                      <Pencil className="w-4 h-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => {
-                        setClienteToDelete(cliente.id);
-                        setDeleteDialogOpen(true);
-                      }}
-                    >
-                      <Trash2 className="w-4 h-4 text-destructive" />
-                    </Button>
-                  </div>
                 </div>
-
-                <div className="space-y-2 text-sm">
-                  <div className="flex items-center gap-2 text-muted-foreground">
-                    <Mail className="w-4 h-4" />
-                    {cliente.email}
-                  </div>
-                  {cliente.telefono && (
-                    <div className="flex items-center gap-2 text-muted-foreground">
-                      <Phone className="w-4 h-4" />
-                      {cliente.telefono}
-                    </div>
-                  )}
-                  {cliente.direccion && (
-                    <div className="flex items-center gap-2 text-muted-foreground">
-                      <MapPin className="w-4 h-4" />
-                      {cliente.direccion}
-                    </div>
-                  )}
-                </div>
-              </div>
-            </Card>
+              </Card>
             ))}
           </div>
         ) : (

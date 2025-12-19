@@ -12,6 +12,7 @@ interface Cliente {
   id: string;
   nombre: string;
   empresa: string | null;
+  rut?: string;
   email: string;
 }
 
@@ -27,6 +28,7 @@ export function ClienteStep({ clienteId, titulo, onUpdate }: ClienteStepProps) {
   const [nuevoCliente, setNuevoCliente] = useState({
     nombre: "",
     empresa: "",
+    rut: "",
     email: "",
     telefono: "",
     direccion: "",
@@ -94,7 +96,7 @@ export function ClienteStep({ clienteId, titulo, onUpdate }: ClienteStepProps) {
     setClientes([...clientes, data]);
     onUpdate({ cliente_id: data.id });
     setIsDialogOpen(false);
-    setNuevoCliente({ nombre: "", empresa: "", email: "", telefono: "", direccion: "" });
+    setNuevoCliente({ nombre: "", empresa: "", rut: "", email: "", telefono: "", direccion: "" });
   };
 
   return (
@@ -146,6 +148,16 @@ export function ClienteStep({ clienteId, titulo, onUpdate }: ClienteStepProps) {
                       value={nuevoCliente.nombre}
                       onChange={(e) => setNuevoCliente({ ...nuevoCliente, nombre: e.target.value })}
                       placeholder="Juan Pérez"
+                      className="mt-1"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="rut" className="text-sm">RUT</Label>
+                    <Input
+                      id="rut"
+                      value={nuevoCliente.rut}
+                      onChange={(e) => setNuevoCliente({ ...nuevoCliente, rut: e.target.value })}
+                      placeholder="12.345.678-9"
                       className="mt-1"
                     />
                   </div>

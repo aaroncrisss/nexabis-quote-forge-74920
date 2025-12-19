@@ -25,7 +25,8 @@ import {
   Zap,
   ArrowRight,
   DollarSign,
-  PieChart
+  Eye,
+  EyeOff
 } from "lucide-react";
 
 interface Modulo {
@@ -58,6 +59,7 @@ interface Cliente {
   nombre: string;
   empresa: string | null;
   email: string;
+  rut?: string;
 }
 
 const TIPOS_PROYECTO = [
@@ -95,11 +97,13 @@ const Cotizador = () => {
     nombre: "",
     empresa: "",
     email: "",
+    rut: "",
     telefono: "",
     direccion: "",
   });
 
   // UI state
+  const [mostrarAjuste, setMostrarAjuste] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [estimacion, setEstimacion] = useState<Estimacion | null>(null);
   const [costoPorHora, setCostoPorHora] = useState(25000); // CLP por defecto
@@ -147,7 +151,7 @@ const Cotizador = () => {
     setClientes([...clientes, data]);
     setClienteId(data.id);
     setIsClientDialogOpen(false);
-    setNuevoCliente({ nombre: "", empresa: "", email: "", telefono: "", direccion: "" });
+    setNuevoCliente({ nombre: "", empresa: "", email: "", rut: "", telefono: "", direccion: "" });
   };
 
   const addFuncionalidad = () => {
@@ -252,18 +256,20 @@ const Cotizador = () => {
     return estimacion.horasTotales * costoPorHora;
   };
 
-  const convertirAPresupuesto = () => {
+  const convertirAPresupuesto = (usarAjuste: boolean = false) => {
     if (!estimacion) return;
 
-    // Solo incluir módulos recomendados si hubo ajuste de presupuesto
-    const modulosFinales = estimacion.ajustePresupuesto?.excedePresupuesto
+    // Determinar qué módulos incluir
+    // Si usamos ajuste (alternativa), filtramos por recomendaciones
+    // Si NO usamos ajuste (completo), usamos todos los módulos originales
+    const modulosFinales = usarAjuste && estimacion.ajustePresupuesto
       ? estimacion.modulos.filter(m => estimacion.ajustePresupuesto?.modulosRecomendados.includes(m.nombre))
       : estimacion.modulos;
 
     const items = modulosFinales.map((modulo) => ({
-      descripcion: `${modulo.nombre} - ${modulo.justificacion}`,
-      cantidad: modulo.horasEstimadas,
-      precio_unitario: costoPorHora,
+      descripcion: modulo.nombre, // Solo el nombre del módulo
+      cantidad: 1, // Cantidad siempre 1
+      precio_unitario: modulo.horasEstimadas * costoPorHora, // Precio total del módulo
       total: modulo.horasEstimadas * costoPorHora,
     }));
 
@@ -349,6 +355,15 @@ const Cotizador = () => {
                             value={nuevoCliente.nombre}
                             onChange={(e) => setNuevoCliente({ ...nuevoCliente, nombre: e.target.value })}
                             placeholder="Juan Pérez"
+                            className="mt-1"
+                          />
+                        </div>
+                        <div>
+                          <Label className="text-sm">RUT</Label>
+                          <Input
+                            value={nuevoCliente.rut}
+                            onChange={(e) => setNuevoCliente({ ...nuevoCliente, rut: e.target.value })}
+                            placeholder="12.345.678-9"
                             className="mt-1"
                           />
                         </div>
@@ -563,10 +578,21 @@ const Cotizador = () => {
 
                     {/* Ajuste de Presupuesto */}
                     {estimacion.ajustePresupuesto && estimacion.ajustePresupuesto.excedePresupuesto && (
-                      <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-lg space-y-2">
-                        <div className="flex items-center gap-2 text-red-400 font-medium">
-                          <AlertTriangle className="w-5 h-5" />
-                          <span>Excede Presupuesto Cliente</span>
+                      <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-lg space-y-3">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2 text-red-400 font-medium">
+                            <AlertTriangle className="w-5 h-5" />
+                            <span>Excede Presupuesto Cliente</span>
+                          </div>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setMostrarAjuste(!mostrarAjuste)}
+                            className="text-red-400 hover:text-red-300 hover:bg-red-500/10 h-8 gap-2"
+                          >
+                            {mostrarAjuste ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                            {mostrarAjuste ? "Ocultar Ajuste" : "Ver Propuesta de Ajuste"}
+                          </Button>
                         </div>
                         <p className="text-sm text-muted-foreground">
                           {estimacion.ajustePresupuesto.mensajeAjuste}
@@ -585,14 +611,34 @@ const Cotizador = () => {
                       </div>
                     )}
 
-                    <Button
-                      onClick={convertirAPresupuesto}
-                      className="w-full gradient-button gap-2"
-                      size="lg"
-                    >
-                      <ArrowRight className="w-4 h-4" />
-                      Convertir a Presupuesto
-                    </Button>
+                    {estimacion.ajustePresupuesto?.excedePresupuesto && mostrarAjuste ? (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <Button
+                          onClick={() => convertirAPresupuesto(true)}
+                          className="w-full bg-green-600 hover:bg-green-700 gap-2"
+                        >
+                          <DollarSign className="w-4 h-4" />
+                          Alternativa Ajustada
+                        </Button>
+                        <Button
+                          onClick={() => convertirAPresupuesto(false)}
+                          className="w-full bg-secondary text-secondary-foreground hover:bg-secondary/80 gap-2"
+                          variant="outline"
+                        >
+                          <FileText className="w-4 h-4" />
+                          Presupuesto Completo
+                        </Button>
+                      </div>
+                    ) : (
+                      <Button
+                        onClick={() => convertirAPresupuesto(false)}
+                        className="w-full gradient-button gap-2"
+                        size="lg"
+                      >
+                        <ArrowRight className="w-4 h-4" />
+                        Convertir a Presupuesto
+                      </Button>
+                    )}
                   </CardContent>
                 </Card>
 
@@ -603,7 +649,7 @@ const Cotizador = () => {
                   </CardHeader>
                   <CardContent className="p-4 md:p-6 pt-0 space-y-3">
                     {estimacion.modulos.map((modulo, index) => {
-                      const isExcluded = estimacion.ajustePresupuesto?.modulosExcluidos.includes(modulo.nombre);
+                      const isExcluded = mostrarAjuste && estimacion.ajustePresupuesto?.modulosExcluidos.includes(modulo.nombre);
                       return (
                         <div key={index} className={`p-3 rounded-lg border ${isExcluded ? 'bg-red-500/5 border-red-500/20 opacity-70' : 'bg-secondary/30 border-transparent'}`}>
                           <div className="flex items-start justify-between gap-2">

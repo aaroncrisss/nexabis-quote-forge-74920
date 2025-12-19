@@ -1,4 +1,4 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -42,6 +42,13 @@ Tu respuesta DEBE ser un JSON con esta estructura exacta:
     "modulosRecomendados": ["Nombre módulo 1", "Nombre módulo 2"],
     "modulosExcluidos": ["Nombre módulo 3"]
   }
+}
+
+IMPORTANTE: Si se proporciona 'horasMaximas':
+1. Calcula 'horasTotales'.
+2. Si horasTotales > horasMaximas: 'excedePresupuesto' es true. Llenar 'modulosRecomendados' con los esenciales que quepan.
+3. Si horasTotales <= horasMaximas: 'excedePresupuesto' es false. 'modulosRecomendados' debe contener TODOS los módulos.
+4. SIEMPRE incluye el objeto 'ajustePresupuesto' si hay 'horasMaximas'.
 }`;
 
 interface CotizadorRequest {
@@ -52,7 +59,9 @@ interface CotizadorRequest {
   horasMaximas?: number;
 }
 
-serve(async (req) => {
+
+// @ts-ignore
+Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
@@ -67,6 +76,7 @@ serve(async (req) => {
       );
     }
 
+    // @ts-ignore
     const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
     if (!LOVABLE_API_KEY) {
       console.error('LOVABLE_API_KEY not configured');
@@ -112,7 +122,7 @@ Genera la estimación en formato JSON según la estructura requerida.`;
     if (!response.ok) {
       const errorText = await response.text();
       console.error('AI Gateway error:', response.status, errorText);
-      
+
       if (response.status === 429) {
         return new Response(
           JSON.stringify({ error: 'Límite de solicitudes excedido. Intenta de nuevo en unos minutos.' }),
@@ -125,7 +135,7 @@ Genera la estimación en formato JSON según la estructura requerida.`;
           { status: 402, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
-      
+
       return new Response(
         JSON.stringify({ error: 'Error al procesar la solicitud con IA' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
