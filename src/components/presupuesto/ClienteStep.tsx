@@ -43,7 +43,7 @@ export function ClienteStep({ clienteId, titulo, onUpdate }: ClienteStepProps) {
   const loadClientes = async () => {
     const { data, error } = await supabase
       .from("clientes")
-      .select("id, nombre, empresa, email, rut")
+      .select("*")
       .order("nombre");
 
     if (error) {
@@ -55,7 +55,7 @@ export function ClienteStep({ clienteId, titulo, onUpdate }: ClienteStepProps) {
       return;
     }
 
-    setClientes(data || []);
+    setClientes((data || []) as unknown as Cliente[]);
   };
 
   const handleCreateCliente = async () => {
@@ -99,7 +99,7 @@ export function ClienteStep({ clienteId, titulo, onUpdate }: ClienteStepProps) {
       nombre: data.nombre,
       empresa: data.empresa,
       email: data.email,
-      rut: data.rut,
+      rut: (data as any).rut,
     };
     setClientes([...clientes, nuevoClienteData]);
     onUpdate({ cliente_id: data.id });
