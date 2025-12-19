@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase } from "@/lib/supabaseClient";
 import { ClienteStep } from "@/components/presupuesto/ClienteStep";
 import { ItemsStep } from "@/components/presupuesto/ItemsStep";
 import { TermsStep } from "@/components/presupuesto/TermsStep";
