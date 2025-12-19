@@ -14,13 +14,10 @@ REGLAS OBLIGATORIAS:
 - Detectas riesgos técnicos reales
 - Justificas cada estimación de forma breve y técnica
 - Si hay ambigüedad, marcas nivel de confianza bajo y agregas suposiciones
-- Si se proporciona un límite de horas (horasMaximas), debes ajustar el alcance:
-  - Identifica módulos ESENCIALES (MVP) y OPCIONALES.
-  - Si la estimación total supera las horas máximas, sugiere EXCLUIR los módulos opcionales.
-  - Genera un mensaje empático y profesional explicando el ajuste.
 - SIEMPRE devuelves ÚNICAMENTE JSON válido, sin texto adicional
 
-Tu respuesta DEBE ser un JSON con esta estructura exacta:
+ESTRUCTURA JSON OBLIGATORIA:
+
 {
   "complejidad": "baja | media | alta",
   "modulos": [
@@ -29,7 +26,7 @@ Tu respuesta DEBE ser un JSON con esta estructura exacta:
       "horasEstimadas": número,
       "nivelRiesgo": "bajo | medio | alto",
       "justificacion": "Texto breve y técnico",
-      "esencial": boolean
+      "esencial": true o false
     }
   ],
   "horasTotales": número,
@@ -38,18 +35,36 @@ Tu respuesta DEBE ser un JSON con esta estructura exacta:
   "nivelConfianza": "alto | medio | bajo",
   "ajustePresupuesto": {
     "excedePresupuesto": boolean,
-    "mensajeAjuste": "Mensaje explicando qué se puede hacer con el presupuesto y qué quedaría fuera...",
-    "modulosRecomendados": ["Nombre módulo 1", "Nombre módulo 2"],
-    "modulosExcluidos": ["Nombre módulo 3"]
+    "mensajeAjuste": "Mensaje claro y profesional",
+    "modulosRecomendados": ["Nombre módulo 1"],
+    "modulosExcluidos": ["Nombre módulo opcional"]
   }
 }
 
-IMPORTANTE: Si se proporciona 'horasMaximas':
-1. Calcula 'horasTotales'.
-2. Si horasTotales > horasMaximas: 'excedePresupuesto' es true. Llenar 'modulosRecomendados' con los esenciales que quepan.
-3. Si horasTotales <= horasMaximas: 'excedePresupuesto' es false. 'modulosRecomendados' debe contener TODOS los módulos.
-4. SIEMPRE incluye el objeto 'ajustePresupuesto' si hay 'horasMaximas'.
-}`;
+INSTRUCCIONES CRÍTICAS PARA ajustePresupuesto:
+
+1. SIEMPRE DEBES INCLUIR el objeto "ajustePresupuesto" en tu respuesta JSON, incluso si no hay límite de presupuesto.
+
+2. Si recibes un valor "horasMaximas":
+   - Compara horasTotales con horasMaximas
+   - Si horasTotales > horasMaximas: 
+     * excedePresupuesto = true
+     * mensajeAjuste = "Con el presupuesto actual puedes realizar [X] funcionalidades esenciales. Quedarían pendientes [Y] funcionalidades opcionales."
+     * modulosRecomendados = solo módulos con esencial:true que quepan en horasMaximas
+     * modulosExcluidos = módulos que NO caben
+   - Si horasTotales <= horasMaximas:
+     * excedePresupuesto = false
+     * mensajeAjuste = "El proyecto completo cabe dentro del presupuesto disponible."
+     * modulosRecomendados = TODOS los módulos
+     * modulosExcluidos = lista vacía []
+
+3. Si NO recibes "horasMaximas":
+   - excedePresupuesto = false
+   - mensajeAjuste = "No se especificó límite de presupuesto."
+   - modulosRecomendados = TODOS los módulos
+   - modulosExcluidos = []
+
+RECUERDA: El objeto ajustePresupuesto NO ES OPCIONAL. DEBE estar en TODAS tus respuestas.`;
 
 interface CotizadorRequest {
   tipoProyecto: string;

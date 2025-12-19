@@ -7,12 +7,13 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { Plus, User } from "lucide-react";
+import { formatRUT } from "@/lib/rutUtils";
 
 interface Cliente {
   id: string;
   nombre: string;
   empresa: string | null;
-  rut?: string;
+  rut: string | null;
   email: string;
 }
 
@@ -156,9 +157,10 @@ export function ClienteStep({ clienteId, titulo, onUpdate }: ClienteStepProps) {
                     <Input
                       id="rut"
                       value={nuevoCliente.rut}
-                      onChange={(e) => setNuevoCliente({ ...nuevoCliente, rut: e.target.value })}
+                      onChange={(e) => setNuevoCliente({ ...nuevoCliente, rut: formatRUT(e.target.value) })}
                       placeholder="12.345.678-9"
                       className="mt-1"
+                      maxLength={12}
                     />
                   </div>
                   <div>

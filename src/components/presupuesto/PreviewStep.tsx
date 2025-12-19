@@ -79,6 +79,7 @@ export function PreviewStep({ presupuesto, totals }: PreviewStepProps) {
             <p className="font-semibold text-foreground">{cliente?.nombre}</p>
             {cliente?.empresa && <p>{cliente.empresa}</p>}
             <p>{cliente?.email}</p>
+            {cliente?.rut && <p>RUT: {cliente.rut}</p>}
             {cliente?.telefono && <p>{cliente.telefono}</p>}
           </div>
         </div>

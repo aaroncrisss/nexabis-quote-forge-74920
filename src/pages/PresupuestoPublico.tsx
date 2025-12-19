@@ -135,12 +135,12 @@ export default function PresupuestoPublico() {
 
     const content = document.documentElement.outerHTML;
     const doc = printFrame.contentWindow?.document;
-    
+
     if (doc) {
       doc.open();
       doc.write(content);
       doc.close();
-      
+
       setTimeout(() => {
         printFrame.contentWindow?.print();
         setTimeout(() => {
@@ -184,24 +184,24 @@ export default function PresupuestoPublico() {
             )}
           </div>
           <div className="flex gap-2">
-            <Button 
-              onClick={() => setDarkMode(!darkMode)} 
-              variant="outline" 
+            <Button
+              onClick={() => setDarkMode(!darkMode)}
+              variant="outline"
               size="icon"
               className={darkMode ? 'text-white border-white hover:bg-white/10' : ''}
             >
               {darkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
             </Button>
-            <Button 
-              onClick={handleDownloadPDF} 
+            <Button
+              onClick={handleDownloadPDF}
               variant="outline"
               className={darkMode ? 'text-white border-white hover:bg-white/10' : ''}
             >
               <Download className="w-4 h-4 mr-2" />
               Descargar PDF
             </Button>
-            <Button 
-              onClick={handlePrint} 
+            <Button
+              onClick={handlePrint}
               variant="outline"
               className={darkMode ? 'text-white border-white hover:bg-white/10' : ''}
             >
@@ -247,6 +247,7 @@ export default function PresupuestoPublico() {
               <p className="font-semibold text-foreground">{cliente?.nombre}</p>
               {cliente?.empresa && <p>{cliente.empresa}</p>}
               <p>{cliente?.email}</p>
+              {cliente?.rut && <p>RUT: {cliente.rut}</p>}
               {cliente?.telefono && <p>{cliente.telefono}</p>}
             </div>
           </div>
@@ -334,11 +335,10 @@ export default function PresupuestoPublico() {
 
           {yaRespondido && (
             <div
-              className={`print:hidden border-t border-primary/20 pt-6 text-center p-4 rounded-lg ${
-                presupuesto.estado === "aprobado"
+              className={`print:hidden border-t border-primary/20 pt-6 text-center p-4 rounded-lg ${presupuesto.estado === "aprobado"
                   ? "bg-green-500/10 border-green-500/20"
                   : "bg-red-500/10 border-red-500/20"
-              }`}
+                }`}
             >
               <div className="flex items-center justify-center gap-2 mb-2">
                 {presupuesto.estado === "aprobado" ? (

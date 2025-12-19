@@ -7,6 +7,7 @@ import { PresupuestoItem } from "@/pages/CrearPresupuesto";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { formatCurrency, parseCurrency } from "@/lib/currencyUtils";
 
 interface ItemsStepProps {
   items: PresupuestoItem[];
@@ -40,15 +41,15 @@ export function ItemsStep({
       .select("*")
       .eq("activa", true)
       .order("nombre");
-    
+
     setPromociones(data || []);
   };
 
   const handlePromocionChange = (value: string) => {
     const simbolo = moneda === "USD" ? "$" : "$";
-    
+
     if (value === "ninguna") {
-      onUpdate({ 
+      onUpdate({
         promocion_aplicada: null,
         descuento_tipo: null,
         descuento_valor: 0
@@ -57,7 +58,7 @@ export function ItemsStep({
       const promo = promociones.find(p => p.nombre === value);
       if (promo) {
         const { subtotal } = calculateTotals();
-        
+
         // Validar si cumple el monto mínimo
         if (subtotal < promo.monto_minimo) {
           toast({
@@ -65,14 +66,14 @@ export function ItemsStep({
             description: `Esta promoción requiere un monto mínimo de ${simbolo} ${promo.monto_minimo.toLocaleString()}`,
             variant: "destructive",
           });
-          onUpdate({ 
+          onUpdate({
             promocion_aplicada: null,
             descuento_tipo: null,
             descuento_valor: 0
           });
           return;
         }
-        
+
         // Validar fechas de vigencia
         const now = new Date();
         if (promo.fecha_inicio) {
@@ -83,7 +84,7 @@ export function ItemsStep({
               description: `Esta promoción estará disponible a partir del ${inicio.toLocaleDateString()}`,
               variant: "destructive",
             });
-            onUpdate({ 
+            onUpdate({
               promocion_aplicada: null,
               descuento_tipo: null,
               descuento_valor: 0
@@ -99,7 +100,7 @@ export function ItemsStep({
               description: `Esta promoción expiró el ${fin.toLocaleDateString()}`,
               variant: "destructive",
             });
-            onUpdate({ 
+            onUpdate({
               promocion_aplicada: null,
               descuento_tipo: null,
               descuento_valor: 0
@@ -107,8 +108,8 @@ export function ItemsStep({
             return;
           }
         }
-        
-        onUpdate({ 
+
+        onUpdate({
           promocion_aplicada: value,
           descuento_tipo: "porcentaje",
           descuento_valor: promo.descuento_porcentaje
@@ -128,7 +129,7 @@ export function ItemsStep({
 
   const updateItem = (index: number, field: string, value: any) => {
     const newItems = [...items];
-    
+
     if (field === "cantidad" || field === "precio_unitario") {
       // Keep the value as is (including empty string)
       newItems[index] = { ...newItems[index], [field]: value };
@@ -201,11 +202,14 @@ export function ItemsStep({
               <div className="md:col-span-2">
                 <Label className="text-sm">Precio Unit.</Label>
                 <Input
-                  type="number"
-                  value={item.precio_unitario}
-                  onChange={(e) => updateItem(index, "precio_unitario", e.target.value)}
-                  placeholder=""
-                  min="0"
+                  type="text"
+                  value={item.precio_unitario ? formatCurrency(item.precio_unitario) : ''}
+                  onChange={(e) => {
+                    const formatted = formatCurrency(e.target.value);
+                    const numeric = parseCurrency(formatted);
+                    updateItem(index, "precio_unitario", numeric || '');
+                  }}
+                  placeholder="$ 10.000"
                   className="mt-1"
                 />
               </div>
@@ -287,10 +291,17 @@ export function ItemsStep({
               <div className="flex-1">
                 <Label className="text-sm md:text-base">Valor del Descuento</Label>
                 <Input
-                  type="number"
-                  value={descuentoValor}
-                  onChange={(e) => onUpdate({ descuento_valor: parseFloat(e.target.value) || 0 })}
-                  placeholder={descuentoTipo === "porcentaje" ? "10" : "5000"}
+                  type="text"
+                  value={descuentoValor ? (descuentoTipo === "porcentaje" ? descuentoValor : formatCurrency(descuentoValor)) : ''}
+                  onChange={(e) => {
+                    if (descuentoTipo === "porcentaje") {
+                      onUpdate({ descuento_valor: parseFloat(e.target.value) || 0 });
+                    } else {
+                      const formatted = formatCurrency(e.target.value);
+                      onUpdate({ descuento_valor: parseCurrency(formatted) });
+                    }
+                  }}
+                  placeholder={descuentoTipo === "porcentaje" ? "10" : "5.000"}
                   className="mt-2"
                 />
               </div>
