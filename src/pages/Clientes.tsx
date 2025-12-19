@@ -81,12 +81,12 @@ export default function Clientes() {
 
       const { data, error } = await supabase
         .from("clientes")
-        .select("*")
+        .select("id, nombre, empresa, email, rut, telefono, direccion")
         .eq("usuario_id", userData.user.id)
         .order("nombre");
 
       if (error) throw error;
-      setClientes(data || []);
+      setClientes((data || []) as Cliente[]);
     } catch (error: any) {
       toast.error("Error al cargar clientes");
     } finally {

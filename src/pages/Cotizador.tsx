@@ -191,9 +191,10 @@ const Cotizador = () => {
         descripcionFinal += `\n\n[INSTRUCCIÓN IMPORTANTE DEL SISTEMA: El cliente tiene un presupuesto ESTRICTO de ${horasMaximas} horas. TU OBJETIVO PRINCIPAL es ajustar la complejidad técnica para que el proyecto ENCAJE en este límite. NO excluyas módulos si puedes SIMPLIFICARLOS (ej: Auth0 en vez de custom, diseño simple, MVP). Prioriza la viabilidad económica sobre la complejidad técnica.]`;
       }
 
-      // Llamar directamente al endpoint de Lovable Cloud
+      // Llamar al endpoint usando variable de entorno para compatibilidad externa
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || "https://xrncxmtscasysbqvmvkz.supabase.co";
       const response = await fetch(
-        "https://xrncxmtscasysbqvmvkz.supabase.co/functions/v1/cotizador",
+        `${supabaseUrl}/functions/v1/cotizador`,
         {
           method: "POST",
           headers: {
