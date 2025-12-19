@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { supabase } from "@/lib/supabaseClient";
+import { supabase } from "@/integrations/supabase/client";
 import { PresupuestoData } from "@/pages/CrearPresupuesto";
 import { FileText } from "lucide-react";
 
@@ -79,7 +79,6 @@ export function PreviewStep({ presupuesto, totals }: PreviewStepProps) {
             <p className="font-semibold text-foreground">{cliente?.nombre}</p>
             {cliente?.empresa && <p>{cliente.empresa}</p>}
             <p>{cliente?.email}</p>
-            {cliente?.rut && <p>RUT: {cliente.rut}</p>}
             {cliente?.telefono && <p>{cliente.telefono}</p>}
           </div>
         </div>

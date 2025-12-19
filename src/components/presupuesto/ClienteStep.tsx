@@ -4,16 +4,15 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { supabase } from "@/lib/supabaseClient";
+import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { Plus, User } from "lucide-react";
-import { formatRUT } from "@/lib/rutUtils";
 
 interface Cliente {
   id: string;
   nombre: string;
   empresa: string | null;
-  rut: string | null;
+  rut?: string;
   email: string;
 }
 
@@ -43,7 +42,7 @@ export function ClienteStep({ clienteId, titulo, onUpdate }: ClienteStepProps) {
   const loadClientes = async () => {
     const { data, error } = await supabase
       .from("clientes")
-      .select("*")
+      .select("id, nombre, empresa, email")
       .order("nombre");
 
     if (error) {
@@ -55,7 +54,7 @@ export function ClienteStep({ clienteId, titulo, onUpdate }: ClienteStepProps) {
       return;
     }
 
-    setClientes((data || []) as unknown as Cliente[]);
+    setClientes(data || []);
   };
 
   const handleCreateCliente = async () => {
@@ -94,14 +93,7 @@ export function ClienteStep({ clienteId, titulo, onUpdate }: ClienteStepProps) {
       description: "El cliente se ha agregado exitosamente",
     });
 
-    const nuevoClienteData: Cliente = {
-      id: data.id,
-      nombre: data.nombre,
-      empresa: data.empresa,
-      email: data.email,
-      rut: (data as any).rut,
-    };
-    setClientes([...clientes, nuevoClienteData]);
+    setClientes([...clientes, data]);
     onUpdate({ cliente_id: data.id });
     setIsDialogOpen(false);
     setNuevoCliente({ nombre: "", empresa: "", rut: "", email: "", telefono: "", direccion: "" });
@@ -164,10 +156,9 @@ export function ClienteStep({ clienteId, titulo, onUpdate }: ClienteStepProps) {
                     <Input
                       id="rut"
                       value={nuevoCliente.rut}
-                      onChange={(e) => setNuevoCliente({ ...nuevoCliente, rut: formatRUT(e.target.value) })}
+                      onChange={(e) => setNuevoCliente({ ...nuevoCliente, rut: e.target.value })}
                       placeholder="12.345.678-9"
                       className="mt-1"
-                      maxLength={12}
                     />
                   </div>
                   <div>

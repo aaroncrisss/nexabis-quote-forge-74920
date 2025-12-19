@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { supabase } from "@/lib/supabaseClient";
+import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import {
   Calculator,
@@ -28,8 +28,6 @@ import {
   Eye,
   EyeOff
 } from "lucide-react";
-import { formatRUT } from "@/lib/rutUtils";
-import { formatCurrency, parseCurrency } from "@/lib/currencyUtils";
 
 interface Modulo {
   nombre: string;
@@ -61,7 +59,7 @@ interface Cliente {
   nombre: string;
   empresa: string | null;
   email: string;
-  rut: string | null;
+  rut?: string;
 }
 
 const TIPOS_PROYECTO = [
@@ -109,9 +107,7 @@ const Cotizador = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [estimacion, setEstimacion] = useState<Estimacion | null>(null);
   const [costoPorHora, setCostoPorHora] = useState(25000); // CLP por defecto
-  const [costoPorHoraDisplay, setCostoPorHoraDisplay] = useState(formatCurrency(25000));
   const [presupuestoCliente, setPresupuestoCliente] = useState<string>("");
-  const [presupuestoClienteDisplay, setPresupuestoClienteDisplay] = useState("");
 
   useEffect(() => {
     loadClientes();
@@ -120,11 +116,11 @@ const Cotizador = () => {
   const loadClientes = async () => {
     const { data, error } = await supabase
       .from("clientes")
-      .select("id, nombre, empresa, email, rut")
+      .select("id, nombre, empresa, email")
       .order("nombre");
 
     if (!error && data) {
-      setClientes(data as unknown as Cliente[]);
+      setClientes(data);
     }
   };
 
@@ -152,7 +148,7 @@ const Cotizador = () => {
     }
 
     toast.success("Cliente creado exitosamente");
-    setClientes([...clientes, data as unknown as Cliente]);
+    setClientes([...clientes, data]);
     setClienteId(data.id);
     setIsClientDialogOpen(false);
     setNuevoCliente({ nombre: "", empresa: "", email: "", rut: "", telefono: "", direccion: "" });
@@ -185,16 +181,9 @@ const Cotizador = () => {
     }
 
     try {
-      // Prompt Injection: Add specific instructions to description to force AI to simplify scope
-      let descripcionFinal = descripcion;
-      if (horasMaximas) {
-        descripcionFinal += `\n\n[INSTRUCCIÓN IMPORTANTE DEL SISTEMA: El cliente tiene un presupuesto ESTRICTO de ${horasMaximas} horas. TU OBJETIVO PRINCIPAL es ajustar la complejidad técnica para que el proyecto ENCAJE en este límite. NO excluyas módulos si puedes SIMPLIFICARLOS (ej: Auth0 en vez de custom, diseño simple, MVP). Prioriza la viabilidad económica sobre la complejidad técnica.]`;
-      }
-
-      // Llamar al endpoint usando variable de entorno para compatibilidad externa
-      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || "https://xrncxmtscasysbqvmvkz.supabase.co";
+      // Llamar directamente al endpoint de Lovable Cloud
       const response = await fetch(
-        `${supabaseUrl}/functions/v1/cotizador`,
+        "https://xrncxmtscasysbqvmvkz.supabase.co/functions/v1/cotizador",
         {
           method: "POST",
           headers: {
@@ -202,7 +191,7 @@ const Cotizador = () => {
           },
           body: JSON.stringify({
             tipoProyecto,
-            descripcion: descripcionFinal,
+            descripcion,
             funcionalidades,
             urgencia: urgencia || "media",
             horasMaximas
@@ -224,57 +213,6 @@ const Cotizador = () => {
       }
 
       if (data?.estimacion) {
-        // Si el backend NO retorna ajustePresupuesto, calcularlo en el frontend
-        if (horasMaximas && !data.estimacion.ajustePresupuesto) {
-          const excedePresupuesto = data.estimacion.horasTotales > horasMaximas;
-
-          let modulosRecomendados: string[] = [];
-          let modulosExcluidos: string[] = [];
-
-          if (excedePresupuesto) {
-            let horasAcumuladas = 0;
-
-            // Lógica mejorada: 
-            // 1. Asumir esencial=true si no viene definido
-            // 2. Intentar meter todo lo que quepa ordenado por orden de aparición
-            data.estimacion.modulos.forEach(modulo => {
-              // Si no tiene propiedad esencial, asumimos que LO ES (para no excluir todo por defecto)
-              const esEsencial = modulo.esencial !== undefined ? modulo.esencial : true;
-
-              if (esEsencial && horasAcumuladas + modulo.horasEstimadas <= horasMaximas) {
-                modulosRecomendados.push(modulo.nombre);
-                horasAcumuladas += modulo.horasEstimadas;
-              } else if (!esEsencial || horasAcumuladas + modulo.horasEstimadas > horasMaximas) {
-                // Si no es esencial O si siendo esencial ya no cabe
-                modulosExcluidos.push(modulo.nombre);
-              }
-            });
-
-            // Si después de filtrar todo, no cabe NADA (lista vacía), metemos al menos el primer módulo MVP
-            if (modulosRecomendados.length === 0 && data.estimacion.modulos.length > 0) {
-              const primerModulo = data.estimacion.modulos[0];
-              modulosRecomendados.push(primerModulo.nombre);
-              // Quitamos de excluidos si estaba ahí
-              modulosExcluidos = modulosExcluidos.filter(m => m !== primerModulo.nombre);
-            }
-
-          } else {
-            // Si NO excede, incluir todos
-            modulosRecomendados = data.estimacion.modulos.map(m => m.nombre);
-          }
-
-          const mensajeAjuste = excedePresupuesto
-            ? `He simplificado el alcance para intentar ajustarme a las ${horasMaximas} horas. Se incluyen ${modulosRecomendados.length} módulos esenciales. Quedan fuera ${modulosExcluidos.length} que exceden el límite.`
-            : "El proyecto cabe perfectamente dentro del presupuesto indicado.";
-
-          data.estimacion.ajustePresupuesto = {
-            excedePresupuesto,
-            mensajeAjuste,
-            modulosRecomendados,
-            modulosExcluidos
-          };
-        }
-
         setEstimacion(data.estimacion);
         toast.success("Estimación generada exitosamente");
       }
@@ -424,10 +362,9 @@ const Cotizador = () => {
                           <Label className="text-sm">RUT</Label>
                           <Input
                             value={nuevoCliente.rut}
-                            onChange={(e) => setNuevoCliente({ ...nuevoCliente, rut: formatRUT(e.target.value) })}
+                            onChange={(e) => setNuevoCliente({ ...nuevoCliente, rut: e.target.value })}
                             placeholder="12.345.678-9"
                             className="mt-1"
-                            maxLength={12}
                           />
                         </div>
                         <div>
@@ -489,28 +426,19 @@ const Cotizador = () => {
                 <div>
                   <Label className="text-sm">Costo Hora (CLP)</Label>
                   <Input
-                    type="text"
-                    value={costoPorHoraDisplay}
-                    onChange={(e) => {
-                      const formatted = formatCurrency(e.target.value);
-                      setCostoPorHoraDisplay(formatted);
-                      setCostoPorHora(parseCurrency(formatted));
-                    }}
-                    placeholder="$ 25.000"
+                    type="number"
+                    value={costoPorHora}
+                    onChange={(e) => setCostoPorHora(Number(e.target.value))}
                     className="mt-1.5"
                   />
                 </div>
                 <div>
                   <Label className="text-sm">Presupuesto Cliente</Label>
                   <Input
-                    type="text"
-                    value={presupuestoClienteDisplay}
-                    onChange={(e) => {
-                      const formatted = formatCurrency(e.target.value);
-                      setPresupuestoClienteDisplay(formatted);
-                      setPresupuestoCliente(parseCurrency(formatted).toString());
-                    }}
-                    placeholder="$ 500.000"
+                    type="number"
+                    value={presupuestoCliente}
+                    onChange={(e) => setPresupuestoCliente(e.target.value)}
+                    placeholder="Opcional"
                     className="mt-1.5"
                   />
                 </div>

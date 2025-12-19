@@ -23,17 +23,16 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Plus, Pencil, Trash2, Mail, Building, Phone, MapPin, Search, Grid3x3, List } from "lucide-react";
-import { supabase } from "@/lib/supabaseClient";
+import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { z } from "zod";
-import { formatRUT } from "@/lib/rutUtils";
 
 interface Cliente {
   id: string;
   nombre: string;
   empresa: string | null;
   email: string;
-  rut: string | null;
+  rut?: string;
   telefono: string | null;
   direccion: string | null;
 }
@@ -86,7 +85,7 @@ export default function Clientes() {
         .order("nombre");
 
       if (error) throw error;
-      setClientes((data || []) as unknown as Cliente[]);
+      setClientes(data || []);
     } catch (error: any) {
       toast.error("Error al cargar clientes");
     } finally {
@@ -348,12 +347,6 @@ export default function Clientes() {
                       <Mail className="w-4 h-4" />
                       {cliente.email}
                     </div>
-                    {cliente.rut && (
-                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                        <span className="font-semibold">RUT:</span>
-                        {cliente.rut}
-                      </div>
-                    )}
                     {cliente.telefono && (
                       <div className="flex items-center gap-2 text-sm text-muted-foreground">
                         <Phone className="w-4 h-4" />
@@ -439,19 +432,6 @@ export default function Clientes() {
                   setFormData({ ...formData, empresa: e.target.value })
                 }
                 placeholder="Empresa S.A."
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="rut">RUT</Label>
-              <Input
-                id="rut"
-                value={formData.rut}
-                onChange={(e) =>
-                  setFormData({ ...formData, rut: formatRUT(e.target.value) })
-                }
-                placeholder="12.345.678-9"
-                maxLength={12}
               />
             </div>
 
