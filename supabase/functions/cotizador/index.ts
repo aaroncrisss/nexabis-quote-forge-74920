@@ -1,5 +1,3 @@
-
-
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -10,11 +8,67 @@ const SYSTEM_PROMPT = `Actúas como un analista técnico senior de estimación d
 REGLAS OBLIGATORIAS:
 - NO defines precios ni valores hora
 - NO inventas alcances no descritos por el usuario
-- Estimas horas por módulo basándote en la información proporcionada
+- Estimas horas por módulo basándote en la información proporcionada Y en los RANGOS DE TIEMPO BASE definidos abajo
 - Detectas riesgos técnicos reales
 - Justificas cada estimación de forma breve y técnica
 - Si hay ambigüedad, marcas nivel de confianza bajo y agregas suposiciones
 - SIEMPRE devuelves ÚNICAMENTE JSON válido, sin texto adicional
+
+⏱️ RANGOS DE TIEMPO BASE (OBLIGATORIOS - usa estos rangos para estimar):
+
+🔐 Usuarios / Accesos:
+- Autenticación básica: 6-8 horas
+- Perfiles / roles simples: 5-7 horas
+- Acceso por link / token: 4-6 horas
+
+🖼️ Multimedia:
+- Subida de imágenes: 3-5 horas
+- Galerías / visualización: 4-6 horas
+- Manejo archivos / validaciones: 2-4 horas
+
+💬 Interacción / Formularios:
+- Formularios simples: 2-4 horas
+- Comentarios / muro interactivo: 8-10 horas
+- Moderación básica: 3-5 horas
+
+🎨 Frontend / UX:
+- Maquetación base: 6-8 horas
+- Responsive: 4-6 horas
+- Ajustes UX / refinamiento: 3-5 horas
+- Iteración visual extra: 3-5 horas
+
+🧠 Backend / API:
+- Modelado base de datos: 3-5 horas
+- Endpoints CRUD: 4-6 horas
+- Lógica de negocio: 5-7 horas
+- Integraciones externas: 6-8 horas
+
+🛒 eCommerce:
+- Setup WooCommerce / similar: 6-8 horas
+- Productos / inventario: 4-6 horas
+- Impuestos / reglas: 3-5 horas
+- Ajustes checkout: 3-5 horas
+
+💳 Pagos:
+- Integración pasarela: 6-8 horas
+- Pruebas pagos: 3-5 horas
+- Manejo errores: 2-4 horas
+
+🚀 Infraestructura:
+- Configuración servidor: 3-5 horas
+- Variables / ambiente: 2-3 horas
+- Dominio / SSL: 1-2 horas
+- Deploy productivo: 1-2 horas
+
+🧪 QA / Cierre:
+- Testing funcional: 4-6 horas
+- Correcciones: 3-5 horas
+- Validación final: 2-3 horas
+
+🧮 BLOQUES GENERALES (referencia):
+- Proyecto web chico: 40-60 horas total
+- Plataforma media: 60-80 horas total
+- Plataforma compleja: 80-120 horas total
 
 ESTRUCTURA JSON OBLIGATORIA:
 
@@ -23,13 +77,13 @@ ESTRUCTURA JSON OBLIGATORIA:
   "modulos": [
     {
       "nombre": "Nombre del módulo",
-      "horasEstimadas": número,
+      "horasEstimadas": número (usa el PROMEDIO del rango correspondiente),
       "nivelRiesgo": "bajo | medio | alto",
       "justificacion": "Texto breve y técnico",
       "esencial": true o false
     }
   ],
-  "horasTotales": número,
+  "horasTotales": número (suma de todos los módulos),
   "riesgosClave": ["Riesgo identificado"],
   "suposiciones": ["Supuesto realizado para la estimación"],
   "nivelConfianza": "alto | medio | bajo",
@@ -64,7 +118,8 @@ INSTRUCCIONES CRÍTICAS PARA ajustePresupuesto:
    - modulosRecomendados = TODOS los módulos
    - modulosExcluidos = []
 
-RECUERDA: El objeto ajustePresupuesto NO ES OPCIONAL. DEBE estar en TODAS tus respuestas.`;
+RECUERDA: El objeto ajustePresupuesto NO ES OPCIONAL. DEBE estar en TODAS tus respuestas.
+USA LOS RANGOS DE TIEMPO DEFINIDOS ARRIBA PARA CADA TIPO DE TAREA.`;
 
 interface CotizadorRequest {
   tipoProyecto: string;
@@ -101,7 +156,7 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    const userPrompt = `Analiza el siguiente requerimiento y genera una estimación técnica:
+    const userPrompt = `Analiza el siguiente requerimiento y genera una estimación técnica USANDO LOS RANGOS DE TIEMPO BASE del sistema:
 
 TIPO DE PROYECTO: ${tipoProyecto}
 
@@ -114,6 +169,8 @@ ${funcionalidades.length > 0 ? funcionalidades.map((f, i) => `${i + 1}. ${f}`).j
 NIVEL DE URGENCIA: ${urgencia}
 
 ${horasMaximas ? `LÍMITE DE HORAS (PRESUPUESTO): ${horasMaximas} horas. Ajusta el alcance si es necesario.` : 'Sin límite de presupuesto especificado.'}
+
+IMPORTANTE: Usa los RANGOS DE TIEMPO BASE definidos en las instrucciones del sistema para estimar cada módulo. Por ejemplo, si es "Autenticación básica", estima entre 6-8 horas.
 
 Genera la estimación en formato JSON según la estructura requerida.`;
 
