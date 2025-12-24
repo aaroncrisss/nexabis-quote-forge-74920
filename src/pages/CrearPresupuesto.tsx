@@ -31,11 +31,13 @@ export interface PresupuestoData {
   iva_porcentaje: number;
   modo_impresion: string;
   promocion_aplicada: string | null;
+  proyecto_id?: string | null;
 }
 
 interface LocationState {
   fromCotizador?: boolean;
   clienteId?: string;
+  proyectoId?: string;
   titulo?: string;
   items?: PresupuestoItem[];
   descripcion?: string;
@@ -65,6 +67,7 @@ export default function CrearPresupuesto() {
     iva_porcentaje: 19,
     modo_impresion: "dark",
     promocion_aplicada: null,
+    proyecto_id: locationState?.proyectoId || null,
   });
 
   // Si viene del cotizador con datos, saltar al paso 2 (items)
@@ -97,17 +100,17 @@ export default function CrearPresupuesto() {
     }
 
     const total_con_descuento = total_con_iva - descuento_total;
-    
+
     // Extraer el IVA del total (precios incluyen IVA)
     const factor_iva = presupuesto.iva_porcentaje / 100;
     const subtotal_sin_iva = total_con_descuento / (1 + factor_iva);
     const iva_monto = total_con_descuento - subtotal_sin_iva;
-    
-    return { 
-      subtotal: subtotal_sin_iva, 
-      descuento_total, 
-      iva_monto, 
-      total: total_con_descuento 
+
+    return {
+      subtotal: subtotal_sin_iva,
+      descuento_total,
+      iva_monto,
+      total: total_con_descuento
     };
   };
 
@@ -141,6 +144,7 @@ export default function CrearPresupuesto() {
           estado: "pendiente",
           modo_impresion: presupuesto.modo_impresion,
           promocion_aplicada: presupuesto.promocion_aplicada,
+          proyecto_id: presupuesto.proyecto_id,
         }])
         .select()
         .single();
@@ -223,13 +227,12 @@ export default function CrearPresupuesto() {
         {steps.map((s, idx) => (
           <div key={s.number} className="flex items-center flex-shrink-0">
             <div
-              className={`flex items-center gap-1 md:gap-2 px-2 md:px-4 py-2 rounded-lg transition-all ${
-                step === s.number
+              className={`flex items-center gap-1 md:gap-2 px-2 md:px-4 py-2 rounded-lg transition-all ${step === s.number
                   ? "bg-gradient-to-r from-primary via-accent to-warning text-black"
                   : step > s.number
-                  ? "bg-primary/20 text-primary"
-                  : "bg-muted text-muted-foreground"
-              }`}
+                    ? "bg-primary/20 text-primary"
+                    : "bg-muted text-muted-foreground"
+                }`}
             >
               <div className="w-5 h-5 md:w-6 md:h-6 rounded-full bg-background/20 flex items-center justify-center font-bold text-xs md:text-sm">
                 {step > s.number ? <Check className="w-3 h-3 md:w-4 md:h-4" /> : s.number}

@@ -26,7 +26,8 @@ import {
   ArrowRight,
   DollarSign,
   Eye,
-  EyeOff
+  EyeOff,
+  Save
 } from "lucide-react";
 
 interface Modulo {
@@ -34,7 +35,8 @@ interface Modulo {
   horasEstimadas: number;
   nivelRiesgo: "bajo" | "medio" | "alto";
   justificacion: string;
-  esencial?: boolean;
+  prioridad?: number;
+  esencial?: boolean; // Mantener por compatibilidad hacia atrás
 }
 
 interface AjustePresupuesto {
@@ -181,9 +183,9 @@ const Cotizador = () => {
     }
 
     try {
-      // Llamar directamente al endpoint de Lovable Cloud
+      // Llamar al endpoint de tu Supabase Self-Hosted
       const response = await fetch(
-        "https://xrncxmtscasysbqvmvkz.supabase.co/functions/v1/cotizador",
+        "https://supabase.nexabistech.com/functions/v1/cotizador",
         {
           method: "POST",
           headers: {
@@ -212,9 +214,17 @@ const Cotizador = () => {
         return;
       }
 
-      if (data?.estimacion) {
+      // The Edge Function returns the estimation object directly, not wrapped in an "estimacion" key
+      if (data && data.modulos) {
+        setEstimacion(data);
+        toast.success("Estimación generada exitosamente");
+      } else if (data?.estimacion) {
+        // Fallback for backward compatibility if we change the backend structure
         setEstimacion(data.estimacion);
         toast.success("Estimación generada exitosamente");
+      } else {
+        console.error("Respuesta inesperada:", data);
+        toast.error("Formato de respuesta inválido");
       }
     } catch (err) {
       console.error("Error:", err);
@@ -248,6 +258,157 @@ const Cotizador = () => {
       case "medio": return <AlertTriangle className="w-5 h-5 text-yellow-400" />;
       case "bajo": return <AlertTriangle className="w-5 h-5 text-red-400" />;
       default: return null;
+    }
+  };
+
+  /* --------------------------------------------------------------------------------
+   * PERSISTENCIA DE PROYECTO
+   * -------------------------------------------------------------------------------- */
+  const [isSaving, setIsSaving] = useState(false);
+
+  const handleSaveProject = async () => {
+    if (!estimacion || !tipoProyecto) return;
+
+    try {
+      setIsSaving(true);
+
+      const { data: { user } } = await supabase.auth.getUser();
+
+      if (!user) {
+        toast.error("Debes iniciar sesión para guardar un proyecto");
+        return;
+      }
+
+      // Assuming 'nombreProyecto' and 'urgency' are defined elsewhere or derived.
+      // For this change, we'll use the existing 'tipoProyecto' and 'urgencia' for context if 'nombreProyecto' and 'urgency' are not defined.
+      // If 'nombreProyecto' and 'urgency' are meant to be new variables, they should be declared.
+      // As per instruction, I'm replacing with 'nombreProyecto' and 'urgency' directly.
+      const nombreProyecto = `Proyecto ${tipoProyecto} - ${new Date().toLocaleDateString()}`; // Placeholder, assuming it's derived or defined.
+      const urgency = urgencia; // Placeholder, assuming it's derived or defined.
+
+      // 1. Crear el Proyecto
+      const { data: proyecto, error: errorProyecto } = await supabase
+        .from('proyectos')
+        .insert({
+          usuario_id: user.id,
+          cliente_id: clienteId || null, // Guardar el cliente seleccionado
+          nombre: nombreProyecto,
+          descripcion: descripcion,
+          tipo: tipoProyecto,
+          urgencia: urgency,
+          presupuesto_cliente: presupuestoCliente ? parseInt(presupuestoCliente) : null,
+          estado: 'borrador' // Inicia como borrador
+        })
+        .select()
+        .single();
+
+      if (errorProyecto) throw errorProyecto;
+      if (!proyecto) throw new Error("No se pudo crear el proyecto");
+
+      // 2. Guardar la Versión "Completa" (Todos los módulos)
+      const { data: estCompleta, error: errorEstCompleta } = await supabase
+        .from('estimaciones')
+        .insert({
+          proyecto_id: proyecto.id,
+          titulo: "Alcance Completo",
+          total_horas: estimacion.horasTotales,
+          costo_total: estimacion.horasTotales * costoPorHora,
+          costo_hora: costoPorHora, // Guardar el valor de la hora
+          complejidad: estimacion.complejidad,
+          nivel_confianza: estimacion.nivelConfianza,
+          riesgos: estimacion.riesgosClave,
+          suposiciones: estimacion.suposiciones,
+          es_elegida: !estimacion.ajustePresupuesto?.excedePresupuesto // Es la elegida si no excede presupuesto
+        })
+        .select()
+        .single();
+
+      if (errorEstCompleta) throw errorEstCompleta;
+
+      // Helper para mapear prioridades
+      const mapPrioridad = (p: string | number | undefined): number => {
+        if (typeof p === 'number') return p;
+        if (!p) return 4;
+        const lower = p.toString().toLowerCase();
+        if (lower.includes('crit') || lower.includes('crít')) return 1; // Critical
+        if (lower.includes('esen')) return 2; // Essential
+        if (lower.includes('imp')) return 3; // Important
+        return 4; // Optional (default)
+      };
+
+      // 3. Guardar módulos de la versión Completa
+      if (estCompleta) {
+        const modulosInsert = estimacion.modulos.map(m => ({
+          estimacion_id: estCompleta.id,
+          nombre: m.nombre,
+          horas_estimadas: m.horasEstimadas,
+          prioridad: mapPrioridad(m.prioridad),
+          nivel_riesgo: m.nivelRiesgo,
+          justificacion: m.justificacion,
+          es_excluido: false,
+          estado: 'pendiente'
+        }));
+
+        const { error: errorModulos } = await supabase.from('modulos_estimacion').insert(modulosInsert);
+        if (errorModulos) throw errorModulos;
+      }
+
+      // 4. Si excede presupuesto, guardar la Versión "MVP" (Solo sugeridos)
+      if (estimacion.ajustePresupuesto?.excedePresupuesto) {
+        // Calcular totales del MVP
+        const modulosMVP = estimacion.modulos.filter(m =>
+          estimacion.ajustePresupuesto?.modulosRecomendados.includes(m.nombre)
+        );
+        const horasMVP = modulosMVP.reduce((acc, m) => acc + m.horasEstimadas, 0);
+
+        const { data: estMVP, error: errorEstMVP } = await supabase
+          .from('estimaciones')
+          .insert({
+            proyecto_id: proyecto.id,
+            titulo: "MVP Sugerido (Ajustado a Presupuesto)",
+            total_horas: horasMVP,
+            costo_total: horasMVP * costoPorHora,
+            costo_hora: costoPorHora, // Guardar costo hora también aquí
+            complejidad: estimacion.complejidad,
+            nivel_confianza: estimacion.nivelConfianza,
+            riesgos: estimacion.riesgosClave,
+            suposiciones: estimacion.suposiciones,
+            es_elegida: true // Esta será la recomendada/elegida por defecto
+          })
+          .select()
+          .single();
+
+        if (errorEstMVP) throw errorEstMVP;
+
+        // Guardar módulos del MVP (marcamos como excluidos los que no están)
+        if (estMVP) {
+          const modulosMVPInsert = estimacion.modulos.map(m => {
+            const isIncluded = estimacion.ajustePresupuesto?.modulosRecomendados.includes(m.nombre);
+            return {
+              estimacion_id: estMVP.id,
+              nombre: m.nombre,
+              horas_estimadas: m.horasEstimadas,
+              prioridad: mapPrioridad(m.prioridad),
+              nivel_riesgo: m.nivelRiesgo,
+              justificacion: m.justificacion,
+              es_excluido: !isIncluded, // Marcamos como excluido si no está en recomendados
+              estado: 'pendiente'
+            };
+          });
+
+          const { error: errorModulosMVP } = await supabase.from('modulos_estimacion').insert(modulosMVPInsert);
+          if (errorModulosMVP) throw errorModulosMVP;
+        }
+      }
+
+      toast.success("¡Proyecto guardado exitosamente!");
+      navigate(`/proyectos/${proyecto.id}`);
+
+    } catch (error: any) {
+      console.error("Error al guardar proyecto:", error);
+      toast.error(`Error al guardar: ${error.message}`);
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -303,7 +464,7 @@ const Cotizador = () => {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="flex flex-col gap-6 max-w-4xl mx-auto">
           {/* Form Section */}
           <Card className="glass-card border-primary/20">
             <CardHeader className="p-4 md:p-6">
@@ -577,26 +738,53 @@ const Cotizador = () => {
                     </div>
 
                     {/* Ajuste de Presupuesto */}
+                    {/* Ajuste de Presupuesto - Visual Mejorada */}
                     {estimacion.ajustePresupuesto && estimacion.ajustePresupuesto.excedePresupuesto && (
-                      <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-lg space-y-3">
+                      <div className={`p-4 rounded-lg space-y-3 transition-all duration-300 ${mostrarAjuste ? 'bg-indigo-500/10 border border-indigo-500/30 shadow-[0_0_15px_rgba(99,102,241,0.15)]' : 'bg-red-500/10 border border-red-500/20'}`}>
                         <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2 text-red-400 font-medium">
-                            <AlertTriangle className="w-5 h-5" />
-                            <span>Excede Presupuesto Cliente</span>
+                          <div className={`flex items-center gap-2 font-medium ${mostrarAjuste ? 'text-indigo-400' : 'text-red-400'}`}>
+                            {mostrarAjuste ? <Sparkles className="w-5 h-5" /> : <AlertTriangle className="w-5 h-5" />}
+                            <span>{mostrarAjuste ? "Propuesta de Fases (IA)" : "Excede Presupuesto Cliente"}</span>
                           </div>
                           <Button
                             variant="ghost"
                             size="sm"
                             onClick={() => setMostrarAjuste(!mostrarAjuste)}
-                            className="text-red-400 hover:text-red-300 hover:bg-red-500/10 h-8 gap-2"
+                            className={`${mostrarAjuste ? 'text-indigo-400 hover:text-indigo-300 hover:bg-indigo-500/10' : 'text-red-400 hover:text-red-300 hover:bg-red-500/10'} h-8 gap-2 transition-colors`}
                           >
                             {mostrarAjuste ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                            {mostrarAjuste ? "Ocultar Ajuste" : "Ver Propuesta de Ajuste"}
+                            {mostrarAjuste ? "Ocultar Propuesta" : "Ver Solución Sugerida"}
                           </Button>
                         </div>
-                        <p className="text-sm text-muted-foreground">
-                          {estimacion.ajustePresupuesto.mensajeAjuste}
-                        </p>
+
+                        {mostrarAjuste ? (
+                          <div className="text-sm text-foreground/90 bg-background/50 p-4 rounded-md border border-indigo-500/10 relative overflow-hidden">
+                            {/* Gradient accent */}
+                            <div className="absolute top-0 left-0 w-1 h-full bg-gradient-to-b from-indigo-500 to-purple-500/50"></div>
+
+                            <div className="whitespace-pre-wrap pl-2 space-y-2">
+                              {estimacion.ajustePresupuesto.mensajeAjuste.split('\n').map((line, i) => {
+                                // Simple formatting for **bold** text
+                                const parts = line.split(/(\*\*.*?\*\*)/g);
+                                return (
+                                  <div key={i} className={`${line.trim().startsWith('📦') || line.trim().startsWith('💰') ? 'mt-3 font-medium' : ''}`}>
+                                    {parts.map((part, j) => {
+                                      if (part.startsWith('**') && part.endsWith('**')) {
+                                        return <span key={j} className="font-bold text-indigo-400">{part.slice(2, -2)}</span>;
+                                      }
+                                      return <span key={j}>{part}</span>;
+                                    })}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-2 text-sm text-muted-foreground animate-pulse">
+                            <span className="w-1.5 h-1.5 rounded-full bg-red-400"></span>
+                            El presupuesto permite cubrir solo una parte de los requerimientos.
+                          </div>
+                        )}
                       </div>
                     )}
                     {estimacion.ajustePresupuesto && !estimacion.ajustePresupuesto.excedePresupuesto && presupuestoCliente && (
@@ -611,34 +799,46 @@ const Cotizador = () => {
                       </div>
                     )}
 
-                    {estimacion.ajustePresupuesto?.excedePresupuesto && mostrarAjuste ? (
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                        <Button
-                          onClick={() => convertirAPresupuesto(true)}
-                          className="w-full bg-green-600 hover:bg-green-700 gap-2"
-                        >
-                          <DollarSign className="w-4 h-4" />
-                          Alternativa Ajustada
-                        </Button>
+                    <div className="flex flex-col gap-3">
+                      {estimacion.ajustePresupuesto?.excedePresupuesto && mostrarAjuste ? (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          <Button
+                            onClick={() => convertirAPresupuesto(true)}
+                            className="w-full bg-green-600 hover:bg-green-700 gap-2"
+                          >
+                            <DollarSign className="w-4 h-4" />
+                            Alternativa Ajustada
+                          </Button>
+                          <Button
+                            onClick={() => convertirAPresupuesto(false)}
+                            className="w-full bg-secondary text-secondary-foreground hover:bg-secondary/80 gap-2"
+                            variant="outline"
+                          >
+                            <FileText className="w-4 h-4" />
+                            Presupuesto Completo
+                          </Button>
+                        </div>
+                      ) : (
                         <Button
                           onClick={() => convertirAPresupuesto(false)}
-                          className="w-full bg-secondary text-secondary-foreground hover:bg-secondary/80 gap-2"
-                          variant="outline"
+                          className="w-full gradient-button gap-2"
+                          size="lg"
                         >
-                          <FileText className="w-4 h-4" />
-                          Presupuesto Completo
+                          <ArrowRight className="w-4 h-4" />
+                          Convertir a Presupuesto
                         </Button>
-                      </div>
-                    ) : (
+                      )}
+
                       <Button
-                        onClick={() => convertirAPresupuesto(false)}
-                        className="w-full gradient-button gap-2"
-                        size="lg"
+                        onClick={handleSaveProject}
+                        disabled={isSaving}
+                        variant="outline"
+                        className="w-full border-primary/20 hover:bg-primary/5 gap-2"
                       >
-                        <ArrowRight className="w-4 h-4" />
-                        Convertir a Presupuesto
+                        {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                        {isSaving ? "Guardando Proyecto..." : "Guardar Proyecto"}
                       </Button>
-                    )}
+                    </div>
                   </CardContent>
                 </Card>
 
@@ -656,7 +856,17 @@ const Cotizador = () => {
                             <div className="flex-1">
                               <div className="flex items-center gap-2">
                                 <p className={`font-medium text-sm md:text-base ${isExcluded ? 'line-through text-muted-foreground' : ''}`}>{modulo.nombre}</p>
-                                {modulo.esencial && <Badge variant="outline" className="text-xs h-5">Esencial</Badge>}
+                                {modulo.prioridad ? (
+                                  <Badge className={`text-xs h-5 ${modulo.prioridad === 1 ? "bg-red-500 hover:bg-red-600 border-red-600" :
+                                    modulo.prioridad === 2 ? "bg-orange-500 hover:bg-orange-600 border-orange-600" :
+                                      modulo.prioridad === 3 ? "bg-blue-500 hover:bg-blue-600 border-blue-600" :
+                                        "bg-slate-500 hover:bg-slate-600 border-slate-600"
+                                    }`}>
+                                    {modulo.prioridad === 1 ? "Crítico" :
+                                      modulo.prioridad === 2 ? "Esencial" :
+                                        modulo.prioridad === 3 ? "Importante" : "Opcional"}
+                                  </Badge>
+                                ) : modulo.esencial && <Badge variant="outline" className="text-xs h-5">Esencial</Badge>}
                                 {isExcluded && <Badge variant="destructive" className="text-xs h-5">Excluido por Presupuesto</Badge>}
                               </div>
                               <p className="text-xs md:text-sm text-muted-foreground mt-1">

@@ -14,6 +14,8 @@ import Configuracion from "./pages/Configuracion";
 import Clientes from "./pages/Clientes";
 import AdminPanel from "./pages/AdminPanel";
 import Cotizador from "./pages/Cotizador";
+import Proyectos from "./pages/Proyectos";
+import ProyectoDetalle from "./pages/ProyectoDetalle";
 import ProtectedRoute from "./components/ProtectedRoute";
 import NotFound from "./pages/NotFound";
 
@@ -32,10 +34,12 @@ const App = () => (
           <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
           <Route path="/presupuestos" element={<ProtectedRoute><Presupuestos /></ProtectedRoute>} />
           <Route path="/clientes" element={<ProtectedRoute><Clientes /></ProtectedRoute>} />
+          <Route path="/proyectos" element={<ProtectedRoute><Proyectos /></ProtectedRoute>} />
           <Route path="/cotizador" element={<ProtectedRoute><Cotizador /></ProtectedRoute>} />
           <Route path="/crear" element={<ProtectedRoute><CrearPresupuesto /></ProtectedRoute>} />
           <Route path="/presupuesto/:token" element={<PresupuestoPublico />} />
           <Route path="/configuracion" element={<ProtectedRoute><Configuracion /></ProtectedRoute>} />
+          <Route path="/proyectos/:id" element={<ProtectedRoute><ProyectoDetalle /></ProtectedRoute>} />
           <Route path="/admin" element={<ProtectedRoute><AdminPanel /></ProtectedRoute>} />
           <Route path="*" element={<NotFound />} />
         </Routes>

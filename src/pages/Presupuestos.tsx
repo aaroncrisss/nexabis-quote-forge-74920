@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "react-router-dom";
-import { Eye, Trash2, Copy, Plus, Search, ExternalLink, Grid3x3, List } from "lucide-react";
+import { Eye, Trash2, Copy, Plus, Search, ExternalLink, Grid3x3, List, ArchiveRestore } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import {
   AlertDialog,
@@ -135,6 +135,108 @@ const Presupuestos = () => {
         description: error.message,
         variant: "destructive",
       });
+    }
+  };
+
+
+
+  const handleConvertToProject = async (presupuesto: any) => {
+    try {
+      setLoading(true);
+      const { data: userData } = await supabase.auth.getUser();
+      if (!userData.user) return;
+
+      // 0. Fetch budget items to calculate hours
+      const { data: items, error: itemsError } = await supabase
+        .from('items_presupuesto')
+        .select('*')
+        .eq('presupuesto_id', presupuesto.id);
+
+      if (itemsError) throw itemsError;
+
+      // Calculate total hours from items (assuming quantity = hours)
+      const totalHoras = items?.reduce((acc, item) => acc + (item.cantidad || 0), 0) || 0;
+      // Calculate implied rate, default to 0 if hours is 0
+      const costoHoraImplicito = totalHoras > 0 ? (presupuesto.total / totalHoras) : 0;
+
+      // 1. Create Project
+      const { data: proyecto, error: projError } = await supabase
+        .from('proyectos')
+        .insert([{
+          usuario_id: userData.user.id,
+          cliente_id: presupuesto.cliente_id,
+          nombre: presupuesto.titulo,
+          descripcion: `Proyecto generado a partir del presupuesto #${presupuesto.numero || 'S/N'}`,
+          tipo: 'Web', // Default type
+          presupuesto_cliente: presupuesto.total,
+          estado: 'activo'
+        }])
+        .select()
+        .single();
+
+      if (projError) throw projError;
+
+      // 2. Create Estimate
+      const { data: estimacion, error: estError } = await supabase
+        .from('estimaciones')
+        .insert([{
+          proyecto_id: proyecto.id,
+          titulo: "Estimación Base (Desde Presupuesto)",
+          total_horas: totalHoras,
+          costo_total: presupuesto.total,
+          costo_hora: costoHoraImplicito,
+          es_elegida: true,
+          complejidad: 'media',
+          nivel_confianza: 'alto'
+        }])
+        .select()
+        .single();
+
+      if (estError) throw estError;
+
+      // 3. Create Modules from Items
+      if (items && items.length > 0) {
+        const modulos = items.map(item => ({
+          estimacion_id: estimacion.id,
+          nombre: item.descripcion, // Using description as name
+          descripcion: `Item del presupuesto: ${item.descripcion}`,
+          horas_estimadas: item.cantidad || 0,
+          prioridad: 2, // Essential by default
+          estado: 'pendiente'
+        }));
+
+        const { error: modError } = await supabase
+          .from('modulos_estimacion')
+          .insert(modulos);
+
+        if (modError) throw modError;
+      }
+
+      // 4. Update Budget with Project Link
+      const { error: updateError } = await supabase
+        .from('presupuestos')
+        .update({ proyecto_id: proyecto.id })
+        .eq('id', presupuesto.id);
+
+      if (updateError) throw updateError;
+
+      toast({
+        title: "¡Proyecto Creado!",
+        description: "El presupuesto se ha convertido en proyecto correctamente.",
+      });
+
+      // Navigate to the new project
+      navigate(`/proyectos/${proyecto.id}`);
+
+    } catch (error: any) {
+      console.error("Error converting to project:", error);
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -298,6 +400,17 @@ const Presupuestos = () => {
                       >
                         <Copy className="w-4 h-4" />
                       </Button>
+                      {!p.proyecto_id && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleConvertToProject(p)}
+                          title="Convertir a Proyecto"
+                          className="hidden sm:inline-flex text-blue-500 hover:text-blue-600 hover:bg-blue-50"
+                        >
+                          <ArchiveRestore className="w-4 h-4" />
+                        </Button>
+                      )}
                       <Button
                         size="sm"
                         variant="outline"
@@ -370,6 +483,17 @@ const Presupuestos = () => {
                       >
                         <Copy className="w-4 h-4" />
                       </Button>
+                      {!p.proyecto_id && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => handleConvertToProject(p)}
+                          title="Convertir a Proyecto"
+                          className="text-blue-500 hover:text-blue-600 hover:bg-blue-50"
+                        >
+                          <ArchiveRestore className="w-4 h-4" />
+                        </Button>
+                      )}
                       <Button
                         size="sm"
                         variant="ghost"
