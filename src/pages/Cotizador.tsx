@@ -110,6 +110,7 @@ const Cotizador = () => {
   const [estimacion, setEstimacion] = useState<Estimacion | null>(null);
   const [costoPorHora, setCostoPorHora] = useState(25000); // CLP por defecto
   const [presupuestoCliente, setPresupuestoCliente] = useState<string>("");
+  const [proyecto, setProyecto] = useState<any>(null); // Track saved project
 
   useEffect(() => {
     loadClientes();
@@ -305,13 +306,18 @@ const Cotizador = () => {
       if (errorProyecto) throw errorProyecto;
       if (!proyecto) throw new Error("No se pudo crear el proyecto");
 
-      // 2. Guardar la Versión "Completa" (Todos los módulos)
+      // Actualizar estado local
+      setProyecto(proyecto);
+
+      // Usar la variable local actualizada para las siguientes operaciones
+      const proy = proyecto;
+
       const { data: estCompleta, error: errorEstCompleta } = await supabase
         .from('estimaciones')
         .insert({
-          proyecto_id: proyecto.id,
+          proyecto_id: proy.id,
           titulo: "Alcance Completo",
-          total_horas: estimacion.horasTotales,
+          total_horas: Math.ceil(estimacion.horasTotales), // Round up to match int column
           costo_total: estimacion.horasTotales * costoPorHora,
           costo_hora: costoPorHora, // Guardar el valor de la hora
           complejidad: estimacion.complejidad,
@@ -341,7 +347,7 @@ const Cotizador = () => {
         const modulosInsert = estimacion.modulos.map(m => ({
           estimacion_id: estCompleta.id,
           nombre: m.nombre,
-          horas_estimadas: m.horasEstimadas,
+          horas_estimadas: Math.ceil(m.horasEstimadas), // Round up
           prioridad: mapPrioridad(m.prioridad),
           nivel_riesgo: m.nivelRiesgo,
           justificacion: m.justificacion,
@@ -364,9 +370,9 @@ const Cotizador = () => {
         const { data: estMVP, error: errorEstMVP } = await supabase
           .from('estimaciones')
           .insert({
-            proyecto_id: proyecto.id,
+            proyecto_id: proy.id,
             titulo: "MVP Sugerido (Ajustado a Presupuesto)",
-            total_horas: horasMVP,
+            total_horas: Math.ceil(horasMVP), // Round up
             costo_total: horasMVP * costoPorHora,
             costo_hora: costoPorHora, // Guardar costo hora también aquí
             complejidad: estimacion.complejidad,
@@ -387,7 +393,7 @@ const Cotizador = () => {
             return {
               estimacion_id: estMVP.id,
               nombre: m.nombre,
-              horas_estimadas: m.horasEstimadas,
+              horas_estimadas: Math.ceil(m.horasEstimadas), // Round up
               prioridad: mapPrioridad(m.prioridad),
               nivel_riesgo: m.nivelRiesgo,
               justificacion: m.justificacion,
@@ -402,7 +408,7 @@ const Cotizador = () => {
       }
 
       toast.success("¡Proyecto guardado exitosamente!");
-      navigate(`/proyectos/${proyecto.id}`);
+      navigate(`/proyectos/${proy.id}`);
 
     } catch (error: any) {
       console.error("Error al guardar proyecto:", error);
@@ -441,6 +447,7 @@ const Cotizador = () => {
       state: {
         fromCotizador: true,
         clienteId,
+        proyectoId: proyecto?.id, // Pass project ID if available
         titulo: `${tipoLabel} - Estimación IA`,
         items,
         descripcion,
@@ -800,44 +807,52 @@ const Cotizador = () => {
                     )}
 
                     <div className="flex flex-col gap-3">
-                      {estimacion.ajustePresupuesto?.excedePresupuesto && mostrarAjuste ? (
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                          <Button
-                            onClick={() => convertirAPresupuesto(true)}
-                            className="w-full bg-green-600 hover:bg-green-700 gap-2"
-                          >
-                            <DollarSign className="w-4 h-4" />
-                            Alternativa Ajustada
-                          </Button>
-                          <Button
-                            onClick={() => convertirAPresupuesto(false)}
-                            className="w-full bg-secondary text-secondary-foreground hover:bg-secondary/80 gap-2"
-                            variant="outline"
-                          >
-                            <FileText className="w-4 h-4" />
-                            Presupuesto Completo
-                          </Button>
-                        </div>
-                      ) : (
-                        <Button
-                          onClick={() => convertirAPresupuesto(false)}
-                          className="w-full gradient-button gap-2"
-                          size="lg"
-                        >
-                          <ArrowRight className="w-4 h-4" />
-                          Convertir a Presupuesto
-                        </Button>
-                      )}
-
+                      {/* 1. GUARDAR PROYECTO - Siempre visible primero */}
                       <Button
                         onClick={handleSaveProject}
-                        disabled={isSaving}
-                        variant="outline"
-                        className="w-full border-primary/20 hover:bg-primary/5 gap-2"
+                        disabled={isSaving || !!proyecto}
+                        variant={proyecto ? "outline" : "default"}
+                        className={`w-full gap-2 ${proyecto ? 'border-green-500 text-green-500' : 'gradient-button'}`}
                       >
-                        {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                        {isSaving ? "Guardando Proyecto..." : "Guardar Proyecto"}
+                        {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : proyecto ? <CheckCircle className="w-4 h-4" /> : <Save className="w-4 h-4" />}
+                        {isSaving ? "Guardando..." : proyecto ? "✓ Proyecto Guardado" : "1. Guardar Proyecto"}
                       </Button>
+
+                      {/* 2. PRESUPUESTO - Solo visible después de guardar */}
+                      {proyecto ? (
+                        estimacion.ajustePresupuesto?.excedePresupuesto && mostrarAjuste ? (
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            <Button
+                              onClick={() => convertirAPresupuesto(true)}
+                              className="w-full bg-green-600 hover:bg-green-700 gap-2"
+                            >
+                              <DollarSign className="w-4 h-4" />
+                              Alternativa Ajustada
+                            </Button>
+                            <Button
+                              onClick={() => convertirAPresupuesto(false)}
+                              className="w-full bg-secondary text-secondary-foreground hover:bg-secondary/80 gap-2"
+                              variant="outline"
+                            >
+                              <FileText className="w-4 h-4" />
+                              Presupuesto Completo
+                            </Button>
+                          </div>
+                        ) : (
+                          <Button
+                            onClick={() => convertirAPresupuesto(false)}
+                            className="w-full gradient-button gap-2"
+                            size="lg"
+                          >
+                            <ArrowRight className="w-4 h-4" />
+                            2. Crear Presupuesto (Vinculado)
+                          </Button>
+                        )
+                      ) : (
+                        <p className="text-xs text-center text-muted-foreground">
+                          💡 Guarda el proyecto primero para generar un presupuesto vinculado
+                        </p>
+                      )}
                     </div>
                   </CardContent>
                 </Card>

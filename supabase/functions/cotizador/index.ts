@@ -4,7 +4,7 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-const GEMINI_API_KEY = "AIzaSyDk5uvdwd0OtwS2MZICfTa4d_I0oaGY9i8";
+const GEMINI_API_KEY = "AIzaSyDEjrGloLRpHZsuc7KYIeSqKrwLD9vLVuY";
 
 const SYSTEM_PROMPT = `Actúas como un analista técnico senior de estimación de proyectos digitales.
 

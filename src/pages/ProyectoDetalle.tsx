@@ -18,6 +18,7 @@ export default function ProyectoDetalle() {
     const [proyecto, setProyecto] = useState<any>(null);
     const [estimaciones, setEstimaciones] = useState<any[]>([]);
     const [modulos, setModulos] = useState<any[]>([]);
+    const [presupuestos, setPresupuestos] = useState<any[]>([]);
     const [activeTab, setActiveTab] = useState<string>("checklist");
 
     useEffect(() => {
@@ -52,6 +53,17 @@ export default function ProyectoDetalle() {
             if (ests && ests.length > 0) {
                 // Cargar módulos de la estimación principal (la primera o elegida)
                 loadModules(ests[0].id);
+            }
+
+            // Cargar presupuestos vinculados
+            const { data: presups, error: errPresups } = await supabase
+                .from('presupuestos')
+                .select('*, clientes(nombre, empresa)')
+                .eq('proyecto_id', id)
+                .order('created_at', { ascending: false });
+
+            if (!errPresups) {
+                setPresupuestos(presups || []);
             }
         } catch (error: any) {
             console.error("Error cargando proyecto:", error);
@@ -191,7 +203,7 @@ export default function ProyectoDetalle() {
                     <TabsList>
                         <TabsTrigger value="checklist">Checklist de Implementación</TabsTrigger>
                         <TabsTrigger value="detalles">Detalles y Riesgos</TabsTrigger>
-                        <TabsTrigger value="versiones">Versiones del Presupuesto</TabsTrigger>
+                        <TabsTrigger value="versiones">Presupuesto Vinculado</TabsTrigger>
                     </TabsList>
 
                     <TabsContent value="checklist" className="space-y-4">
@@ -231,9 +243,12 @@ export default function ProyectoDetalle() {
                                                 </span>
                                                 <div className="flex items-center gap-2">
                                                     <Badge variant="outline" className={`${modulo.prioridad === 1 ? "border-red-500 text-red-500 bg-red-500/10" :
-                                                        modulo.prioridad === 2 ? "border-orange-500 text-orange-500 bg-orange-500/10" : "border-slate-500"
+                                                        modulo.prioridad === 2 ? "border-orange-500 text-orange-500 bg-orange-500/10" :
+                                                            modulo.prioridad === 3 ? "border-blue-500 text-blue-500 bg-blue-500/10" : "border-slate-500"
                                                         }`}>
-                                                        {modulo.prioridad === 1 ? 'Crítico' : modulo.prioridad === 2 ? 'Esencial' : 'Opcional'}
+                                                        {modulo.prioridad === 1 ? 'Crítico' :
+                                                            modulo.prioridad === 2 ? 'Esencial' :
+                                                                modulo.prioridad === 3 ? 'Importante' : 'Opcional'}
                                                     </Badge>
                                                     <Badge variant="secondary">{modulo.horas_estimadas}h</Badge>
                                                 </div>
@@ -279,6 +294,56 @@ export default function ProyectoDetalle() {
                                     </ul>
                                 </CardContent>
                             </Card>
+                        </div>
+                    </TabsContent>
+
+                    <TabsContent value="versiones">
+                        <div className="space-y-4">
+                            <h3 className="text-xl font-semibold flex items-center gap-2">
+                                <BadgeDollarSign className="w-5 h-5 text-yellow-500" />
+                                Presupuesto Vinculado
+                            </h3>
+                            {presupuestos.length === 0 ? (
+                                <Card className="p-6 text-center">
+                                    <p className="text-muted-foreground">No hay presupuestos vinculados a este proyecto.</p>
+                                    <Button onClick={handleCreateBudget} className="mt-4 gap-2">
+                                        <BadgeDollarSign className="w-4 h-4" />
+                                        Crear Presupuesto
+                                    </Button>
+                                </Card>
+                            ) : (
+                                <div className="grid gap-4">
+                                    {presupuestos.map((p) => (
+                                        <Card key={p.id} className="p-4 hover:bg-accent/5 transition-all">
+                                            <div className="flex items-center justify-between">
+                                                <div>
+                                                    <p className="font-bold text-lg">{p.numero}</p>
+                                                    <p className="text-sm text-muted-foreground">{p.titulo}</p>
+                                                    <p className="text-xs text-muted-foreground">
+                                                        Cliente: {p.clientes?.empresa || p.clientes?.nombre || 'Sin asignar'}
+                                                    </p>
+                                                </div>
+                                                <div className="text-right">
+                                                    <p className="text-xl font-bold text-primary">
+                                                        ${Number(p.total || 0).toLocaleString()} {p.moneda}
+                                                    </p>
+                                                    <Badge variant={p.estado === 'aprobado' ? 'default' : p.estado === 'rechazado' ? 'destructive' : 'secondary'}>
+                                                        {p.estado?.toUpperCase()}
+                                                    </Badge>
+                                                    <Button
+                                                        size="sm"
+                                                        variant="outline"
+                                                        className="ml-2"
+                                                        onClick={() => window.open(`/presupuesto/${p.token}`, '_blank')}
+                                                    >
+                                                        Ver
+                                                    </Button>
+                                                </div>
+                                            </div>
+                                        </Card>
+                                    ))}
+                                </div>
+                            )}
                         </div>
                     </TabsContent>
                 </Tabs>

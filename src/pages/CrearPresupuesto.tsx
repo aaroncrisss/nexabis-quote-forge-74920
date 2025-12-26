@@ -122,30 +122,34 @@ export default function CrearPresupuesto() {
 
       const { subtotal, descuento_total, iva_monto, total } = calculateTotals();
 
+      const payload = {
+        usuario_id: userData.user.id,
+        cliente_id: presupuesto.cliente_id,
+        titulo: presupuesto.titulo,
+        numero: `NEX-${Date.now().toString().slice(-6)}`,
+        moneda: presupuesto.moneda,
+        subtotal,
+        descuento_tipo: presupuesto.descuento_tipo,
+        descuento_valor: presupuesto.descuento_valor || 0,
+        descuento_total,
+        iva_porcentaje: presupuesto.iva_porcentaje,
+        iva_monto,
+        total,
+        validez_dias: presupuesto.validez_dias,
+        forma_pago: presupuesto.forma_pago,
+        terminos: presupuesto.terminos,
+        notas_trabajo: presupuesto.notas_trabajo,
+        estado: "pendiente",
+        modo_impresion: presupuesto.modo_impresion,
+        promocion_aplicada: presupuesto.promocion_aplicada,
+        proyecto_id: presupuesto.proyecto_id || null,
+      };
+
+      console.log("Enviando payload a Supabase:", payload);
+
       const { data: presupuestoData, error: presupuestoError } = await supabase
         .from("presupuestos")
-        .insert([{
-          usuario_id: userData.user.id,
-          cliente_id: presupuesto.cliente_id,
-          titulo: presupuesto.titulo,
-          numero: "", // El trigger lo generará automáticamente
-          moneda: presupuesto.moneda,
-          subtotal,
-          descuento_tipo: presupuesto.descuento_tipo,
-          descuento_valor: presupuesto.descuento_valor,
-          descuento_total,
-          iva_porcentaje: presupuesto.iva_porcentaje,
-          iva_monto,
-          total,
-          validez_dias: presupuesto.validez_dias,
-          forma_pago: presupuesto.forma_pago,
-          terminos: presupuesto.terminos,
-          notas_trabajo: presupuesto.notas_trabajo,
-          estado: "pendiente",
-          modo_impresion: presupuesto.modo_impresion,
-          promocion_aplicada: presupuesto.promocion_aplicada,
-          proyecto_id: presupuesto.proyecto_id,
-        }])
+        .insert([payload])
         .select()
         .single();
 
@@ -192,10 +196,12 @@ export default function CrearPresupuesto() {
 
       navigate("/presupuestos");
     } catch (error: any) {
+      console.error("Error completo al guardar:", error);
       toast({
-        title: "Error",
-        description: error.message,
+        title: "Error al guardar (Detalles Técnicos)",
+        description: `Código: ${error.code} - Mensaje: ${error.message} - Detalles: ${error.details || 'N/A'}`,
         variant: "destructive",
+        duration: 10000,
       });
     } finally {
       setLoading(false);
@@ -220,7 +226,14 @@ export default function CrearPresupuesto() {
     <div className="container mx-auto py-4 md:py-8 px-4 max-w-6xl">
       <div className="mb-6 md:mb-8">
         <h1 className="text-2xl md:text-4xl font-bold gradient-text mb-2">Crear Nuevo Presupuesto</h1>
-        <p className="text-sm md:text-base text-muted-foreground">Complete los pasos para generar su presupuesto profesional</p>
+        <div className="flex items-center gap-2 mb-2">
+          <p className="text-sm md:text-base text-muted-foreground">Complete los pasos para generar su presupuesto profesional</p>
+          {presupuesto.proyecto_id && (
+            <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">
+              🔗 Vinculado al Proyecto
+            </span>
+          )}
+        </div>
       </div>
 
       <div className="flex items-center justify-center mb-6 md:mb-8 gap-1 md:gap-2 overflow-x-auto">
@@ -228,10 +241,10 @@ export default function CrearPresupuesto() {
           <div key={s.number} className="flex items-center flex-shrink-0">
             <div
               className={`flex items-center gap-1 md:gap-2 px-2 md:px-4 py-2 rounded-lg transition-all ${step === s.number
-                  ? "bg-gradient-to-r from-primary via-accent to-warning text-black"
-                  : step > s.number
-                    ? "bg-primary/20 text-primary"
-                    : "bg-muted text-muted-foreground"
+                ? "bg-gradient-to-r from-primary via-accent to-warning text-black"
+                : step > s.number
+                  ? "bg-primary/20 text-primary"
+                  : "bg-muted text-muted-foreground"
                 }`}
             >
               <div className="w-5 h-5 md:w-6 md:h-6 rounded-full bg-background/20 flex items-center justify-center font-bold text-xs md:text-sm">

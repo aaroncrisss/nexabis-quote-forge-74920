@@ -36,6 +36,7 @@ export type Database = {
           telefono?: string | null
           updated_at?: string | null
           usuario_id: string
+          proyecto_id?: string | null
         }
         Update: {
           created_at?: string | null
