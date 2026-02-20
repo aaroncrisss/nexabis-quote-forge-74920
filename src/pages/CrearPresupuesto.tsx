@@ -89,28 +89,31 @@ export default function CrearPresupuesto() {
   };
 
   const calculateTotals = () => {
-    // Los precios de items YA incluyen IVA
-    const total_con_iva = presupuesto.items.reduce((sum, item) => sum + item.total, 0);
+    // Lógica solicitada por usuario:
+    // Subtotal = Suma de items
+    // IVA = 19% del Subtotal (Subtotal * 0.19)
+    // Neto = 81% del Subtotal (Subtotal * 0.81)
+    // Total Final = Subtotal - Descuento
+
+    const subtotal = presupuesto.items.reduce((sum, item) => sum + item.total, 0);
     let descuento_total = 0;
 
     if (presupuesto.descuento_tipo === "porcentaje") {
-      descuento_total = (total_con_iva * presupuesto.descuento_valor) / 100;
+      descuento_total = (subtotal * presupuesto.descuento_valor) / 100;
     } else if (presupuesto.descuento_tipo === "fijo") {
       descuento_total = presupuesto.descuento_valor;
     }
 
-    const total_con_descuento = total_con_iva - descuento_total;
-
-    // Extraer el IVA del total (precios incluyen IVA)
-    const factor_iva = presupuesto.iva_porcentaje / 100;
-    const subtotal_sin_iva = total_con_descuento / (1 + factor_iva);
-    const iva_monto = total_con_descuento - subtotal_sin_iva;
+    const iva_monto = subtotal * 0.19;
+    const neto = subtotal * 0.81;
+    const total = subtotal - descuento_total;
 
     return {
-      subtotal: subtotal_sin_iva,
+      subtotal,
       descuento_total,
       iva_monto,
-      total: total_con_descuento
+      neto,
+      total
     };
   };
 
@@ -145,7 +148,6 @@ export default function CrearPresupuesto() {
         proyecto_id: presupuesto.proyecto_id || null,
       };
 
-      console.log("Enviando payload a Supabase:", payload);
 
       const { data: presupuestoData, error: presupuestoError } = await supabase
         .from("presupuestos")
@@ -186,7 +188,7 @@ export default function CrearPresupuesto() {
           }),
         });
       } catch (webhookError) {
-        console.log("Error enviando webhook:", webhookError);
+        // Webhook failure is non-critical, silently ignore
       }
 
       toast({

@@ -15,7 +15,7 @@ interface ItemsStepProps {
   descuentoValor: number;
   promocionAplicada: string | null;
   onUpdate: (data: any) => void;
-  calculateTotals: () => { subtotal: number; descuento_total: number; iva_monto: number; total: number };
+  calculateTotals: () => { subtotal: number; descuento_total: number; iva_monto: number; neto?: number; total: number };
 }
 
 export function ItemsStep({
@@ -40,15 +40,15 @@ export function ItemsStep({
       .select("*")
       .eq("activa", true)
       .order("nombre");
-    
+
     setPromociones(data || []);
   };
 
   const handlePromocionChange = (value: string) => {
     const simbolo = moneda === "USD" ? "$" : "$";
-    
+
     if (value === "ninguna") {
-      onUpdate({ 
+      onUpdate({
         promocion_aplicada: null,
         descuento_tipo: null,
         descuento_valor: 0
@@ -57,7 +57,7 @@ export function ItemsStep({
       const promo = promociones.find(p => p.nombre === value);
       if (promo) {
         const { subtotal } = calculateTotals();
-        
+
         // Validar si cumple el monto mínimo
         if (subtotal < promo.monto_minimo) {
           toast({
@@ -65,14 +65,14 @@ export function ItemsStep({
             description: `Esta promoción requiere un monto mínimo de ${simbolo} ${promo.monto_minimo.toLocaleString()}`,
             variant: "destructive",
           });
-          onUpdate({ 
+          onUpdate({
             promocion_aplicada: null,
             descuento_tipo: null,
             descuento_valor: 0
           });
           return;
         }
-        
+
         // Validar fechas de vigencia
         const now = new Date();
         if (promo.fecha_inicio) {
@@ -83,7 +83,7 @@ export function ItemsStep({
               description: `Esta promoción estará disponible a partir del ${inicio.toLocaleDateString()}`,
               variant: "destructive",
             });
-            onUpdate({ 
+            onUpdate({
               promocion_aplicada: null,
               descuento_tipo: null,
               descuento_valor: 0
@@ -99,7 +99,7 @@ export function ItemsStep({
               description: `Esta promoción expiró el ${fin.toLocaleDateString()}`,
               variant: "destructive",
             });
-            onUpdate({ 
+            onUpdate({
               promocion_aplicada: null,
               descuento_tipo: null,
               descuento_valor: 0
@@ -107,8 +107,8 @@ export function ItemsStep({
             return;
           }
         }
-        
-        onUpdate({ 
+
+        onUpdate({
           promocion_aplicada: value,
           descuento_tipo: "porcentaje",
           descuento_valor: promo.descuento_porcentaje
@@ -128,7 +128,7 @@ export function ItemsStep({
 
   const updateItem = (index: number, field: string, value: any) => {
     const newItems = [...items];
-    
+
     if (field === "cantidad" || field === "precio_unitario") {
       // Keep the value as is (including empty string)
       newItems[index] = { ...newItems[index], [field]: value };
@@ -149,7 +149,7 @@ export function ItemsStep({
     onUpdate({ items: items.filter((_, i) => i !== index) });
   };
 
-  const { subtotal, descuento_total, iva_monto, total } = calculateTotals();
+  const { subtotal, descuento_total, iva_monto, neto, total } = calculateTotals();
   const simbolo = moneda === "USD" ? "$" : "$";
 
   return (
@@ -300,16 +300,16 @@ export function ItemsStep({
 
         <div className="bg-gradient-to-r from-primary/10 via-accent/10 to-warning/10 p-4 md:p-6 rounded-lg space-y-2">
           <div className="flex justify-between text-base md:text-lg">
-            <span className="text-muted-foreground">Subtotal (sin IVA):</span>
+            <span className="text-muted-foreground">Subtotal:</span>
             <span className="font-bold">
               {simbolo} {Math.round(subtotal).toLocaleString()}
             </span>
           </div>
-          {descuento_total > 0 && (
-            <div className="flex justify-between text-base md:text-lg text-warning">
-              <span>Descuento:</span>
+          {neto !== undefined && (
+            <div className="flex justify-between text-base md:text-lg text-muted-foreground">
+              <span>Valor Neto:</span>
               <span className="font-bold">
-                - {simbolo} {Math.round(descuento_total).toLocaleString()}
+                {simbolo} {Math.round(neto).toLocaleString()}
               </span>
             </div>
           )}
@@ -319,6 +319,14 @@ export function ItemsStep({
               {simbolo} {Math.round(iva_monto).toLocaleString()}
             </span>
           </div>
+          {descuento_total > 0 && (
+            <div className="flex justify-between text-base md:text-lg text-warning">
+              <span>Descuento {descuentoTipo === 'porcentaje' ? `(${descuentoValor}%)` : ''}:</span>
+              <span className="font-bold">
+                - {simbolo} {Math.round(descuento_total).toLocaleString()}
+              </span>
+            </div>
+          )}
           <div className="flex justify-between text-xl md:text-2xl border-t border-primary/20 pt-2">
             <span className="gradient-text font-bold">TOTAL:</span>
             <span className="gradient-text font-bold">

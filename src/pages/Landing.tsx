@@ -56,7 +56,7 @@ const Landing = () => {
             en minutos
           </h1>
           <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
-            Sistema exclusivo por invitación para empresas. Crea, envía y gestiona presupuestos 
+            Sistema exclusivo por invitación para empresas. Crea, envía y gestiona presupuestos
             profesionales con cálculo automático de IVA, promociones inteligentes y nomenclatura profesional.
           </p>
           <div className="flex gap-4 justify-center">
@@ -78,7 +78,7 @@ const Landing = () => {
             </div>
             <h3 className="text-2xl font-heading font-bold mb-3">Ahorra Tiempo</h3>
             <p className="text-muted-foreground">
-              Crea presupuestos profesionales en minutos con plantillas personalizables 
+              Crea presupuestos profesionales en minutos con plantillas personalizables
               y cálculos automáticos.
             </p>
           </Card>
@@ -89,7 +89,7 @@ const Landing = () => {
             </div>
             <h3 className="text-2xl font-heading font-bold mb-3">Seguimiento en Tiempo Real</h3>
             <p className="text-muted-foreground">
-              Monitorea el estado de tus cotizaciones y recibe notificaciones cuando 
+              Monitorea el estado de tus cotizaciones y recibe notificaciones cuando
               tus clientes las aprueben o rechacen.
             </p>
           </Card>
@@ -100,7 +100,7 @@ const Landing = () => {
             </div>
             <h3 className="text-2xl font-heading font-bold mb-3">Gestión Completa</h3>
             <p className="text-muted-foreground">
-              Administra clientes, ítems, descuentos y términos. Exporta a PDF 
+              Administra clientes, ítems, descuentos y términos. Exporta a PDF
               con tu marca incluida.
             </p>
           </Card>
@@ -159,7 +159,7 @@ const Landing = () => {
             <img src={nexabisLogo} alt="NEXABIS" className="h-6 w-6" />
             <span className="font-heading font-bold gradient-text">NEXABIS TECH</span>
           </div>
-          <p>© 2025 NEXABIS. Presupuestos profesionales en minutos.</p>
+          <p>© {new Date().getFullYear()} NEXABIS. Presupuestos profesionales en minutos.</p>
         </div>
       </footer>
     </div>

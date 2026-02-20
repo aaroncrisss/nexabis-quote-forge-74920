@@ -39,33 +39,69 @@ const DashboardLayout = ({ children }: DashboardLayoutProps) => {
     navigate("/");
   };
 
-  const navItems = [
-    { to: "/dashboard", icon: LayoutDashboard, label: "Dashboard" },
-    { to: "/proyectos", icon: FolderKanban, label: "Proyectos" },
-    { to: "/cotizador", icon: Calculator, label: "Cotizador" },
-    { to: "/presupuestos", icon: FileText, label: "Presupuestos" },
-    { to: "/clientes", icon: Users, label: "Clientes" },
-    { to: "/configuracion", icon: Settings, label: "Configuración" },
-    ...(isAdmin ? [{ to: "/admin", icon: Shield, label: "Admin" }] : []),
+  const navSections = [
+    {
+      label: "Principal",
+      items: [
+        { to: "/dashboard", icon: LayoutDashboard, label: "Dashboard" },
+      ],
+    },
+    {
+      label: "Herramientas",
+      items: [
+        { to: "/cotizador", icon: Calculator, label: "Cotizador" },
+        { to: "/presupuestos", icon: FileText, label: "Presupuestos" },
+        { to: "/proyectos", icon: FolderKanban, label: "Proyectos" },
+      ],
+    },
+    {
+      label: "Gestión",
+      items: [
+        { to: "/clientes", icon: Users, label: "Clientes" },
+      ],
+    },
+    {
+      label: "Sistema",
+      items: [
+        { to: "/configuracion", icon: Settings, label: "Configuración" },
+        ...(isAdmin ? [{ to: "/admin", icon: Shield, label: "Admin" }] : []),
+      ],
+    },
   ];
 
   const NavLinks = () => (
-    <nav className="space-y-2">
-      {navItems.map((item) => {
-        const Icon = item.icon;
-        const isActive = location.pathname === item.to;
-        return (
-          <Link key={item.to} to={item.to} onClick={() => setMobileMenuOpen(false)}>
-            <Button
-              variant={isActive ? "default" : "ghost"}
-              className="w-full justify-start gap-3"
-            >
-              <Icon className="w-5 h-5" />
-              {item.label}
-            </Button>
-          </Link>
-        );
-      })}
+    <nav className="space-y-5">
+      {navSections.map((section) => (
+        <div key={section.label}>
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/60 mb-2 px-3">
+            {section.label}
+          </p>
+          <div className="space-y-1">
+            {section.items.map((item) => {
+              const Icon = item.icon;
+              const isActive = location.pathname === item.to;
+              return (
+                <Link key={item.to} to={item.to} onClick={() => setMobileMenuOpen(false)}>
+                  <Button
+                    variant="ghost"
+                    className={`w-full justify-start gap-3 py-3 px-4 h-auto text-sm font-medium rounded-xl transition-all duration-200 relative
+                      ${isActive
+                        ? "bg-primary/10 text-primary shadow-[0_0_20px_rgba(139,92,246,0.25)] border border-primary/20"
+                        : "text-muted-foreground hover:text-foreground hover:bg-primary/5 hover:shadow-[0_0_12px_rgba(139,92,246,0.1)]"
+                      }`}
+                  >
+                    {isActive && (
+                      <span className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-6 rounded-full bg-gradient-to-b from-primary via-accent to-warning" />
+                    )}
+                    <Icon className={`w-[18px] h-[18px] ${isActive ? "text-primary" : ""}`} />
+                    {item.label}
+                  </Button>
+                </Link>
+              );
+            })}
+          </div>
+        </div>
+      ))}
     </nav>
   );
 

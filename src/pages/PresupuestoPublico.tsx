@@ -6,6 +6,7 @@ import { Card } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { CheckCircle, XCircle, FileText, Printer, Download, Moon, Sun } from "lucide-react";
+import { formatCurrency } from "@/lib/formatCurrency";
 
 export default function PresupuestoPublico() {
   const { token } = useParams();
@@ -81,7 +82,6 @@ export default function PresupuestoPublico() {
 
       if (error) throw error;
 
-      // Enviar webhook a n8n
       try {
         await fetch("https://myn8n.aaroncristech.cloud/webhook/presupuestos-nexabis", {
           method: "POST",
@@ -94,8 +94,8 @@ export default function PresupuestoPublico() {
             fecha_respuesta: new Date().toISOString(),
           }),
         });
-      } catch (webhookError) {
-        console.log("Error enviando webhook:", webhookError);
+      } catch {
+        // Webhook failure is non-critical
       }
 
       toast({
@@ -123,7 +123,6 @@ export default function PresupuestoPublico() {
   };
 
   const handleDownloadPDF = () => {
-    // Create a temporary iframe for printing
     const printFrame = document.createElement('iframe');
     printFrame.style.position = 'fixed';
     printFrame.style.right = '0';
@@ -135,12 +134,12 @@ export default function PresupuestoPublico() {
 
     const content = document.documentElement.outerHTML;
     const doc = printFrame.contentWindow?.document;
-    
+
     if (doc) {
       doc.open();
       doc.write(content);
       doc.close();
-      
+
       setTimeout(() => {
         printFrame.contentWindow?.print();
         setTimeout(() => {
@@ -149,6 +148,8 @@ export default function PresupuestoPublico() {
       }, 250);
     }
   };
+
+  const fmt = (val: number) => formatCurrency(val, presupuesto?.moneda || "CLP");
 
   if (loading) {
     return (
@@ -160,8 +161,8 @@ export default function PresupuestoPublico() {
 
   if (!presupuesto) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Card className="p-8 text-center">
+      <div className="min-h-screen flex items-center justify-center p-4">
+        <Card className="p-8 text-center max-w-sm w-full">
           <XCircle className="w-16 h-16 text-destructive mx-auto mb-4" />
           <h1 className="text-2xl font-bold mb-2">Presupuesto no encontrado</h1>
           <p className="text-muted-foreground">El enlace puede ser inválido o haber expirado</p>
@@ -170,56 +171,59 @@ export default function PresupuestoPublico() {
     );
   }
 
-  const simbolo = presupuesto.moneda === "USD" ? "$" : "$";
   const isVencido = new Date(presupuesto.fecha_vencimiento) < new Date();
   const yaRespondido = presupuesto.estado !== "pendiente";
 
   return (
-    <div className={`min-h-screen py-8 px-4 ${darkMode ? 'dark bg-background' : 'bg-gray-50'}`}>
+    <div className={`min-h-screen py-4 sm:py-8 px-3 sm:px-4 ${darkMode ? 'dark bg-background' : 'bg-gray-50'}`}>
       <div className="container mx-auto max-w-4xl">
-        <div className="print:hidden mb-6 flex justify-between items-center">
-          <div>
+        {/* Toolbar */}
+        <div className="print:hidden mb-4 sm:mb-6 flex flex-wrap justify-between items-center gap-2">
+          <div className="flex-shrink-0">
             {profile?.logo_url && (
-              <img src={profile.logo_url} alt="Logo" className="h-12" />
+              <img src={profile.logo_url} alt="Logo" className="h-10 sm:h-12" />
             )}
           </div>
-          <div className="flex gap-2">
-            <Button 
-              onClick={() => setDarkMode(!darkMode)} 
-              variant="outline" 
+          <div className="flex gap-1.5 sm:gap-2">
+            <Button
+              onClick={() => setDarkMode(!darkMode)}
+              variant="outline"
               size="icon"
-              className={darkMode ? 'text-white border-white hover:bg-white/10' : ''}
+              className={`h-9 w-9 ${darkMode ? 'text-white border-white/20 hover:bg-white/10' : ''}`}
             >
               {darkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
             </Button>
-            <Button 
-              onClick={handleDownloadPDF} 
+            <Button
+              onClick={handleDownloadPDF}
               variant="outline"
-              className={darkMode ? 'text-white border-white hover:bg-white/10' : ''}
+              size="sm"
+              className={`h-9 ${darkMode ? 'text-white border-white/20 hover:bg-white/10' : ''}`}
             >
-              <Download className="w-4 h-4 mr-2" />
-              Descargar PDF
+              <Download className="w-4 h-4 sm:mr-2" />
+              <span className="hidden sm:inline">PDF</span>
             </Button>
-            <Button 
-              onClick={handlePrint} 
+            <Button
+              onClick={handlePrint}
               variant="outline"
-              className={darkMode ? 'text-white border-white hover:bg-white/10' : ''}
+              size="sm"
+              className={`h-9 ${darkMode ? 'text-white border-white/20 hover:bg-white/10' : ''}`}
             >
-              <Printer className="w-4 h-4 mr-2" />
-              Imprimir
+              <Printer className="w-4 h-4 sm:mr-2" />
+              <span className="hidden sm:inline">Imprimir</span>
             </Button>
           </div>
         </div>
 
-        <Card className="p-8 space-y-6">
-          <div className="flex justify-between items-start border-b border-primary/20 pb-6">
-            <div>
+        <Card className="p-4 sm:p-6 md:p-8 space-y-5 sm:space-y-6">
+          {/* Header: stacked on mobile, side-by-side on desktop */}
+          <div className="flex flex-col md:flex-row md:justify-between md:items-start gap-4 border-b border-primary/20 pb-5 sm:pb-6">
+            <div className="order-1">
               {profile?.logo_url ? (
-                <img src={profile.logo_url} alt="Logo" className="h-16 mb-4" />
+                <img src={profile.logo_url} alt="Logo" className="h-12 sm:h-16 mb-3 sm:mb-4" />
               ) : (
-                <div className="flex items-center gap-2 mb-4">
-                  <FileText className="w-8 h-8 text-primary" />
-                  <span className="text-2xl font-bold gradient-text">PRESUPUESTO</span>
+                <div className="flex items-center gap-2 mb-3 sm:mb-4">
+                  <FileText className="w-6 h-6 sm:w-8 sm:h-8 text-primary" />
+                  <span className="text-xl sm:text-2xl font-bold gradient-text">PRESUPUESTO</span>
                 </div>
               )}
               <div className="text-sm space-y-1">
@@ -229,8 +233,8 @@ export default function PresupuestoPublico() {
                 {profile?.email && <p>{profile.email}</p>}
               </div>
             </div>
-            <div className="text-right">
-              <h3 className="text-3xl font-bold gradient-text mb-2">{presupuesto.titulo}</h3>
+            <div className="order-2 md:text-right">
+              <h3 className="text-xl sm:text-2xl md:text-3xl font-bold gradient-text mb-2">{presupuesto.titulo}</h3>
               <p className="text-sm text-muted-foreground">N°: {presupuesto.numero}</p>
               <p className="text-sm text-muted-foreground">
                 Fecha: {new Date(presupuesto.fecha).toLocaleDateString()}
@@ -241,6 +245,7 @@ export default function PresupuestoPublico() {
             </div>
           </div>
 
+          {/* Client info */}
           <div>
             <h4 className="font-bold mb-2">Cliente:</h4>
             <div className="text-sm space-y-1 text-muted-foreground">
@@ -251,94 +256,106 @@ export default function PresupuestoPublico() {
             </div>
           </div>
 
-          <div>
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-primary/20">
-                  <th className="text-left py-3 px-2">Descripción</th>
-                  <th className="text-center py-3 px-2">Cantidad</th>
-                  <th className="text-right py-3 px-2">Precio Unit.</th>
-                  <th className="text-right py-3 px-2">Total</th>
-                </tr>
-              </thead>
-              <tbody>
-                {items.map((item, index) => (
-                  <tr key={index} className="border-b border-primary/10">
-                    <td className="py-3 px-2">{item.descripcion}</td>
-                    <td className="text-center py-3 px-2">{item.cantidad}</td>
-                    <td className="text-right py-3 px-2">
-                      {simbolo} {parseFloat(item.precio_unitario).toLocaleString()}
-                    </td>
-                    <td className="text-right py-3 px-2 font-semibold">
-                      {simbolo} {parseFloat(item.total).toLocaleString()}
-                    </td>
+          {/* Items table — horizontally scrollable on mobile */}
+          <div className="overflow-x-auto -mx-4 sm:mx-0">
+            <div className="min-w-[500px] px-4 sm:px-0">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-primary/20">
+                    <th className="text-left py-3 px-2 text-xs sm:text-sm">Descripción</th>
+                    <th className="text-center py-3 px-2 text-xs sm:text-sm w-16">Cant.</th>
+                    <th className="text-right py-3 px-2 text-xs sm:text-sm w-28">P. Unit.</th>
+                    <th className="text-right py-3 px-2 text-xs sm:text-sm w-28">Total</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {items.map((item, index) => (
+                    <tr key={index} className="border-b border-primary/10">
+                      <td className="py-3 px-2 text-xs sm:text-sm">{item.descripcion}</td>
+                      <td className="text-center py-3 px-2 text-xs sm:text-sm">{item.cantidad}</td>
+                      <td className="text-right py-3 px-2 text-xs sm:text-sm whitespace-nowrap">
+                        {fmt(parseFloat(item.precio_unitario))}
+                      </td>
+                      <td className="text-right py-3 px-2 text-xs sm:text-sm font-semibold whitespace-nowrap">
+                        {fmt(parseFloat(item.total))}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
 
+          {/* Totals — full width on mobile */}
           <div className="flex justify-end">
-            <div className="w-72 space-y-2">
+            <div className="w-full sm:w-72 space-y-2 text-sm">
               <div className="flex justify-between text-muted-foreground">
-                <span>Subtotal (sin IVA):</span>
-                <span>
-                  {simbolo} {Math.round(parseFloat(presupuesto.subtotal)).toLocaleString()}
-                </span>
+                <span>Subtotal:</span>
+                <span className="whitespace-nowrap">{fmt(parseFloat(presupuesto.subtotal))}</span>
+              </div>
+              <div className="flex justify-between text-muted-foreground">
+                <span>Valor Neto:</span>
+                <span className="whitespace-nowrap">{fmt(parseFloat(presupuesto.subtotal) * 0.81)}</span>
+              </div>
+              <div className="flex justify-between text-accent">
+                <span>IVA ({presupuesto.iva_porcentaje}%):</span>
+                <span className="whitespace-nowrap">{fmt(parseFloat(presupuesto.iva_monto))}</span>
               </div>
               {presupuesto.descuento_total > 0 && (
                 <div className="flex justify-between text-warning">
-                  <span>Descuento:</span>
-                  <span>
-                    - {simbolo} {Math.round(parseFloat(presupuesto.descuento_total)).toLocaleString()}
+                  <span>Descuento {presupuesto.descuento_tipo === 'porcentaje' ? `(${presupuesto.descuento_valor}%)` : ''}:</span>
+                  <span className="whitespace-nowrap">
+                    - {fmt(parseFloat(presupuesto.descuento_total))}
                   </span>
                 </div>
               )}
-              <div className="flex justify-between text-accent">
-                <span>IVA ({presupuesto.iva_porcentaje}%):</span>
-                <span>
-                  {simbolo} {Math.round(parseFloat(presupuesto.iva_monto)).toLocaleString()}
-                </span>
-              </div>
-              <div className="flex justify-between text-2xl font-bold gradient-text border-t border-primary/20 pt-2">
+              <div className="flex justify-between text-lg sm:text-2xl font-bold gradient-text border-t border-primary/20 pt-2">
                 <span>TOTAL:</span>
-                <span>
-                  {simbolo} {Math.round(parseFloat(presupuesto.total)).toLocaleString()} {presupuesto.moneda}
+                <span className="whitespace-nowrap">
+                  {fmt(parseFloat(presupuesto.total))} {presupuesto.moneda}
                 </span>
               </div>
             </div>
           </div>
 
+          {/* Work notes, payment, terms */}
           {presupuesto.notas_trabajo && (
             <div className="border-t border-primary/20 pt-4">
-              <h4 className="font-bold mb-2">Notas del Trabajo:</h4>
-              <p className="text-sm text-muted-foreground whitespace-pre-wrap">{presupuesto.notas_trabajo}</p>
+              <h4 className="font-bold mb-2 text-sm sm:text-base">Notas del Trabajo:</h4>
+              <p className="text-xs sm:text-sm text-muted-foreground whitespace-pre-wrap">{presupuesto.notas_trabajo}</p>
             </div>
           )}
 
           {presupuesto.forma_pago && (
             <div className="border-t border-primary/20 pt-4">
-              <h4 className="font-bold mb-2">Forma de Pago:</h4>
-              <p className="text-sm text-muted-foreground">{presupuesto.forma_pago}</p>
+              <h4 className="font-bold mb-2 text-sm sm:text-base">Forma de Pago:</h4>
+              <p className="text-xs sm:text-sm text-muted-foreground">{presupuesto.forma_pago}</p>
             </div>
           )}
 
           {presupuesto.terminos && (
             <div className="border-t border-primary/20 pt-4">
-              <h4 className="font-bold mb-2">Términos y Condiciones:</h4>
-              <p className="text-sm text-muted-foreground whitespace-pre-wrap">
+              <h4 className="font-bold mb-2 text-sm sm:text-base">Términos y Condiciones:</h4>
+              <p className="text-xs sm:text-sm text-muted-foreground whitespace-pre-wrap">
                 {presupuesto.terminos}
               </p>
             </div>
           )}
 
+          {/* Powered by NEXABIS — inside card footer */}
+          <div className="border-t border-primary/10 pt-4 text-center">
+            <p className="text-[11px] text-muted-foreground/50">
+              Powered by <span className="gradient-text font-semibold">NEXABIS TECH</span>
+            </p>
+          </div>
+
+          {/* Already responded */}
           {yaRespondido && (
             <div
-              className={`print:hidden border-t border-primary/20 pt-6 text-center p-4 rounded-lg ${
-                presupuesto.estado === "aprobado"
-                  ? "bg-green-500/10 border-green-500/20"
-                  : "bg-red-500/10 border-red-500/20"
-              }`}
+              className={`print:hidden border-t border-primary/20 pt-6 text-center p-4 rounded-lg ${presupuesto.estado === "aprobado"
+                ? "bg-green-500/10 border-green-500/20"
+                : "bg-red-500/10 border-red-500/20"
+                }`}
             >
               <div className="flex items-center justify-center gap-2 mb-2">
                 {presupuesto.estado === "aprobado" ? (
@@ -346,7 +363,7 @@ export default function PresupuestoPublico() {
                 ) : (
                   <XCircle className="w-6 h-6 text-red-500" />
                 )}
-                <span className="text-xl font-bold">
+                <span className="text-lg sm:text-xl font-bold">
                   {presupuesto.estado === "aprobado" ? "Presupuesto Aprobado" : "Presupuesto Rechazado"}
                 </span>
               </div>
@@ -358,12 +375,13 @@ export default function PresupuestoPublico() {
             </div>
           )}
 
+          {/* Pending response */}
           {!yaRespondido && (
             <div className="print:hidden border-t border-primary/20 pt-6 space-y-4">
               {isVencido && (
-                <div className="bg-yellow-500/10 border border-yellow-500/20 p-4 rounded-lg text-center">
-                  <p className="text-yellow-500 font-semibold">Este presupuesto ha vencido</p>
-                  <p className="text-sm text-muted-foreground mt-1">
+                <div className="bg-yellow-500/10 border border-yellow-500/20 p-3 sm:p-4 rounded-lg text-center">
+                  <p className="text-yellow-500 font-semibold text-sm sm:text-base">Este presupuesto ha vencido</p>
+                  <p className="text-xs sm:text-sm text-muted-foreground mt-1">
                     Aún puedes responder, pero te recomendamos contactar con nosotros
                   </p>
                 </div>
@@ -381,7 +399,7 @@ export default function PresupuestoPublico() {
                 />
               </div>
 
-              <div className="flex gap-4">
+              <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
                 <Button
                   onClick={() => handleResponse("aprobado")}
                   disabled={submitting}
@@ -405,10 +423,6 @@ export default function PresupuestoPublico() {
             </div>
           )}
         </Card>
-
-        <div className="print:hidden text-center mt-6 text-sm text-muted-foreground">
-          Powered by <span className="gradient-text font-bold">NEXABIS TECH</span>
-        </div>
       </div>
 
       <style>{`

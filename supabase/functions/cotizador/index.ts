@@ -1,10 +1,22 @@
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+const ALLOWED_ORIGINS = [
+  'https://nexabistech.com',
+  'https://www.nexabistech.com',
+  'http://localhost:8080',
+  'http://localhost:5173',
+];
 
-const GEMINI_API_KEY = "AIzaSyDEjrGloLRpHZsuc7KYIeSqKrwLD9vLVuY";
+function getCorsHeaders(req: Request) {
+  const origin = req.headers.get('origin') || '';
+  const allowedOrigin = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
+  return {
+    'Access-Control-Allow-Origin': allowedOrigin,
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  };
+}
+
+const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY') || '';
+const N8N_WEBHOOK_URL = Deno.env.get('N8N_WEBHOOK_URL') || '';
 
 const SYSTEM_PROMPT = `Actúas como un analista técnico senior de estimación de proyectos digitales.
 
@@ -163,8 +175,17 @@ INSTRUCCIONES CRÍTICAS PARA ajustePresupuesto:
 REGLA DE ORO: **NUNCA NUNCA NUNCA** elimines módulos de la estimación principal por presupuesto. El presupuesto solo sirve para sugerir fases, no para recortar el alcance necesario del proyecto.`;
 
 Deno.serve(async (req) => {
+  const corsHeaders = getCorsHeaders(req);
+
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
+  }
+
+  if (!GEMINI_API_KEY) {
+    return new Response(JSON.stringify({ error: 'GEMINI_API_KEY not configured' }), {
+      status: 500,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
   }
 
   try {

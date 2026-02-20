@@ -3,10 +3,16 @@ param(
     [string]$FunctionName,
     
     [Parameter(Mandatory=$true)]
-    [string]$ContainerId
+    [string]$ContainerId,
+
+    [Parameter(Mandatory=$false)]
+    [string]$VpsIp = $env:NEXABIS_VPS_IP
 )
 
-$VpsIp = "31.97.163.113"
+if (-not $VpsIp) {
+    Write-Host "❌ VPS IP no configurada. Setea la variable de entorno NEXABIS_VPS_IP o pasa -VpsIp" -ForegroundColor Red
+    exit 1
+}
 
 Write-Host "Paso 1: Subiendo $FunctionName y las dependencias compartidas al VPS..." -ForegroundColor Yellow
 scp -r ./supabase/functions/$FunctionName root@${VpsIp}:/tmp/

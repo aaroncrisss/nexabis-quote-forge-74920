@@ -2,10 +2,11 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { PresupuestoData } from "@/pages/CrearPresupuesto";
 import { FileText } from "lucide-react";
+import { formatCurrency } from "@/lib/formatCurrency";
 
 interface PreviewStepProps {
   presupuesto: PresupuestoData;
-  totals: { subtotal: number; descuento_total: number; iva_monto: number; total: number };
+  totals: { subtotal: number; descuento_total: number; iva_monto: number; neto?: number; total: number };
 }
 
 export function PreviewStep({ presupuesto, totals }: PreviewStepProps) {
@@ -37,7 +38,7 @@ export function PreviewStep({ presupuesto, totals }: PreviewStepProps) {
     setCliente(clienteData);
   };
 
-  const simbolo = presupuesto.moneda === "USD" ? "$" : "$";
+  const fmt = (val: number) => formatCurrency(val, presupuesto.moneda || "CLP");
 
   return (
     <div className="space-y-6">
@@ -98,11 +99,11 @@ export function PreviewStep({ presupuesto, totals }: PreviewStepProps) {
                 <tr key={index} className="border-b border-primary/10">
                   <td className="py-3 px-2">{item.descripcion}</td>
                   <td className="text-center py-3 px-2">{item.cantidad}</td>
-                  <td className="text-right py-3 px-2">
-                    {simbolo} {item.precio_unitario.toLocaleString()}
+                  <td className="text-right py-3 px-2 whitespace-nowrap">
+                    {fmt(Number(item.precio_unitario))}
                   </td>
-                  <td className="text-right py-3 px-2 font-semibold">
-                    {simbolo} {item.total.toLocaleString()}
+                  <td className="text-right py-3 px-2 font-semibold whitespace-nowrap">
+                    {fmt(Number(item.total))}
                   </td>
                 </tr>
               ))}
@@ -113,29 +114,37 @@ export function PreviewStep({ presupuesto, totals }: PreviewStepProps) {
         <div className="flex justify-end">
           <div className="w-72 space-y-2">
             <div className="flex justify-between text-muted-foreground">
-              <span>Subtotal (sin IVA):</span>
-              <span>
-                {simbolo} {Math.round(totals.subtotal).toLocaleString()}
+              <span>Subtotal:</span>
+              <span className="whitespace-nowrap">
+                {fmt(totals.subtotal)}
               </span>
             </div>
-            {totals.descuento_total > 0 && (
-              <div className="flex justify-between text-warning">
-                <span>Descuento:</span>
-                <span>
-                  - {simbolo} {Math.round(totals.descuento_total).toLocaleString()}
+            {totals.neto !== undefined && (
+              <div className="flex justify-between text-muted-foreground">
+                <span>Valor Neto:</span>
+                <span className="whitespace-nowrap">
+                  {fmt(totals.neto)}
                 </span>
               </div>
             )}
             <div className="flex justify-between text-accent">
               <span>IVA ({presupuesto.iva_porcentaje}%):</span>
-              <span>
-                {simbolo} {Math.round(totals.iva_monto).toLocaleString()}
+              <span className="whitespace-nowrap">
+                {fmt(totals.iva_monto)}
               </span>
             </div>
+            {totals.descuento_total > 0 && (
+              <div className="flex justify-between text-warning">
+                <span>Descuento {presupuesto.descuento_tipo === 'porcentaje' ? `(${presupuesto.descuento_valor}%)` : ''}:</span>
+                <span className="whitespace-nowrap">
+                  - {fmt(totals.descuento_total)}
+                </span>
+              </div>
+            )}
             <div className="flex justify-between text-2xl font-bold gradient-text border-t border-primary/20 pt-2">
               <span>TOTAL:</span>
-              <span>
-                {simbolo} {Math.round(totals.total).toLocaleString()} {presupuesto.moneda}
+              <span className="whitespace-nowrap">
+                {fmt(totals.total)} {presupuesto.moneda}
               </span>
             </div>
           </div>
@@ -161,6 +170,13 @@ export function PreviewStep({ presupuesto, totals }: PreviewStepProps) {
             <p className="text-sm text-muted-foreground whitespace-pre-wrap">{presupuesto.terminos}</p>
           </div>
         )}
+
+        {/* Powered by NEXABIS — inside preview footer */}
+        <div className="border-t border-primary/10 pt-4 text-center">
+          <p className="text-[11px] text-muted-foreground/50">
+            Powered by <span className="gradient-text font-semibold">NEXABIS TECH</span>
+          </p>
+        </div>
       </div>
     </div>
   );

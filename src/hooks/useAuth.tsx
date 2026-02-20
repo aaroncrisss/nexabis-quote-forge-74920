@@ -43,7 +43,7 @@ export const useAuth = () => {
         .single();
 
       if (error) {
-        console.log("No role found for user:", error);
+        // No role found, default to 'usuario'
         setRole("usuario");
       } else {
         setRole(data?.role as UserRole);
