@@ -78,7 +78,7 @@ export default function Proyectos() {
             <div className="max-w-6xl mx-auto space-y-8 animate-in fade-in duration-500">
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                     <div>
-                        <h1 className="text-3xl font-bold tracking-tight">Mis Proyectos</h1>
+                        <h1 className="text-3xl font-bold tracking-tight gradient-text mb-2">Mis Proyectos</h1>
                         <p className="text-muted-foreground mt-1">Gestiona y da seguimiento a tus estimaciones guardadas</p>
                     </div>
                     <Link to="/cotizador">
@@ -106,7 +106,7 @@ export default function Proyectos() {
                                 </p>
                             </div>
                             <Link to="/cotizador">
-                                <Button variant="default" className="mt-4">
+                                <Button className="mt-4 gradient-button">
                                     Ir al Cotizador
                                 </Button>
                             </Link>
@@ -115,7 +115,7 @@ export default function Proyectos() {
                 ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                         {proyectos.map((proyecto) => (
-                            <Card key={proyecto.id} className="group hover:shadow-lg transition-all duration-300 border-primary/10 bg-card/50 hover:bg-card">
+                            <Card key={proyecto.id} className="group hover:shadow-lg transition-all duration-300 border-primary/10 bg-card/50 hover:bg-card hover-glow">
                                 <CardHeader>
                                     <div className="flex justify-between items-start gap-2">
                                         <Badge variant="outline" className="mb-2 w-fit">

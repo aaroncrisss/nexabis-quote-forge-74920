@@ -8,9 +8,10 @@ import { Label } from "@/components/ui/label";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { Trash2, UserPlus, Users, TrendingUp } from "lucide-react";
+import { Trash2, UserPlus, Users, TrendingUp, Settings } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { z } from "zod";
 
 interface UsuarioPermitido {
@@ -37,8 +38,18 @@ interface Promocion {
   fecha_fin: string | null;
 }
 
+const RUBROS = [
+  { value: "tecnologia", label: "Tecnología / Software" },
+  { value: "marketing", label: "Marketing / Agencia" },
+  { value: "construccion", label: "Construcción / Remodelación" },
+  { value: "consultoria", label: "Consultoría / B2B" },
+  { value: "diseno", label: "Diseño / Creativo" },
+  { value: "eventos", label: "Eventos / Producción" },
+  { value: "servicios-generales", label: "Servicios Generales" },
+];
+
 export default function AdminPanel() {
-  const { isAdmin, loading: authLoading } = useAuth();
+  const { user, isAdmin, loading: authLoading } = useAuth();
   const navigate = useNavigate();
   const [usuariosPermitidos, setUsuariosPermitidos] = useState<UsuarioPermitido[]>([]);
   const [promociones, setPromociones] = useState<Promocion[]>([]);
@@ -47,6 +58,7 @@ export default function AdminPanel() {
   const [loading, setLoading] = useState(false);
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [newPassword, setNewPassword] = useState("");
+  const [adminRubro, setAdminRubro] = useState<string>("tecnologia");
 
   // Formulario de promociones
   const [promoForm, setPromoForm] = useState({
@@ -71,8 +83,36 @@ export default function AdminPanel() {
       loadUsuariosPermitidos();
       loadPromociones();
       loadRegisteredUsers();
+      if (user?.id) loadAdminRubro(user.id);
     }
-  }, [isAdmin]);
+  }, [isAdmin, user]);
+
+  const loadAdminRubro = async (userId: string) => {
+    const { data } = await supabase
+      .from("profiles")
+      .select("rubro")
+      .eq("id", userId)
+      .single();
+    if (data?.rubro) {
+      setAdminRubro(data.rubro);
+    }
+  };
+
+  const handleUpdateAdminRubro = async () => {
+    if (!user?.id) return;
+    setLoading(true);
+    const { error } = await supabase
+      .from("profiles")
+      .update({ rubro: adminRubro })
+      .eq("id", user.id);
+
+    if (error) {
+      toast.error("Error al actualizar rubro");
+    } else {
+      toast.success("Rubro actualizado correctamente (Recarga para aplicar en Cotizador)");
+    }
+    setLoading(false);
+  };
 
   const loadUsuariosPermitidos = async () => {
     const { data, error } = await supabase
@@ -120,7 +160,7 @@ export default function AdminPanel() {
     // Validate email
     const emailSchema = z.string().email().max(255).toLowerCase();
     const validation = emailSchema.safeParse(newEmail.trim());
-    
+
     if (!validation.success) {
       toast.error("Por favor ingresa un correo electrónico válido");
       return;
@@ -277,9 +317,9 @@ export default function AdminPanel() {
     setLoading(true);
     try {
       const { data, error } = await supabase.functions.invoke('change-user-password', {
-        body: { 
-          userId: selectedUserId, 
-          newPassword: newPassword 
+        body: {
+          userId: selectedUserId,
+          newPassword: newPassword
         }
       });
 
@@ -319,7 +359,12 @@ export default function AdminPanel() {
         </div>
 
         <Tabs defaultValue="usuarios" className="w-full">
-          <TabsList className="grid w-full grid-cols-3 h-auto">
+          <TabsList className="grid w-full grid-cols-4 h-auto">
+            <TabsTrigger value="ajustes" className="gap-1 md:gap-2 flex-col md:flex-row py-2 md:py-3 text-xs md:text-sm">
+              <Settings className="w-3 h-3 md:w-4 md:h-4" />
+              <span className="hidden sm:inline">Modo Pruebas</span>
+              <span className="sm:hidden">Tests</span>
+            </TabsTrigger>
             <TabsTrigger value="usuarios" className="gap-1 md:gap-2 flex-col md:flex-row py-2 md:py-3 text-xs md:text-sm">
               <Users className="w-3 h-3 md:w-4 md:h-4" />
               <span className="hidden sm:inline">Usuarios Permitidos</span>
@@ -335,6 +380,37 @@ export default function AdminPanel() {
               <span>Promociones</span>
             </TabsTrigger>
           </TabsList>
+
+          <TabsContent value="ajustes" className="space-y-4 md:space-y-6">
+            <Card className="p-4 md:p-6 bg-card/50 backdrop-blur border-primary/20">
+              <h2 className="text-lg md:text-xl font-semibold mb-4">Ajustes de Superadmin</h2>
+              <div className="space-y-4">
+                <div>
+                  <Label className="text-sm md:text-base">Forzar Industria Activa (Rubro)</Label>
+                  <p className="text-sm text-muted-foreground mb-4">
+                    Sobrescribe tu industria para simular el Cotizador IA bajo diferentes parámetros.
+                  </p>
+                  <div className="flex flex-col sm:flex-row gap-4">
+                    <Select value={adminRubro} onValueChange={(v) => setAdminRubro(v)}>
+                      <SelectTrigger className="w-full sm:w-64">
+                        <SelectValue placeholder="Selecciona un rubro" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {RUBROS.map((rubro) => (
+                          <SelectItem key={rubro.value} value={rubro.value}>
+                            {rubro.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Button onClick={handleUpdateAdminRubro} disabled={loading} className="gradient-button w-full sm:w-auto">
+                      Guardar y Forzar
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </Card>
+          </TabsContent>
 
           <TabsContent value="usuarios" className="space-y-4 md:space-y-6">
             {/* Formulario de invitación */}
@@ -352,7 +428,7 @@ export default function AdminPanel() {
                       required
                       className="flex-1"
                     />
-                    <Button type="submit" disabled={loading} className="w-full sm:w-auto">
+                    <Button type="submit" disabled={loading} className="w-full sm:w-auto gradient-button">
                       <UserPlus className="w-4 h-4 mr-2" />
                       Invitar
                     </Button>
@@ -434,7 +510,7 @@ export default function AdminPanel() {
                       required
                       minLength={6}
                     />
-                    <Button type="submit" disabled={loading || !selectedUserId} className="w-full sm:w-auto">
+                    <Button type="submit" disabled={loading || !selectedUserId} className="w-full sm:w-auto gradient-button">
                       Cambiar Contraseña
                     </Button>
                   </div>
@@ -541,7 +617,7 @@ export default function AdminPanel() {
                     placeholder="Descripción de la promoción"
                   />
                 </div>
-                <Button type="submit" disabled={loading} className="w-full sm:w-auto">
+                <Button type="submit" disabled={loading} className="w-full sm:w-auto gradient-button">
                   <TrendingUp className="w-4 h-4 mr-2" />
                   Crear Promoción
                 </Button>

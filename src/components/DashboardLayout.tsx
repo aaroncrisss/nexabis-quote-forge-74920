@@ -1,12 +1,14 @@
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
-import { LayoutDashboard, FileText, Settings, LogOut, Plus, Users, Moon, Sun, Shield, Menu, Calculator, FolderKanban } from "lucide-react";
+import { LayoutDashboard, FileText, Settings, LogOut, Plus, Users, Moon, Sun, Shield, Menu, Calculator, FolderKanban, CreditCard } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import nexabisLogo from "@/assets/Logo-Nexabis.png";
 import { useEffect, useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
+import { useSubscription } from "@/hooks/useSubscription";
 
 interface DashboardLayoutProps {
   children: React.ReactNode;
@@ -18,6 +20,7 @@ const DashboardLayout = ({ children }: DashboardLayoutProps) => {
   const [darkMode, setDarkMode] = useState(true);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const { isAdmin } = useAuth();
+  const { tier, isTrial, trialDaysLeft, isPremium } = useSubscription();
 
   useEffect(() => {
     const stored = localStorage.getItem("darkMode");
@@ -64,6 +67,7 @@ const DashboardLayout = ({ children }: DashboardLayoutProps) => {
       label: "Sistema",
       items: [
         { to: "/configuracion", icon: Settings, label: "Configuración" },
+        { to: "/suscripcion", icon: CreditCard, label: "Mi Suscripción" },
         ...(isAdmin ? [{ to: "/admin", icon: Shield, label: "Admin" }] : []),
       ],
     },
@@ -105,6 +109,34 @@ const DashboardLayout = ({ children }: DashboardLayoutProps) => {
     </nav>
   );
 
+  const SubscriptionBadge = () => {
+    if (isPremium) {
+      return (
+        <Link to="/suscripcion" className="block px-3 mb-4">
+          <Badge className="w-full justify-center py-1.5 gradient-button font-heading text-xs tracking-wider cursor-pointer">
+            ✨ PRO
+          </Badge>
+        </Link>
+      );
+    }
+    if (isTrial && trialDaysLeft !== null) {
+      return (
+        <Link to="/suscripcion" className="block px-3 mb-4">
+          <Badge variant="outline" className="w-full justify-center py-1.5 border-nexabis-orange/50 text-nexabis-orange font-heading text-xs tracking-wider hover:bg-nexabis-orange/10 cursor-pointer">
+            TRIAL — {trialDaysLeft}d restantes
+          </Badge>
+        </Link>
+      );
+    }
+    return (
+      <Link to="/suscripcion" className="block px-3 mb-4">
+        <Badge variant="secondary" className="w-full justify-center py-1.5 font-heading text-xs tracking-wider hover:bg-secondary/80 cursor-pointer">
+          FREE
+        </Badge>
+      </Link>
+    );
+  };
+
   return (
     <div className="min-h-screen bg-background">
       {/* Top Navigation */}
@@ -124,6 +156,9 @@ const DashboardLayout = ({ children }: DashboardLayoutProps) => {
                   <span className="text-lg font-heading font-bold gradient-text">NEXABIS</span>
                 </div>
                 <NavLinks />
+                <div className="mt-6">
+                  <SubscriptionBadge />
+                </div>
               </SheetContent>
             </Sheet>
 
@@ -157,8 +192,11 @@ const DashboardLayout = ({ children }: DashboardLayoutProps) => {
       {/* Sidebar + Content */}
       <div className="flex">
         {/* Desktop Sidebar */}
-        <aside className="hidden lg:block w-64 border-r border-border bg-card/30 min-h-[calc(100vh-57px)] p-4">
+        <aside className="hidden lg:block w-64 border-r border-border bg-card/30 min-h-[calc(100vh-57px)] p-4 flex flex-col">
           <NavLinks />
+          <div className="mt-6">
+            <SubscriptionBadge />
+          </div>
         </aside>
 
         {/* Main Content */}

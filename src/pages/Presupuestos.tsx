@@ -7,8 +7,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "react-router-dom";
-import { Eye, Trash2, Copy, Plus, Search, ExternalLink, Grid3x3, List, ArchiveRestore } from "lucide-react";
+import { Eye, Trash2, Copy, Plus, Search, ExternalLink, Grid3x3, List, ArchiveRestore, KanbanSquare } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { KanbanBoard } from "@/components/presupuesto/KanbanBoard";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -28,7 +29,7 @@ const Presupuestos = () => {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [estadoFilter, setEstadoFilter] = useState("todos");
-  const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
+  const [viewMode, setViewMode] = useState<"grid" | "list" | "kanban">("grid");
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -268,6 +269,37 @@ const Presupuestos = () => {
     }
   };
 
+  const handleStatusChange = async (id: string, newStatus: string) => {
+    try {
+      // Optimistic update
+      setPresupuestos(prev =>
+        prev.map(p => p.id === id ? { ...p, estado: newStatus } : p)
+      );
+
+      const { error } = await supabase
+        .from("presupuestos")
+        .update({ estado: newStatus })
+        .eq("id", id);
+
+      if (error) {
+        // Revert on error
+        loadPresupuestos();
+        throw error;
+      }
+
+      toast({
+        title: "Estado actualizado",
+        description: `El presupuesto ha sido movido a ${newStatus}`,
+      });
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: "No se pudo actualizar el estado",
+        variant: "destructive",
+      });
+    }
+  };
+
   const copyLink = (token: string) => {
     const link = `${window.location.origin}/presupuesto/${token}`;
     navigator.clipboard.writeText(link);
@@ -328,6 +360,7 @@ const Presupuestos = () => {
               variant={viewMode === "grid" ? "default" : "outline"}
               size="icon"
               onClick={() => setViewMode("grid")}
+              title="Vista de cuadrícula"
             >
               <Grid3x3 className="w-4 h-4" />
             </Button>
@@ -335,8 +368,17 @@ const Presupuestos = () => {
               variant={viewMode === "list" ? "default" : "outline"}
               size="icon"
               onClick={() => setViewMode("list")}
+              title="Vista de lista"
             >
               <List className="w-4 h-4" />
+            </Button>
+            <Button
+              variant={viewMode === "kanban" ? "default" : "outline"}
+              size="icon"
+              onClick={() => setViewMode("kanban")}
+              title="Vista Kanban"
+            >
+              <KanbanSquare className="w-4 h-4" />
             </Button>
           </div>
         </div>
@@ -426,7 +468,7 @@ const Presupuestos = () => {
               </Card>
             ))}
           </div>
-        ) : (
+        ) : viewMode === "list" ? (
           <div className="space-y-2 overflow-x-auto">
             <div className="min-w-[800px]">
               {filteredPresupuestos.map((p) => (
@@ -509,7 +551,18 @@ const Presupuestos = () => {
               ))}
             </div>
           </div>
-        )}
+        ) : viewMode === "kanban" ? (
+          <div className="mt-4">
+            <KanbanBoard
+              presupuestos={filteredPresupuestos}
+              onStatusChange={handleStatusChange}
+              onCopyLink={copyLink}
+              onDuplicate={handleDuplicate}
+              onConvertToProject={handleConvertToProject}
+              onDelete={(id) => setDeleteId(id)}
+            />
+          </div>
+        ) : null}
 
         <AlertDialog open={!!deleteId} onOpenChange={() => setDeleteId(null)}>
           <AlertDialogContent>

@@ -1,15 +1,20 @@
-import { useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useEffect, useState, useRef } from "react";
+import { useReactToPrint } from "react-to-print";
+import { useParams, useLocation, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { CheckCircle, XCircle, FileText, Printer, Download, Moon, Sun } from "lucide-react";
 import { formatCurrency } from "@/lib/formatCurrency";
+import { MercadoPagoBrick } from "@/components/presupuesto/MercadoPagoBrick";
 
 export default function PresupuestoPublico() {
   const { token } = useParams();
+  const location = useLocation();
+  const navigate = useNavigate();
   const { toast } = useToast();
   const [loading, setLoading] = useState(true);
   const [presupuesto, setPresupuesto] = useState<any>(null);
@@ -19,12 +24,43 @@ export default function PresupuestoPublico() {
   const [comentarios, setComentarios] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [darkMode, setDarkMode] = useState(false);
+  const contentRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (token) {
       loadPresupuesto();
     }
   }, [token]);
+
+  // Manejar el retorno desde Mercado Pago (Checkout Pro)
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const status = params.get('status');
+    const pago = params.get('pago');
+
+    if (status && pago) {
+      if (status === 'success') {
+        toast({
+          title: "¡Pago completado! 🎉",
+          description: `El pago ${pago}/2 se ha procesado exitosamente en Mercado Pago.`,
+        });
+      } else if (status === 'failure') {
+        toast({
+          title: "Pago fallido",
+          description: `El pago ${pago}/2 no pudo completarse o fue rechazado.`,
+          variant: "destructive"
+        });
+      } else if (status === 'pending') {
+        toast({
+          title: "Pago en revisión",
+          description: `El pago ${pago}/2 está siendo verificado por Mercado Pago.`,
+        });
+      }
+
+      // Limpiar los parámetros de la URL para que no vuelva a saltar el toast si se recarga anidado
+      navigate(location.pathname, { replace: true });
+    }
+  }, [location.search, navigate, toast, location.pathname]);
 
   const loadPresupuesto = async () => {
     try {
@@ -122,32 +158,22 @@ export default function PresupuestoPublico() {
     window.print();
   };
 
-  const handleDownloadPDF = () => {
-    const printFrame = document.createElement('iframe');
-    printFrame.style.position = 'fixed';
-    printFrame.style.right = '0';
-    printFrame.style.bottom = '0';
-    printFrame.style.width = '0';
-    printFrame.style.height = '0';
-    printFrame.style.border = '0';
-    document.body.appendChild(printFrame);
-
-    const content = document.documentElement.outerHTML;
-    const doc = printFrame.contentWindow?.document;
-
-    if (doc) {
-      doc.open();
-      doc.write(content);
-      doc.close();
-
-      setTimeout(() => {
-        printFrame.contentWindow?.print();
-        setTimeout(() => {
-          document.body.removeChild(printFrame);
-        }, 100);
-      }, 250);
-    }
-  };
+  const handleDownloadPDF = useReactToPrint({
+    content: () => contentRef.current,
+    documentTitle: `Presupuesto_${presupuesto?.numero || 'NEXABIS'}`,
+    pageStyle: `
+      @page {
+        size: letter;
+        margin: 15mm;
+      }
+      @media print {
+        body {
+          -webkit-print-color-adjust: exact;
+          print-color-adjust: exact;
+        }
+      }
+    `,
+  });
 
   const fmt = (val: number) => formatCurrency(val, presupuesto?.moneda || "CLP");
 
@@ -174,9 +200,13 @@ export default function PresupuestoPublico() {
   const isVencido = new Date(presupuesto.fecha_vencimiento) < new Date();
   const yaRespondido = presupuesto.estado !== "pendiente";
 
+  const is50_50 = presupuesto.forma_pago?.toLowerCase().includes("50");
+  const pago1Status = presupuesto.mp_pago_1_status;
+  const pago2Status = presupuesto.mp_pago_2_status;
+
   return (
     <div className={`min-h-screen py-4 sm:py-8 px-3 sm:px-4 ${darkMode ? 'dark bg-background' : 'bg-gray-50'}`}>
-      <div className="container mx-auto max-w-4xl">
+      <div className="container mx-auto max-w-4xl" ref={contentRef}>
         {/* Toolbar */}
         <div className="print:hidden mb-4 sm:mb-6 flex flex-wrap justify-between items-center gap-2">
           <div className="flex-shrink-0">
@@ -351,26 +381,86 @@ export default function PresupuestoPublico() {
 
           {/* Already responded */}
           {yaRespondido && (
-            <div
-              className={`print:hidden border-t border-primary/20 pt-6 text-center p-4 rounded-lg ${presupuesto.estado === "aprobado"
-                ? "bg-green-500/10 border-green-500/20"
-                : "bg-red-500/10 border-red-500/20"
-                }`}
-            >
-              <div className="flex items-center justify-center gap-2 mb-2">
-                {presupuesto.estado === "aprobado" ? (
-                  <CheckCircle className="w-6 h-6 text-green-500" />
-                ) : (
-                  <XCircle className="w-6 h-6 text-red-500" />
+            <div className={`print:hidden border-t border-primary/20 pt-6 space-y-4`}>
+              <div
+                className={`text-center p-4 rounded-lg ${presupuesto.estado === "aprobado"
+                  ? "bg-green-500/10 border-green-500/20"
+                  : "bg-red-500/10 border-red-500/20"
+                  }`}
+              >
+                <div className="flex items-center justify-center gap-2 mb-2">
+                  {presupuesto.estado === "aprobado" ? (
+                    <CheckCircle className="w-6 h-6 text-green-500" />
+                  ) : (
+                    <XCircle className="w-6 h-6 text-red-500" />
+                  )}
+                  <span className="text-lg sm:text-xl font-bold">
+                    {presupuesto.estado === "aprobado" ? "Presupuesto Aprobado" : "Presupuesto Rechazado"}
+                  </span>
+                </div>
+                {presupuesto.comentarios_cliente && (
+                  <p className="text-sm text-muted-foreground mt-2">
+                    Comentarios: {presupuesto.comentarios_cliente}
+                  </p>
                 )}
-                <span className="text-lg sm:text-xl font-bold">
-                  {presupuesto.estado === "aprobado" ? "Presupuesto Aprobado" : "Presupuesto Rechazado"}
-                </span>
               </div>
-              {presupuesto.comentarios_cliente && (
-                <p className="text-sm text-muted-foreground mt-2">
-                  Comentarios: {presupuesto.comentarios_cliente}
-                </p>
+
+              {presupuesto.estado === "aprobado" && is50_50 && (
+                <div className="mt-8 space-y-4">
+                  <h3 className="text-xl font-bold gradient-text text-center">Estado de Pagos</h3>
+
+                  {/* Pago 1 */}
+                  <Card className="p-4 border-primary/20">
+                    <div className="flex justify-between items-center mb-4">
+                      <div>
+                        <h4 className="font-bold">Primer Pago (50% Anticipo)</h4>
+                        <p className="text-sm text-muted-foreground">{fmt(parseFloat(presupuesto.total) / 2)}</p>
+                      </div>
+                      <Badge variant={pago1Status === 'approved' ? 'default' : 'secondary'} className={pago1Status === 'approved' ? 'bg-green-500' : ''}>
+                        {pago1Status === 'approved' ? 'Pagado' : (pago1Status === 'in_process' ? 'En revisión' : 'Pendiente')}
+                      </Badge>
+                    </div>
+
+                    {(!pago1Status || pago1Status === 'rejected') && (
+                      <div className="mt-4">
+                        <MercadoPagoBrick
+                          presupuestoId={presupuesto.id}
+                          pagoNumero={1}
+                          monto={Math.round(parseFloat(presupuesto.total) / 2)}
+                          onSuccess={(status) => setPresupuesto({ ...presupuesto, mp_pago_1_status: status })}
+                        />
+                      </div>
+                    )}
+                  </Card>
+
+                  {/* Pago 2 */}
+                  {pago1Status === 'approved' && (
+                    <Card className="p-4 border-primary/20">
+                      <div className="flex justify-between items-center mb-4">
+                        <div>
+                          <h4 className="font-bold">Segundo Pago (50% Final)</h4>
+                          <p className="text-sm text-muted-foreground">
+                            {fmt(parseFloat(presupuesto.total) - (parseFloat(presupuesto.mp_pago_1_monto) || (parseFloat(presupuesto.total) / 2)))}
+                          </p>
+                        </div>
+                        <Badge variant={pago2Status === 'approved' ? 'default' : 'secondary'} className={pago2Status === 'approved' ? 'bg-green-500' : ''}>
+                          {pago2Status === 'approved' ? 'Pagado' : (pago2Status === 'in_process' ? 'En revisión' : 'Pendiente')}
+                        </Badge>
+                      </div>
+
+                      {(!pago2Status || pago2Status === 'rejected') && (
+                        <div className="mt-4">
+                          <MercadoPagoBrick
+                            presupuestoId={presupuesto.id}
+                            pagoNumero={2}
+                            monto={Math.round(parseFloat(presupuesto.total) - (parseFloat(presupuesto.mp_pago_1_monto) || Math.round(parseFloat(presupuesto.total) / 2)))}
+                            onSuccess={(status) => setPresupuesto({ ...presupuesto, mp_pago_2_status: status })}
+                          />
+                        </div>
+                      )}
+                    </Card>
+                  )}
+                </div>
               )}
             </div>
           )}

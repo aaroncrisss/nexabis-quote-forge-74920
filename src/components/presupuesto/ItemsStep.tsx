@@ -2,11 +2,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Trash2, Plus } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
+import { Trash2, Plus, Sparkles, Wand2, Loader2, DollarSign } from "lucide-react";
 import { PresupuestoItem } from "@/pages/CrearPresupuesto";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { useSubscription } from "@/hooks/useSubscription";
 
 interface ItemsStepProps {
   items: PresupuestoItem[];
@@ -29,6 +32,18 @@ export function ItemsStep({
 }: ItemsStepProps) {
   const [promociones, setPromociones] = useState<any[]>([]);
   const { toast } = useToast();
+
+  // AI generation state
+  const [isAiModalOpen, setIsAiModalOpen] = useState(false);
+  const [aiPrompt, setAiPrompt] = useState("");
+  const [isAiLoading, setIsAiLoading] = useState(false);
+
+  // AI Optimization state
+  const [isOptimizeModalOpen, setIsOptimizeModalOpen] = useState(false);
+  const [optimizeTarget, setOptimizeTarget] = useState("");
+  const [isOptimizeLoading, setIsOptimizeLoading] = useState(false);
+
+  const { rubro } = useSubscription();
 
   useEffect(() => {
     loadPromociones();
@@ -149,6 +164,115 @@ export function ItemsStep({
     onUpdate({ items: items.filter((_, i) => i !== index) });
   };
 
+  const handleAiGenerate = async () => {
+    if (!aiPrompt.trim()) return;
+    setIsAiLoading(true);
+
+    try {
+      const response = await fetch("https://supabase.nexabistech.com/functions/v1/nl_to_items", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          prompt: aiPrompt,
+          moneda,
+          rubro: rubro || "tecnologia"
+        })
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) throw new Error(data.error || "Error al procesar");
+
+      if (data.items && Array.isArray(data.items)) {
+        // Formatear items
+        const newItems = data.items.map((i: any) => ({
+          descripcion: i.descripcion,
+          cantidad: String(i.cantidad || 1),
+          precio_unitario: String(i.precio_unitario || 0),
+          total: (i.cantidad || 1) * (i.precio_unitario || 0)
+        }));
+
+        onUpdate({
+          items: [...items, ...newItems]
+        });
+
+        toast({
+          title: "Ítems generados",
+          description: `Se agregaron ${newItems.length} ítems desde la IA.`,
+        });
+
+        setAiPrompt("");
+        setIsAiModalOpen(false);
+      } else {
+        throw new Error("Formato de respuesta inválido");
+      }
+    } catch (error: any) {
+      console.error(error);
+      toast({
+        title: "Error",
+        description: error.message || "No se pudo generar los ítems",
+        variant: "destructive"
+      });
+    } finally {
+      setIsAiLoading(false);
+    }
+  };
+
+  const handleOptimizeGenerate = async () => {
+    const targetValue = parseFloat(optimizeTarget);
+    if (isNaN(targetValue) || targetValue <= 0 || items.length === 0) return;
+    setIsOptimizeLoading(true);
+
+    try {
+      const response = await fetch("https://supabase.nexabistech.com/functions/v1/optimize_budget", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          items,
+          target: targetValue,
+          moneda,
+          rubro: rubro || "tecnologia"
+        })
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) throw new Error(data.error || "Error al procesar");
+
+      if (data.items && Array.isArray(data.items)) {
+        const newItems = data.items.map((i: any) => ({
+          descripcion: i.descripcion,
+          cantidad: String(i.cantidad || 0),
+          precio_unitario: String(i.precio_unitario || 0),
+          total: (i.cantidad || 0) * (i.precio_unitario || 0)
+        }));
+
+        onUpdate({
+          items: newItems
+        });
+
+        toast({
+          title: "Presupuesto Optimizado",
+          description: `Los ítems han sido ajustados al nuevo objetivo.`,
+        });
+
+        setOptimizeTarget("");
+        setIsOptimizeModalOpen(false);
+      } else {
+        throw new Error("Formato de respuesta inválido");
+      }
+    } catch (error: any) {
+      console.error(error);
+      toast({
+        title: "Error",
+        description: error.message || "No se pudo optimizar el presupuesto",
+        variant: "destructive"
+      });
+    } finally {
+      setIsOptimizeLoading(false);
+    }
+  };
+
   const { subtotal, descuento_total, iva_monto, neto, total } = calculateTotals();
   const simbolo = moneda === "USD" ? "$" : "$";
 
@@ -231,10 +355,110 @@ export function ItemsStep({
           </div>
         ))}
 
-        <Button onClick={addItem} variant="outline" className="w-full gradient-border">
-          <Plus className="w-4 h-4 mr-2" />
-          Agregar Item
-        </Button>
+        <div className="flex flex-col gap-3 mt-4">
+          <div className="flex flex-col sm:flex-row gap-3">
+            <Button onClick={addItem} variant="outline" className="flex-1 gradient-border">
+              <Plus className="w-4 h-4 mr-2" />
+              Agregar Item Manual
+            </Button>
+
+            <Dialog open={isAiModalOpen} onOpenChange={setIsAiModalOpen}>
+              <DialogTrigger asChild>
+                <Button className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white gap-2">
+                  <Sparkles className="w-4 h-4" />
+                  Magia IA: Crear desde texto
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="sm:max-w-xl">
+                <DialogHeader>
+                  <DialogTitle className="flex items-center gap-2">
+                    <Wand2 className="w-5 h-5 text-indigo-500" />
+                    Generador Inteligente de Ítems
+                  </DialogTitle>
+                </DialogHeader>
+                <div className="space-y-4 pt-4">
+                  <div className="space-y-2">
+                    <Label>Describe lo que necesitas cotizar</Label>
+                    <Textarea
+                      placeholder="Ej: Necesito instalar 3 aires acondicionados split y hacer mantenimiento a 2 equipos industriales..."
+                      className="min-h-[120px] resize-none focus-visible:ring-indigo-500"
+                      value={aiPrompt}
+                      onChange={(e) => setAiPrompt(e.target.value)}
+                    />
+                    <p className="text-xs text-muted-foreground mt-2">
+                      La IA detectará automáticamente tu rubro (<span className="capitalize">{rubro || 'tecnología'}</span>) y estimará cantidades y precios en {moneda}.
+                    </p>
+                  </div>
+                  <div className="flex justify-end gap-3 pt-2">
+                    <Button variant="ghost" onClick={() => setIsAiModalOpen(false)}>Cancelar</Button>
+                    <Button
+                      onClick={handleAiGenerate}
+                      disabled={!aiPrompt.trim() || isAiLoading}
+                      className="bg-indigo-600 hover:bg-indigo-700 text-white gap-2 min-w-[150px]"
+                    >
+                      {isAiLoading ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <>
+                          <Sparkles className="w-4 h-4" />
+                          Generar Ítems
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                </div>
+              </DialogContent>
+            </Dialog>
+
+            {items.length > 0 && (
+              <Dialog open={isOptimizeModalOpen} onOpenChange={setIsOptimizeModalOpen}>
+                <DialogTrigger asChild>
+                  <Button variant="outline" className="flex-1 border-indigo-500 text-indigo-500 hover:bg-indigo-50 hover:text-indigo-600 gap-2">
+                    <DollarSign className="w-4 h-4" />
+                    Optimizar Target IA
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="sm:max-w-md">
+                  <DialogHeader>
+                    <DialogTitle className="flex items-center gap-2">
+                      <Sparkles className="w-5 h-5 text-indigo-500" />
+                      Optimizar Presupuesto
+                    </DialogTitle>
+                  </DialogHeader>
+                  <div className="space-y-4 pt-4">
+                    <div className="space-y-2">
+                      <Label>Presupuesto Objetivo ({moneda})</Label>
+                      <Input
+                        type="number"
+                        placeholder="Ej: 500000"
+                        value={optimizeTarget}
+                        onChange={(e) => setOptimizeTarget(e.target.value)}
+                        className="focus-visible:ring-indigo-500"
+                      />
+                      <p className="text-xs text-muted-foreground mt-2">
+                        La IA ajustará cantidades, precios o alcance de los ítems actuales para acercarse a este valor.
+                      </p>
+                    </div>
+                    <div className="flex justify-end gap-3 pt-2">
+                      <Button variant="ghost" onClick={() => setIsOptimizeModalOpen(false)}>Cancelar</Button>
+                      <Button
+                        onClick={handleOptimizeGenerate}
+                        disabled={!optimizeTarget || isOptimizeLoading}
+                        className="bg-indigo-600 hover:bg-indigo-700 text-white gap-2"
+                      >
+                        {isOptimizeLoading ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          "Ajustar Ítems"
+                        )}
+                      </Button>
+                    </div>
+                  </div>
+                </DialogContent>
+              </Dialog>
+            )}
+          </div>
+        </div>
       </div>
 
       <div className="border-t border-primary/20 pt-4 md:pt-6 space-y-4">

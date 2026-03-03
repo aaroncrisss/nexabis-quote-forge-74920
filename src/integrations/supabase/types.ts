@@ -274,6 +274,15 @@ export type Database = {
           rut: string | null
           telefono: string | null
           updated_at: string | null
+          subscription_tier: string | null
+          subscription_status: string | null
+          trial_ends_at: string | null
+          subscription_current_period_end: string | null
+          subscription_cancel_at_period_end: boolean | null
+          subscription_external_id: string | null
+          subscription_provider: string | null
+          rubro: string | null
+          max_presupuestos_mes: number | null
         }
         Insert: {
           activo?: boolean | null
@@ -289,6 +298,15 @@ export type Database = {
           rut?: string | null
           telefono?: string | null
           updated_at?: string | null
+          subscription_tier?: string | null
+          subscription_status?: string | null
+          trial_ends_at?: string | null
+          subscription_current_period_end?: string | null
+          subscription_cancel_at_period_end?: boolean | null
+          subscription_external_id?: string | null
+          subscription_provider?: string | null
+          rubro?: string | null
+          max_presupuestos_mes?: number | null
         }
         Update: {
           activo?: boolean | null
@@ -304,8 +322,67 @@ export type Database = {
           rut?: string | null
           telefono?: string | null
           updated_at?: string | null
+          subscription_tier?: string | null
+          subscription_status?: string | null
+          trial_ends_at?: string | null
+          subscription_current_period_end?: string | null
+          subscription_cancel_at_period_end?: boolean | null
+          subscription_external_id?: string | null
+          subscription_provider?: string | null
+          rubro?: string | null
+          max_presupuestos_mes?: number | null
         }
         Relationships: []
+      }
+      ai_usage_logs: {
+        Row: {
+          id: string
+          usuario_id: string
+          tipo_operacion: string
+          tokens_entrada: number | null
+          tokens_salida: number | null
+          modelo: string | null
+          rubro_contexto: string | null
+          exitoso: boolean | null
+          error_mensaje: string | null
+          metadata: Json | null
+          created_at: string | null
+        }
+        Insert: {
+          id?: string
+          usuario_id: string
+          tipo_operacion: string
+          tokens_entrada?: number | null
+          tokens_salida?: number | null
+          modelo?: string | null
+          rubro_contexto?: string | null
+          exitoso?: boolean | null
+          error_mensaje?: string | null
+          metadata?: Json | null
+          created_at?: string | null
+        }
+        Update: {
+          id?: string
+          usuario_id?: string
+          tipo_operacion?: string
+          tokens_entrada?: number | null
+          tokens_salida?: number | null
+          modelo?: string | null
+          rubro_contexto?: string | null
+          exitoso?: boolean | null
+          error_mensaje?: string | null
+          metadata?: Json | null
+          created_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_usage_logs_usuario_id_fkey"
+            columns: ["usuario_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          }
+        ]
       }
       promociones: {
         Row: {
@@ -517,6 +594,8 @@ export type Database = {
           estado: string | null
           es_excluido: boolean | null
           created_at: string
+          costo_fijo: number | null
+          cantidad: number | null
         }
         Insert: {
           id?: string
@@ -530,6 +609,8 @@ export type Database = {
           estado?: string | null
           es_excluido?: boolean | null
           created_at?: string
+          costo_fijo?: number | null
+          cantidad?: number | null
         }
         Update: {
           id?: string
@@ -543,6 +624,8 @@ export type Database = {
           estado?: string | null
           es_excluido?: boolean | null
           created_at?: string
+          costo_fijo?: number | null
+          cantidad?: number | null
         }
         Relationships: [
           {
@@ -570,6 +653,10 @@ export type Database = {
           _user_id: string
         }
         Returns: boolean
+      }
+      can_create_presupuesto: {
+        Args: { user_uuid: string }
+        Returns: Json
       }
     }
     Enums: {

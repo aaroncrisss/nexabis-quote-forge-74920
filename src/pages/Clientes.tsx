@@ -233,7 +233,7 @@ export default function Clientes() {
             <h1 className="text-2xl md:text-3xl lg:text-4xl font-bold gradient-text mb-2">Clientes</h1>
             <p className="text-sm md:text-base text-muted-foreground">Gestiona tu cartera de clientes</p>
           </div>
-          <Button onClick={() => handleOpenDialog()} variant="default" size="default" className="w-full sm:w-auto">
+          <Button onClick={() => handleOpenDialog()} className="w-full sm:w-auto gradient-button">
             <Plus className="w-5 h-5 mr-2" />
             Nuevo Cliente
           </Button>
@@ -388,7 +388,7 @@ export default function Clientes() {
         {clientes.length === 0 && (
           <Card className="p-12 bg-card/50 border-border text-center">
             <p className="text-muted-foreground mb-4">No tienes clientes registrados</p>
-            <Button onClick={() => handleOpenDialog()} variant="default">
+            <Button onClick={() => handleOpenDialog()} className="gradient-button">
               <Plus className="w-4 h-4 mr-2" />
               Crear tu primer cliente
             </Button>
@@ -477,7 +477,7 @@ export default function Clientes() {
             <Button variant="outline" onClick={() => setDialogOpen(false)}>
               Cancelar
             </Button>
-            <Button onClick={handleSubmit} variant="default">
+            <Button onClick={handleSubmit} className="gradient-button">
               {editingCliente ? "Actualizar" : "Crear"}
             </Button>
           </DialogFooter>

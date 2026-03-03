@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useNavigate, useLocation } from "react-router-dom";
+import { useNavigate, useLocation, Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
@@ -8,7 +8,8 @@ import { ClienteStep } from "@/components/presupuesto/ClienteStep";
 import { ItemsStep } from "@/components/presupuesto/ItemsStep";
 import { TermsStep } from "@/components/presupuesto/TermsStep";
 import { PreviewStep } from "@/components/presupuesto/PreviewStep";
-import { ArrowLeft, ArrowRight, Check } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, AlertTriangle, Sparkles } from "lucide-react";
+import { useSubscription } from "@/hooks/useSubscription";
 
 export interface PresupuestoItem {
   descripcion: string;
@@ -49,6 +50,7 @@ export default function CrearPresupuesto() {
   const { toast } = useToast();
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
+  const { canCreate, getBlockMessage, loading: subLoading } = useSubscription();
 
   // Check if coming from cotizador
   const locationState = location.state as LocationState | null;
@@ -226,6 +228,24 @@ export default function CrearPresupuesto() {
 
   return (
     <div className="container mx-auto py-4 md:py-8 px-4 max-w-6xl">
+      {/* Subscription Gate */}
+      {!subLoading && !canCreate && (
+        <Card className="p-6 mb-6 border-destructive/50 bg-destructive/10">
+          <div className="flex flex-col sm:flex-row items-center gap-4">
+            <AlertTriangle className="w-8 h-8 text-destructive shrink-0" />
+            <div className="flex-1 text-center sm:text-left">
+              <p className="font-heading font-semibold text-destructive">No puedes crear presupuestos</p>
+              <p className="text-sm text-muted-foreground mt-1">{getBlockMessage()}</p>
+            </div>
+            <Link to="/suscripcion">
+              <Button className="bg-gradient-nexabis hover:opacity-90 gap-2 shrink-0">
+                <Sparkles className="w-4 h-4" />
+                Mejorar Plan
+              </Button>
+            </Link>
+          </div>
+        </Card>
+      )}
       <div className="mb-6 md:mb-8">
         <h1 className="text-2xl md:text-4xl font-bold gradient-text mb-2">Crear Nuevo Presupuesto</h1>
         <div className="flex items-center gap-2 mb-2">

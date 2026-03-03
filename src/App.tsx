@@ -22,6 +22,8 @@ const AdminPanel = lazy(() => import("./pages/AdminPanel"));
 const Cotizador = lazy(() => import("./pages/Cotizador"));
 const Proyectos = lazy(() => import("./pages/Proyectos"));
 const ProyectoDetalle = lazy(() => import("./pages/ProyectoDetalle"));
+const MiSuscripcion = lazy(() => import("./pages/MiSuscripcion"));
+const Documentacion = lazy(() => import("./pages/Documentacion"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 
 const queryClient = new QueryClient();
@@ -73,6 +75,8 @@ const App = () => (
               <Route path="/presupuesto/:token" element={<PresupuestoPublico />} />
               <Route path="/configuracion" element={<ProtectedRoute><Configuracion /></ProtectedRoute>} />
               <Route path="/proyectos/:id" element={<ProtectedRoute><ProyectoDetalle /></ProtectedRoute>} />
+              <Route path="/suscripcion" element={<ProtectedRoute><MiSuscripcion /></ProtectedRoute>} />
+              <Route path="/documentacion" element={<ProtectedRoute><Documentacion /></ProtectedRoute>} />
               <Route path="/admin" element={<ProtectedRoute><AdminPanel /></ProtectedRoute>} />
               <Route path="*" element={<NotFound />} />
             </Routes>

@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,6 +11,8 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { useSubscription } from "@/hooks/useSubscription";
+import { INDUSTRY_FIELDS } from "@/config/industryFields";
 import {
   Calculator,
   Plus,
@@ -27,7 +29,9 @@ import {
   DollarSign,
   Eye,
   EyeOff,
-  Save
+  Save,
+  BookOpen,
+  Info
 } from "lucide-react";
 
 interface Modulo {
@@ -37,6 +41,8 @@ interface Modulo {
   justificacion: string;
   prioridad?: number;
   esencial?: boolean; // Mantener por compatibilidad hacia atrás
+  costoFijo?: number; // Nuevo campo para costos extra pasados como fijos (ej. repuestos)
+  cantidad?: number; // Nuevo campo para unidades o múltiples items repetitivos
 }
 
 interface AjustePresupuesto {
@@ -64,15 +70,7 @@ interface Cliente {
   rut?: string;
 }
 
-const TIPOS_PROYECTO = [
-  { value: "web", label: "Sitio Web" },
-  { value: "ecommerce", label: "E-commerce" },
-  { value: "app", label: "Aplicación Móvil" },
-  { value: "automatizacion", label: "Automatización" },
-  { value: "marketing", label: "Marketing Digital" },
-  { value: "software", label: "Software a Medida" },
-  { value: "otro", label: "Otro" },
-];
+// We can remove TIPOS_PROYECTO since we are changing the input to a generic text field to support all rubros
 
 const NIVELES_URGENCIA = [
   { value: "baja", label: "Baja (sin fecha límite)" },
@@ -83,6 +81,7 @@ const NIVELES_URGENCIA = [
 
 const Cotizador = () => {
   const navigate = useNavigate();
+  const { canCreate, getBlockMessage, loading: subLoading, rubro } = useSubscription();
 
   // Form state
   const [tipoProyecto, setTipoProyecto] = useState("");
@@ -90,6 +89,7 @@ const Cotizador = () => {
   const [funcionalidades, setFuncionalidades] = useState<string[]>([]);
   const [nuevaFuncionalidad, setNuevaFuncionalidad] = useState("");
   const [urgencia, setUrgencia] = useState("");
+  const [extraInputs, setExtraInputs] = useState<Record<string, string>>({});
 
   // Client state
   const [clientes, setClientes] = useState<Cliente[]>([]);
@@ -197,7 +197,9 @@ const Cotizador = () => {
             descripcion,
             funcionalidades,
             urgencia: urgencia || "media",
-            horasMaximas
+            horasMaximas,
+            rubro: rubro || "tecnologia",
+            parametrosExtra: extraInputs
           }),
         }
       );
@@ -347,10 +349,12 @@ const Cotizador = () => {
         const modulosInsert = estimacion.modulos.map(m => ({
           estimacion_id: estCompleta.id,
           nombre: m.nombre,
-          horas_estimadas: Math.ceil(m.horasEstimadas), // Round up
+          horas_estimadas: Math.ceil(m.horasEstimadas), // Round up for DB
           prioridad: mapPrioridad(m.prioridad),
           nivel_riesgo: m.nivelRiesgo,
           justificacion: m.justificacion,
+          costo_fijo: m.costoFijo || 0, // Nuevo campo
+          cantidad: m.cantidad || 1, // Guardar la cantidad
           es_excluido: false,
           estado: 'pendiente'
         }));
@@ -397,6 +401,8 @@ const Cotizador = () => {
               prioridad: mapPrioridad(m.prioridad),
               nivel_riesgo: m.nivelRiesgo,
               justificacion: m.justificacion,
+              costo_fijo: m.costoFijo || 0, // Nuevo campo
+              cantidad: m.cantidad || 1, // Guardar cantidad
               es_excluido: !isIncluded, // Marcamos como excluido si no está en recomendados
               estado: 'pendiente'
             };
@@ -420,7 +426,9 @@ const Cotizador = () => {
 
   const calcularCostoTotal = () => {
     if (!estimacion) return 0;
-    return estimacion.horasTotales * costoPorHora;
+    const costoHoras = estimacion.horasTotales * costoPorHora;
+    const costoFijos = estimacion.modulos.reduce((acc, m) => acc + (m.costoFijo || 0), 0);
+    return costoHoras + costoFijos;
   };
 
   const convertirAPresupuesto = (usarAjuste: boolean = false) => {
@@ -433,15 +441,27 @@ const Cotizador = () => {
       ? estimacion.modulos.filter(m => estimacion.ajustePresupuesto?.modulosRecomendados.includes(m.nombre))
       : estimacion.modulos;
 
-    const items = modulosFinales.map((modulo) => ({
-      descripcion: modulo.nombre, // Solo el nombre del módulo
-      cantidad: 1, // Cantidad siempre 1
-      precio_unitario: modulo.horasEstimadas * costoPorHora, // Precio total del módulo
-      total: modulo.horasEstimadas * costoPorHora,
-    }));
+    const items = modulosFinales.map((modulo) => {
+      // Si el modulo tiene costo fijo puro (sin horas)
+      if (modulo.costoFijo && modulo.horasEstimadas === 0) {
+        return {
+          descripcion: modulo.nombre,
+          cantidad: modulo.cantidad || 1,
+          precio_unitario: modulo.costoFijo / (modulo.cantidad || 1),
+          total: modulo.costoFijo,
+        };
+      }
+      // Si hay horas y posible costo extra
+      const totalModulo = (modulo.horasEstimadas * costoPorHora) + (modulo.costoFijo || 0);
+      return {
+        descripcion: modulo.costoFijo ? `${modulo.nombre} (Incluye Extras)` : modulo.nombre,
+        cantidad: modulo.cantidad || 1,
+        precio_unitario: totalModulo / (modulo.cantidad || 1),
+        total: totalModulo,
+      };
+    });
 
-    // Obtener el tipo de proyecto legible
-    const tipoLabel = TIPOS_PROYECTO.find(t => t.value === tipoProyecto)?.label || tipoProyecto;
+    const tipoLabel = tipoProyecto;
 
     navigate("/crear", {
       state: {
@@ -461,15 +481,56 @@ const Cotizador = () => {
         {/* Header */}
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
-            <h1 className="text-2xl md:text-3xl lg:text-4xl font-bold gradient-text flex items-center gap-3">
+            <h1 className="text-2xl md:text-3xl lg:text-4xl font-bold gradient-text flex flex-wrap items-center gap-3">
               <Sparkles className="w-7 h-7 md:w-8 md:h-8" />
-              Cotizador Inteligente
+              Cotizador Inteligente AI
+              {rubro && (
+                <Badge variant="outline" className="border-indigo-500 text-indigo-400 capitalize bg-indigo-500/10 px-3 py-1">
+                  Industria: {rubro}
+                </Badge>
+              )}
             </h1>
             <p className="text-sm md:text-base text-muted-foreground mt-1">
               Estima horas, complejidad y ajusta al presupuesto de tu cliente
             </p>
           </div>
+          <div className="flex shrink-0">
+            <Link to="/documentacion">
+              <Button variant="outline" className="gap-2 bg-background/50 backdrop-blur border-primary/20 hover:bg-primary/10 transition-colors">
+                <BookOpen className="w-4 h-4 text-primary" />
+                <span className="hidden sm:inline">Guía de Uso & Documentación</span>
+                <span className="sm:hidden">Guía</span>
+              </Button>
+            </Link>
+          </div>
         </div>
+
+        {/* AI Educational Alert */}
+        <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-3 flex gap-3 text-sm text-blue-200/90 items-start">
+          <Info className="w-5 h-5 text-blue-400 shrink-0 mt-0.5" />
+          <p>
+            <strong className="text-blue-300">Aviso Preliminar:</strong> Este cotizador utiliza Inteligencia Artificial (Gemini) para generar una estructura inicial y calcular tiempos basados en las mejores prácticas del mercado. Utilízalo para <strong>formar una base sólida</strong>, pero asegúrate de que un humano revise y edite los valores y el alcance antes de enviarlo oficialmente a producción o pactarlo con tu cliente.
+          </p>
+        </div>
+
+        {/* Subscription Gate */}
+        {!subLoading && !canCreate && (
+          <Card className="border-destructive/50 bg-destructive/10">
+            <CardContent className="p-4 flex flex-col sm:flex-row items-center gap-4">
+              <AlertTriangle className="w-8 h-8 text-destructive shrink-0" />
+              <div className="flex-1 text-center sm:text-left">
+                <p className="font-heading font-semibold text-destructive">Cotizador no disponible</p>
+                <p className="text-sm text-muted-foreground mt-1">{getBlockMessage()}</p>
+              </div>
+              <Link to="/suscripcion">
+                <Button className="bg-gradient-nexabis hover:opacity-90 gap-2 shrink-0">
+                  <Sparkles className="w-4 h-4" />
+                  Mejorar Plan
+                </Button>
+              </Link>
+            </CardContent>
+          </Card>
+        )}
 
         <div className="flex flex-col gap-6 max-w-4xl mx-auto">
           {/* Form Section */}
@@ -574,25 +635,23 @@ const Cotizador = () => {
 
               {/* Tipo de proyecto */}
               <div>
-                <Label className="text-sm">Tipo de Proyecto *</Label>
-                <Select value={tipoProyecto} onValueChange={setTipoProyecto}>
-                  <SelectTrigger className="mt-1.5">
-                    <SelectValue placeholder="Seleccionar tipo" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {TIPOS_PROYECTO.map((tipo) => (
-                      <SelectItem key={tipo.value} value={tipo.value}>
-                        {tipo.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Label className="text-sm">
+                  {INDUSTRY_FIELDS[rubro || 'default']?.labels?.tipoProyecto || "Tipo de Proyecto / Servicio *"}
+                </Label>
+                <Input
+                  value={tipoProyecto}
+                  onChange={(e) => setTipoProyecto(e.target.value)}
+                  placeholder="Ej: Remodelación, Sitio Web, Auditoría..."
+                  className="mt-1.5"
+                />
               </div>
 
               {/* Presupuesto y Costo Hora */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <Label className="text-sm">Costo Hora (CLP)</Label>
+                  <Label className="text-sm">
+                    {INDUSTRY_FIELDS[rubro || 'default']?.labels?.costoBase || "Costo Base Unitario (Por Hora, Día, etc.)"}
+                  </Label>
                   <Input
                     type="number"
                     value={costoPorHora}
@@ -614,7 +673,9 @@ const Cotizador = () => {
 
               {/* Descripción */}
               <div>
-                <Label className="text-sm">Descripción del Requerimiento *</Label>
+                <Label className="text-sm">
+                  {INDUSTRY_FIELDS[rubro || 'default']?.labels?.descripcion || "Descripción del Requerimiento *"}
+                </Label>
                 <Textarea
                   value={descripcion}
                   onChange={(e) => setDescripcion(e.target.value)}
@@ -623,9 +684,41 @@ const Cotizador = () => {
                 />
               </div>
 
+              {/* Campos Extra de la Industria */}
+              {rubro && INDUSTRY_FIELDS[rubro] && INDUSTRY_FIELDS[rubro].extraFields.length > 0 && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-accent/5 p-4 rounded-lg border border-accent/20">
+                  <div className="col-span-full mb-1">
+                    <Label className="text-sm font-semibold text-primary flex items-center gap-2">
+                      <Sparkles className="w-4 h-4" />
+                      Parámetros Específicos: <span className="capitalize">{rubro}</span>
+                    </Label>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Estos datos ayudarán a la IA a calcular viáticos, materiales o estimaciones pre-fijadas con mayor precisión.
+                    </p>
+                  </div>
+                  {INDUSTRY_FIELDS[rubro].extraFields.map((field) => (
+                    <div key={field.id}>
+                      <Label className="text-sm">
+                        {field.label} {field.required ? "*" : ""}
+                      </Label>
+                      <Input
+                        type={field.type}
+                        placeholder={field.placeholder}
+                        required={field.required}
+                        value={extraInputs[field.id] || ""}
+                        onChange={(e) => setExtraInputs({ ...extraInputs, [field.id]: e.target.value })}
+                        className="mt-1.5"
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
+
               {/* Funcionalidades */}
               <div>
-                <Label className="text-sm">Funcionalidades Específicas</Label>
+                <Label className="text-sm">
+                  {INDUSTRY_FIELDS[rubro || 'default']?.labels?.funcionalidades || "Funcionalidades Específicas"}
+                </Label>
                 <div className="flex gap-2 mt-1.5">
                   <Input
                     value={nuevaFuncionalidad}
@@ -889,8 +982,21 @@ const Cotizador = () => {
                               </p>
                             </div>
                             <div className="text-right shrink-0">
-                              <p className="font-bold text-primary">{modulo.horasEstimadas}h</p>
-                              <p className={`text-xs capitalize ${getRiesgoColor(modulo.nivelRiesgo)}`}>
+                              {modulo.costoFijo && modulo.horasEstimadas === 0 ? (
+                                <p className="font-bold text-primary">${modulo.costoFijo.toLocaleString("es-CL")}</p>
+                              ) : (
+                                <>
+                                  <p className="font-bold text-primary flex flex-col">
+                                    {modulo.horasEstimadas}h
+                                    {modulo.costoFijo && modulo.costoFijo > 0 && (
+                                      <span className="text-[10px] text-indigo-400 font-normal">
+                                        + ${modulo.costoFijo.toLocaleString("es-CL")} Extra
+                                      </span>
+                                    )}
+                                  </p>
+                                </>
+                              )}
+                              <p className={`text-xs capitalize ${getRiesgoColor(modulo.nivelRiesgo)} mt-1`}>
                                 Riesgo {modulo.nivelRiesgo}
                               </p>
                             </div>

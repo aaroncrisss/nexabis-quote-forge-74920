@@ -15,6 +15,8 @@ const Dashboard = () => {
     valorAprobado: 0,
     valorRechazado: 0,
     tasaAprobacion: 0,
+    ticketPromedio: 0,
+    pipelineValue: 0,
     pendientes: 0,
     aprobadosSemana: 0,
     porVencer: 0,
@@ -48,7 +50,7 @@ const Dashboard = () => {
         const valorRechazado = presupuestos
           .filter(p => p.estado === "rechazado")
           .reduce((sum, p) => sum + Number(p.total), 0);
-        
+
         // Approved this week
         const weekAgo = new Date();
         weekAgo.setDate(weekAgo.getDate() - 7);
@@ -60,16 +62,24 @@ const Dashboard = () => {
         const threeDaysFromNow = new Date();
         threeDaysFromNow.setDate(threeDaysFromNow.getDate() + 3);
         const porVencer = presupuestos.filter(
-          p => p.estado === "pendiente" && 
-          new Date(p.fecha_vencimiento) <= threeDaysFromNow &&
-          new Date(p.fecha_vencimiento) >= new Date()
+          p => p.estado === "pendiente" &&
+            new Date(p.fecha_vencimiento) <= threeDaysFromNow &&
+            new Date(p.fecha_vencimiento) >= new Date()
         ).length;
+
+        const pipelineValue = presupuestos
+          .filter(p => p.estado === "pendiente")
+          .reduce((sum, p) => sum + Number(p.total), 0);
+
+        const ticketPromedio = aprobados > 0 ? Math.round(valorAprobado / aprobados) : 0;
 
         setStats({
           totalPresupuestos: total,
           valorAprobado,
           valorRechazado,
           tasaAprobacion: total > 0 ? Math.round((aprobados / total) * 100) : 0,
+          ticketPromedio,
+          pipelineValue,
           pendientes,
           aprobadosSemana,
           porVencer,
@@ -95,15 +105,15 @@ const Dashboard = () => {
       const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
       const monthName = months[date.getMonth()];
       const monthYear = `${monthName} ${date.getFullYear()}`;
-      
+
       const monthPresupuestos = presupuestos.filter(p => {
         const pDate = new Date(p.fecha);
-        return pDate.getMonth() === date.getMonth() && 
-               pDate.getFullYear() === date.getFullYear();
+        return pDate.getMonth() === date.getMonth() &&
+          pDate.getFullYear() === date.getFullYear();
       });
 
       const total = monthPresupuestos.reduce((sum, p) => sum + Number(p.total), 0);
-      
+
       data.push({
         mes: monthName,
         total: Math.round(total),
@@ -194,20 +204,22 @@ const Dashboard = () => {
           <Card className="p-4 md:p-6 bg-card/50 border-border">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-xs md:text-sm text-muted-foreground mb-1">Pendientes</p>
-                <p className="text-xl md:text-2xl font-heading font-bold">{stats.pendientes}</p>
+                <p className="text-xs md:text-sm text-muted-foreground mb-1">Pipeline / Forecast</p>
+                <p className="text-xl md:text-2xl font-heading font-bold text-blue-500">${stats.pipelineValue.toLocaleString()}</p>
+                <p className="text-xs text-muted-foreground mt-1">En {stats.pendientes} presupuestos pendientes</p>
               </div>
-              <div className="w-3 h-3 rounded-full bg-primary"></div>
+              <div className="w-3 h-3 rounded-full bg-blue-500"></div>
             </div>
           </Card>
 
           <Card className="p-4 md:p-6 bg-card/50 border-border">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-xs md:text-sm text-muted-foreground mb-1">Aprobados esta semana</p>
-                <p className="text-xl md:text-2xl font-heading font-bold">{stats.aprobadosSemana}</p>
+                <p className="text-xs md:text-sm text-muted-foreground mb-1">Ticket Promedio</p>
+                <p className="text-xl md:text-2xl font-heading font-bold text-green-500">${stats.ticketPromedio.toLocaleString()}</p>
+                <p className="text-xs text-muted-foreground mt-1">De aprobaciones históricas</p>
               </div>
-              <div className="w-3 h-3 rounded-full bg-accent"></div>
+              <div className="w-3 h-3 rounded-full bg-green-500"></div>
             </div>
           </Card>
 
@@ -216,8 +228,9 @@ const Dashboard = () => {
               <div>
                 <p className="text-xs md:text-sm text-muted-foreground mb-1">Por vencer (3 días)</p>
                 <p className="text-xl md:text-2xl font-heading font-bold">{stats.porVencer}</p>
+                <p className="text-xs text-muted-foreground mt-1">Presupuestos que requieren atención</p>
               </div>
-              <div className="w-3 h-3 rounded-full bg-secondary"></div>
+              <div className="w-3 h-3 rounded-full bg-orange-500"></div>
             </div>
           </Card>
         </div>
@@ -230,18 +243,18 @@ const Dashboard = () => {
               <ResponsiveContainer width="100%" height={250} className="md:h-[300px]">
                 <BarChart data={chartData}>
                   <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                  <XAxis 
-                    dataKey="mes" 
+                  <XAxis
+                    dataKey="mes"
                     stroke="hsl(var(--muted-foreground))"
                     style={{ fontSize: '10px' }}
                     className="md:text-xs"
                   />
-                  <YAxis 
+                  <YAxis
                     stroke="hsl(var(--muted-foreground))"
                     style={{ fontSize: '10px' }}
                     className="md:text-xs"
                   />
-                  <Tooltip 
+                  <Tooltip
                     contentStyle={{
                       backgroundColor: 'hsl(var(--card))',
                       border: '1px solid hsl(var(--border))',
