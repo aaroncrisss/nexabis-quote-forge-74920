@@ -18,6 +18,7 @@ const CrearPresupuesto = lazy(() => import("./pages/CrearPresupuesto"));
 const PresupuestoPublico = lazy(() => import("./pages/PresupuestoPublico"));
 const Configuracion = lazy(() => import("./pages/Configuracion"));
 const Clientes = lazy(() => import("./pages/Clientes"));
+const ClienteDetalle = lazy(() => import("./pages/ClienteDetalle"));
 const AdminPanel = lazy(() => import("./pages/AdminPanel"));
 const Cotizador = lazy(() => import("./pages/Cotizador"));
 const Proyectos = lazy(() => import("./pages/Proyectos"));
@@ -25,6 +26,12 @@ const ProyectoDetalle = lazy(() => import("./pages/ProyectoDetalle"));
 const MiSuscripcion = lazy(() => import("./pages/MiSuscripcion"));
 const Documentacion = lazy(() => import("./pages/Documentacion"));
 const ComprobantePago = lazy(() => import("./pages/ComprobantePago"));
+const Pagos = lazy(() => import("./pages/Pagos"));
+const Pipeline = lazy(() => import("./pages/Pipeline"));
+const Tareas = lazy(() => import("./pages/Tareas"));
+const Facturas = lazy(() => import("./pages/Facturas"));
+const Contratos = lazy(() => import("./pages/Contratos"));
+const Reportes = lazy(() => import("./pages/Reportes"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 
 const queryClient = new QueryClient();
@@ -70,7 +77,14 @@ const App = () => (
               <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
               <Route path="/presupuestos" element={<ProtectedRoute><Presupuestos /></ProtectedRoute>} />
               <Route path="/clientes" element={<ProtectedRoute><Clientes /></ProtectedRoute>} />
+              <Route path="/clientes/:id" element={<ProtectedRoute><ClienteDetalle /></ProtectedRoute>} />
               <Route path="/proyectos" element={<ProtectedRoute><Proyectos /></ProtectedRoute>} />
+              <Route path="/pipeline" element={<ProtectedRoute><Pipeline /></ProtectedRoute>} />
+              <Route path="/tareas" element={<ProtectedRoute><Tareas /></ProtectedRoute>} />
+              <Route path="/pagos" element={<ProtectedRoute><Pagos /></ProtectedRoute>} />
+              <Route path="/facturas" element={<ProtectedRoute><Facturas /></ProtectedRoute>} />
+              <Route path="/contratos" element={<ProtectedRoute><Contratos /></ProtectedRoute>} />
+              <Route path="/reportes" element={<ProtectedRoute><Reportes /></ProtectedRoute>} />
               <Route path="/cotizador" element={<ProtectedRoute><Cotizador /></ProtectedRoute>} />
               <Route path="/crear" element={<ProtectedRoute><CrearPresupuesto /></ProtectedRoute>} />
               <Route path="/presupuesto/:token" element={<PresupuestoPublico />} />

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -38,6 +39,7 @@ interface Cliente {
 }
 
 export default function Clientes() {
+  const navigate = useNavigate();
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [filteredClientes, setFilteredClientes] = useState<Cliente[]>([]);
   const [loading, setLoading] = useState(true);
@@ -274,8 +276,8 @@ export default function Clientes() {
               <Card key={cliente.id} className="p-4 md:p-6 bg-card/50 border-border hover-glow transition-all">
                 <div className="space-y-3 md:space-y-4">
                   <div className="flex items-start justify-between">
-                    <div className="space-y-1 flex-1">
-                      <h3 className="font-semibold text-base md:text-lg">{cliente.nombre}</h3>
+                    <div className="space-y-1 flex-1 cursor-pointer" onClick={() => navigate(`/clientes/${cliente.id}`)}>
+                      <h3 className="font-semibold text-base md:text-lg hover:text-primary transition-colors">{cliente.nombre}</h3>
                       {cliente.empresa && (
                         <div className="flex items-center gap-2 text-xs md:text-sm text-muted-foreground">
                           <Building className="w-4 h-4" />
@@ -337,8 +339,8 @@ export default function Clientes() {
               <Card key={cliente.id} className="p-4 bg-card/50 border-border hover-glow transition-all">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-4 flex-1">
-                    <div className="flex-1">
-                      <h3 className="font-semibold">{cliente.nombre}</h3>
+                    <div className="flex-1 cursor-pointer" onClick={() => navigate(`/clientes/${cliente.id}`)}>
+                      <h3 className="font-semibold hover:text-primary transition-colors">{cliente.nombre}</h3>
                       {cliente.empresa && (
                         <p className="text-sm text-muted-foreground">{cliente.empresa}</p>
                       )}

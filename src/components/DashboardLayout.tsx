@@ -1,7 +1,7 @@
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
-import { LayoutDashboard, FileText, Settings, LogOut, Plus, Users, Moon, Sun, Shield, Menu, Calculator, FolderKanban, CreditCard } from "lucide-react";
+import { LayoutDashboard, FileText, Settings, LogOut, Plus, Users, Moon, Sun, Shield, Menu, Calculator, FolderKanban, CreditCard, DollarSign, Target, ListTodo, Receipt, FileSignature, BarChart3 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -58,9 +58,25 @@ const DashboardLayout = ({ children }: DashboardLayoutProps) => {
       ],
     },
     {
-      label: "Gestión",
+      label: "CRM",
       items: [
         { to: "/clientes", icon: Users, label: "Clientes" },
+        { to: "/pipeline", icon: Target, label: "Pipeline" },
+        { to: "/tareas", icon: ListTodo, label: "Tareas" },
+      ],
+    },
+    {
+      label: "Finanzas",
+      items: [
+        { to: "/pagos", icon: DollarSign, label: "Pagos" },
+        { to: "/facturas", icon: Receipt, label: "Facturas" },
+        { to: "/contratos", icon: FileSignature, label: "Contratos" },
+      ],
+    },
+    {
+      label: "Analítica",
+      items: [
+        { to: "/reportes", icon: BarChart3, label: "Reportes" },
       ],
     },
     {
