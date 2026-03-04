@@ -22,6 +22,7 @@ const Configuracion = () => {
   const [profile, setProfile] = useState({
     nombre: "",
     email: "",
+    email_empresa: "",
     nombre_empresa: "",
     direccion: "",
     telefono: "",
@@ -129,7 +130,7 @@ const Configuracion = () => {
       });
 
       if (error) throw error;
-      
+
       setPasswordData({ currentPassword: "", newPassword: "", confirmPassword: "" });
       toast.success("Contraseña actualizada exitosamente");
     } catch (error: any) {
@@ -197,8 +198,18 @@ const Configuracion = () => {
           </div>
 
           <div className="space-y-2">
-            <Label>Email</Label>
+            <Label>Email (cuenta)</Label>
             <Input value={profile.email} disabled />
+          </div>
+
+          <div className="space-y-2">
+            <Label>Email de Empresa (visible en comprobantes)</Label>
+            <Input
+              value={profile.email_empresa || ""}
+              onChange={(e) => setProfile({ ...profile, email_empresa: e.target.value })}
+              placeholder="ej: contacto@miempresa.com"
+            />
+            <p className="text-xs text-muted-foreground">Este email aparece en los comprobantes de pago en lugar del email personal.</p>
           </div>
 
           <div className="space-y-2">
@@ -236,8 +247,8 @@ const Configuracion = () => {
 
           <div className="space-y-2">
             <Label>Términos y Condiciones por Defecto</Label>
-            <Textarea 
-              value={profile.plantilla_tyc} 
+            <Textarea
+              value={profile.plantilla_tyc}
               onChange={(e) => setProfile({ ...profile, plantilla_tyc: e.target.value })}
               rows={4}
             />
@@ -256,8 +267,8 @@ const Configuracion = () => {
 
           <div className="space-y-2">
             <Label>Nueva Contraseña</Label>
-            <Input 
-              type="password" 
+            <Input
+              type="password"
               value={passwordData.newPassword}
               onChange={(e) => setPasswordData({ ...passwordData, newPassword: e.target.value })}
               placeholder="Mínimo 6 caracteres"
@@ -266,16 +277,16 @@ const Configuracion = () => {
 
           <div className="space-y-2">
             <Label>Confirmar Nueva Contraseña</Label>
-            <Input 
-              type="password" 
+            <Input
+              type="password"
               value={passwordData.confirmPassword}
               onChange={(e) => setPasswordData({ ...passwordData, confirmPassword: e.target.value })}
               placeholder="Repite la contraseña"
             />
           </div>
 
-          <Button 
-            onClick={handleChangePassword} 
+          <Button
+            onClick={handleChangePassword}
             disabled={changingPassword || !passwordData.newPassword || !passwordData.confirmPassword}
             className="bg-gradient-nexabis w-full"
           >

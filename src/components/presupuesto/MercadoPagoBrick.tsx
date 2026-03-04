@@ -1,102 +1,172 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { initMercadoPago, Payment } from '@mercadopago/sdk-react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { CheckCircle, XCircle, Loader2, ExternalLink, Copy } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { CreditCard, ExternalLink, Loader2 } from 'lucide-react';
 
 interface MercadoPagoBrickProps {
     presupuestoId: string;
+    presupuestoToken: string;
     pagoNumero: 1 | 2;
     monto: number;
     onSuccess: (status: string) => void;
     onCancel?: () => void;
 }
 
-export function MercadoPagoBrick({ presupuestoId, pagoNumero, monto, onSuccess }: MercadoPagoBrickProps) {
+export function MercadoPagoBrick({ presupuestoId, presupuestoToken, pagoNumero, monto, onSuccess }: MercadoPagoBrickProps) {
     const [isProcessing, setIsProcessing] = useState(false);
+    const [paymentResult, setPaymentResult] = useState<{ status: string; detail: string } | null>(null);
+    const [sdkReady, setSdkReady] = useState(false);
 
-    const handleCheckoutPro = async () => {
+    useEffect(() => {
+        const publicKey = import.meta.env.VITE_MP_PUBLIC_KEY;
+        console.log('[Payment Brick] Inicializando SDK con Public Key:', publicKey?.substring(0, 15) + '...');
+
+        if (publicKey) {
+            initMercadoPago(publicKey, { locale: 'es-CL' });
+            setSdkReady(true);
+        } else {
+            console.error('[Payment Brick] VITE_MP_PUBLIC_KEY no encontrada');
+            toast.error('Error de configuración: falta la clave pública de Mercado Pago');
+        }
+    }, []);
+
+    const handleSubmit = async (formData: any) => {
         if (isProcessing) return;
         setIsProcessing(true);
 
         try {
-            console.log('[Checkout Pro] Iniciando creación de preferencia...');
+            console.log('[Payment Brick] formData recibido del Brick:', JSON.stringify(formData));
 
-            // Llama a la Edge Function que ahora genera la Preferencia de Pago
             const { data, error } = await supabase.functions.invoke('mp-create-payment', {
                 body: {
                     presupuesto_id: presupuestoId,
                     pago_numero: pagoNumero,
-                    formData: {
-                        // Enviamos un token simulado para evitar cambiar el tipado en el backend
-                        // ya que el backend de Preferences de MP no usa token de tarjeta directamente
-                        token: 'checkout-pro-redirect',
-                    },
+                    formData: formData,
                 },
             });
 
             if (error) {
-                throw new Error(`Error de conexión con el servidor: ${error.message}`);
+                throw new Error(`Error de conexión: ${error.message}`);
             }
+
+            console.log('[Payment Brick] Respuesta del servidor:', JSON.stringify(data));
 
             if (data?.success === false || data?.error) {
-                throw new Error(`Error al crear preferencia: ${data.error || 'Desconocido'}`);
+                throw new Error(data.error || 'Error procesando el pago');
             }
 
-            // data.init_point es la URL segura de Mercado Pago
-            const initPoint = data.init_point;
-
-            if (!initPoint) {
-                throw new Error('El servidor no devolvió una URL de pago válida');
+            if (data?.status === 'approved') {
+                setPaymentResult({ status: 'approved', detail: data.status_detail });
+                toast.success('¡Pago aprobado exitosamente!');
+                onSuccess(data.status);
+            } else if (data?.status === 'rejected') {
+                setPaymentResult({ status: 'rejected', detail: data.status_detail });
+                toast.error(`Pago rechazado: ${data.status_detail}`);
+                setIsProcessing(false);
+            } else if (data?.status === 'in_process' || data?.status === 'pending') {
+                setPaymentResult({ status: 'pending', detail: data.status_detail });
+                toast.info('Pago pendiente de confirmación');
+                onSuccess(data.status);
+            } else {
+                throw new Error(`Estado inesperado: ${data?.status}`);
             }
-
-            console.log('[Checkout Pro] Redirigiendo a:', initPoint);
-            toast.info('Redirigiendo a Mercado Pago seguro...');
-
-            // Redirigir la ventana a Mercado Pago
-            window.location.href = initPoint;
 
         } catch (err: any) {
-            console.error('[Checkout Pro] Error:', err);
-            toast.error(err.message || 'Error al iniciar el pago');
+            console.error('[Payment Brick] Error:', err);
+            toast.error(err.message || 'Error al procesar el pago');
             setIsProcessing(false);
         }
     };
 
-    return (
-        <div className="w-full flex flex-col items-center justify-center p-6 space-y-4 bg-muted/30 rounded-lg border border-border">
-            <div className="text-center space-y-2">
-                <h3 className="text-lg font-semibold flex items-center justify-center gap-2">
-                    <CreditCard className="w-5 h-5 text-blue-500" />
-                    Pagar con Mercado Pago
-                </h3>
-                <p className="text-sm text-muted-foreground max-w-sm">
-                    Serás redirigido a la plataforma segura de Mercado Pago para completar tu pago usando cualquier tarjeta, efectivo o dinero en cuenta.
-                </p>
-            </div>
+    // Si ya se procesó el pago, mostrar resultado
+    if (paymentResult) {
+        const isApproved = paymentResult.status === 'approved';
+        const isPending = paymentResult.status === 'pending';
 
-            <Button
-                onClick={handleCheckoutPro}
-                className="w-full max-w-sm bg-[#009EE3] hover:bg-[#0088CC] text-white py-6 text-lg font-medium tracking-wide flex items-center justify-center gap-2 group transition-all"
-                disabled={isProcessing}
-            >
-                {isProcessing ? (
-                    <>
-                        <Loader2 className="w-5 h-5 animate-spin" />
-                        Iniciando pago...
-                    </>
+        return (
+            <div className={`w-full p-6 rounded-lg border text-center space-y-3 ${isApproved ? 'bg-green-50 border-green-200 dark:bg-green-950/30 dark:border-green-800' :
+                isPending ? 'bg-yellow-50 border-yellow-200 dark:bg-yellow-950/30 dark:border-yellow-800' :
+                    'bg-red-50 border-red-200 dark:bg-red-950/30 dark:border-red-800'
+                }`}>
+                {isApproved ? (
+                    <CheckCircle className="w-12 h-12 text-green-500 mx-auto" />
+                ) : isPending ? (
+                    <Loader2 className="w-12 h-12 text-yellow-500 mx-auto animate-spin" />
                 ) : (
-                    <>
-                        Ir a Pagar
-                        <ExternalLink className="w-5 h-5 opacity-70 group-hover:opacity-100 group-hover:translate-x-1 transition-all" />
-                    </>
+                    <XCircle className="w-12 h-12 text-red-500 mx-auto" />
                 )}
-            </Button>
-
-            <div className="flex items-center gap-2 opacity-60">
-                <img src="https://http2.mlstatic.com/frontend-assets/ui-navigation/5.19.5/mercadopago/logo__small@2x.png" alt="Mercado Pago" className="h-4" />
-                <span className="text-xs font-medium">Checkout Pro de alta de seguridad</span>
+                <h3 className="text-lg font-semibold">
+                    {isApproved ? '¡Pago Aprobado!' :
+                        isPending ? 'Pago Pendiente' :
+                            'Pago Rechazado'}
+                </h3>
+                <p className="text-sm text-muted-foreground">
+                    {isApproved ? 'Tu pago fue procesado correctamente.' :
+                        isPending ? 'Tu pago está siendo procesado.' :
+                            `Motivo: ${paymentResult.detail}. Puedes intentar nuevamente.`}
+                </p>
+                {(isApproved || isPending) && (
+                    <div className="flex flex-col sm:flex-row gap-2 pt-2 justify-center">
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => window.open(`/comprobante/${presupuestoToken}/${pagoNumero}`, '_blank')}
+                        >
+                            <ExternalLink className="w-4 h-4 mr-1" /> Ver Comprobante
+                        </Button>
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                                navigator.clipboard.writeText(`${window.location.origin}/comprobante/${presupuestoToken}/${pagoNumero}`);
+                                toast.success('¡Link del comprobante copiado!');
+                            }}
+                        >
+                            <Copy className="w-4 h-4 mr-1" /> Copiar Link
+                        </Button>
+                    </div>
+                )}
             </div>
+        );
+    }
+
+    if (!sdkReady) {
+        return (
+            <div className="w-full flex items-center justify-center p-8">
+                <Loader2 className="w-6 h-6 animate-spin text-blue-500 mr-2" />
+                <span>Cargando formulario de pago...</span>
+            </div>
+        );
+    }
+
+    return (
+        <div className="w-full">
+            <Payment
+                initialization={{
+                    amount: monto,
+                }}
+                customization={{
+                    paymentMethods: {
+                        creditCard: 'all',
+                        debitCard: 'all',
+                    },
+                    visual: {
+                        style: {
+                            theme: 'default',
+                        },
+                    },
+                }}
+                onSubmit={handleSubmit}
+                onReady={() => {
+                    console.log('[Payment Brick] Brick listo');
+                }}
+                onError={(error: any) => {
+                    console.error('[Payment Brick] Error del Brick:', error);
+                    toast.error('Error cargando el formulario de pago');
+                }}
+            />
         </div>
     );
 }

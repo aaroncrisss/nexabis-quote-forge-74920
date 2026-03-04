@@ -425,6 +425,7 @@ export default function PresupuestoPublico() {
                       <div className="mt-4">
                         <MercadoPagoBrick
                           presupuestoId={presupuesto.id}
+                          presupuestoToken={presupuesto.token}
                           pagoNumero={1}
                           monto={Math.round(parseFloat(presupuesto.total) / 2)}
                           onSuccess={(status) => setPresupuesto({ ...presupuesto, mp_pago_1_status: status })}
@@ -452,6 +453,7 @@ export default function PresupuestoPublico() {
                         <div className="mt-4">
                           <MercadoPagoBrick
                             presupuestoId={presupuesto.id}
+                            presupuestoToken={presupuesto.token}
                             pagoNumero={2}
                             monto={Math.round(parseFloat(presupuesto.total) - (parseFloat(presupuesto.mp_pago_1_monto) || Math.round(parseFloat(presupuesto.total) / 2)))}
                             onSuccess={(status) => setPresupuesto({ ...presupuesto, mp_pago_2_status: status })}
