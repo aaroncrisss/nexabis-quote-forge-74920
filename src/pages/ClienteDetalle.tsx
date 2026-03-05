@@ -12,7 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
     ArrowLeft, Mail, Phone, Building, MapPin, Globe, Calendar, DollarSign,
-    FileText, FolderKanban, StickyNote, Paperclip, FileSignature, Plus, Send, Tag, User
+    FileText, FolderKanban, StickyNote, Paperclip, FileSignature, Plus, Send, Tag, User, CreditCard, ListTodo, Target
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { supabaseCRM } from "@/integrations/supabase/crm-client";
@@ -115,6 +115,8 @@ export default function ClienteDetalle() {
     }
 
     const totalPagado = pagos.filter(p => p.estado === "completado").reduce((s, p) => s + Number(p.monto), 0);
+    const totalFacturado = presupuestos.filter(p => p.estado === "aprobado").reduce((s, p) => s + Number(p.total), 0);
+    const balance = totalFacturado - totalPagado;
     const presupuestosActivos = presupuestos.filter(p => p.estado === "pendiente" || p.estado === "aprobado").length;
     const tareasActivas = tareas.filter(t => t.estado === "pendiente").length;
 
@@ -200,6 +202,52 @@ export default function ClienteDetalle() {
                     </Card>
                 </div>
 
+                {/* Balance Card */}
+                {totalFacturado > 0 && (
+                    <Card className={`p-4 ${balance > 0 ? "border-red-500/20 bg-red-500/5" : "border-green-500/20 bg-green-500/5"}`}>
+                        <div className="flex items-center justify-between flex-wrap gap-2">
+                            <div className="flex items-center gap-6">
+                                <div>
+                                    <p className="text-xs text-muted-foreground uppercase">Total Facturado</p>
+                                    <p className="text-lg font-bold">${totalFacturado.toLocaleString()}</p>
+                                </div>
+                                <div>
+                                    <p className="text-xs text-muted-foreground uppercase">Total Pagado</p>
+                                    <p className="text-lg font-bold text-green-400">${totalPagado.toLocaleString()}</p>
+                                </div>
+                                <div>
+                                    <p className="text-xs text-muted-foreground uppercase">Saldo Pendiente</p>
+                                    <p className={`text-lg font-bold ${balance > 0 ? "text-red-400" : "text-green-400"}`}>
+                                        ${Math.abs(balance).toLocaleString()} {balance <= 0 && "✓"}
+                                    </p>
+                                </div>
+                            </div>
+                            <Button size="sm" variant="outline" className="gap-1" onClick={() => navigate("/pagos")}>
+                                <CreditCard className="w-3 h-3" /> Registrar Pago
+                            </Button>
+                        </div>
+                    </Card>
+                )}
+
+                {/* Quick Actions */}
+                <div className="flex flex-wrap gap-2">
+                    <Button size="sm" variant="outline" className="gap-1" onClick={() => navigate("/pagos")}>
+                        <CreditCard className="w-3 h-3" /> Registrar Pago
+                    </Button>
+                    <Button size="sm" variant="outline" className="gap-1" onClick={() => navigate("/tareas")}>
+                        <ListTodo className="w-3 h-3" /> Nueva Tarea
+                    </Button>
+                    <Button size="sm" variant="outline" className="gap-1" onClick={() => navigate("/pipeline")}>
+                        <Target className="w-3 h-3" /> Nueva Oportunidad
+                    </Button>
+                    <Button size="sm" variant="outline" className="gap-1" onClick={() => setNotaDialog(true)}>
+                        <StickyNote className="w-3 h-3" /> Agregar Nota
+                    </Button>
+                    <Button size="sm" variant="outline" className="gap-1" onClick={() => navigate("/crear")}>
+                        <FileText className="w-3 h-3" /> Nuevo Presupuesto
+                    </Button>
+                </div>
+
                 {/* Tabs */}
                 <Tabs defaultValue="actividad">
                     <TabsList className="flex-wrap">
@@ -225,6 +273,9 @@ export default function ClienteDetalle() {
                                 ...notas.map(n => ({ date: n.created_at, type: "nota", data: n })),
                                 ...pagos.map(p => ({ date: p.fecha_pago, type: "pago", data: p })),
                                 ...presupuestos.slice(0, 5).map(p => ({ date: p.created_at, type: "presupuesto", data: p })),
+                                ...tareas.map(t => ({ date: t.created_at, type: "tarea", data: t })),
+                                ...oportunidades.map(o => ({ date: o.created_at, type: "oportunidad", data: o })),
+                                ...contratos.map(c => ({ date: c.created_at, type: "contrato", data: c })),
                             ]
                                 .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
                                 .slice(0, 20)
@@ -234,6 +285,9 @@ export default function ClienteDetalle() {
                                             {item.type === "nota" && getNotaIcon(item.data.tipo)}
                                             {item.type === "pago" && <DollarSign className="w-4 h-4 text-green-400" />}
                                             {item.type === "presupuesto" && <FileText className="w-4 h-4 text-primary" />}
+                                            {item.type === "tarea" && <ListTodo className="w-4 h-4 text-orange-400" />}
+                                            {item.type === "oportunidad" && <Target className="w-4 h-4 text-purple-400" />}
+                                            {item.type === "contrato" && <FileSignature className="w-4 h-4 text-pink-400" />}
                                         </div>
                                         <div className="flex-1">
                                             {item.type === "nota" && (
@@ -254,10 +308,28 @@ export default function ClienteDetalle() {
                                                     <p className="text-xs text-muted-foreground mt-1">{item.data.estado?.toUpperCase()} — {new Date(item.data.created_at).toLocaleString("es-CL")}</p>
                                                 </>
                                             )}
+                                            {item.type === "tarea" && (
+                                                <>
+                                                    <p className="text-sm">Tarea: <strong>{item.data.titulo}</strong> — {item.data.estado}</p>
+                                                    <p className="text-xs text-muted-foreground mt-1">{new Date(item.data.created_at).toLocaleString("es-CL")}</p>
+                                                </>
+                                            )}
+                                            {item.type === "oportunidad" && (
+                                                <>
+                                                    <p className="text-sm">Oportunidad: <strong>{item.data.titulo}</strong> — <span className="text-purple-400">${Number(item.data.valor).toLocaleString()}</span></p>
+                                                    <p className="text-xs text-muted-foreground mt-1">{item.data.estado?.toUpperCase()} — {new Date(item.data.created_at).toLocaleString("es-CL")}</p>
+                                                </>
+                                            )}
+                                            {item.type === "contrato" && (
+                                                <>
+                                                    <p className="text-sm">Contrato: <strong>{item.data.titulo}</strong></p>
+                                                    <p className="text-xs text-muted-foreground mt-1">{item.data.estado} — {new Date(item.data.created_at).toLocaleString("es-CL")}</p>
+                                                </>
+                                            )}
                                         </div>
                                     </div>
                                 ))}
-                            {notas.length === 0 && pagos.length === 0 && presupuestos.length === 0 && (
+                            {notas.length === 0 && pagos.length === 0 && presupuestos.length === 0 && tareas.length === 0 && oportunidades.length === 0 && contratos.length === 0 && (
                                 <Card className="p-8 text-center text-muted-foreground">No hay actividad registrada</Card>
                             )}
                         </div>

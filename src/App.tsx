@@ -23,6 +23,7 @@ const AdminPanel = lazy(() => import("./pages/AdminPanel"));
 const Cotizador = lazy(() => import("./pages/Cotizador"));
 const Proyectos = lazy(() => import("./pages/Proyectos"));
 const ProyectoDetalle = lazy(() => import("./pages/ProyectoDetalle"));
+const Espacio = lazy(() => import("./pages/Espacio"));
 const MiSuscripcion = lazy(() => import("./pages/MiSuscripcion"));
 const Documentacion = lazy(() => import("./pages/Documentacion"));
 const ComprobantePago = lazy(() => import("./pages/ComprobantePago"));
@@ -81,6 +82,7 @@ const App = () => (
               <Route path="/proyectos" element={<ProtectedRoute><Proyectos /></ProtectedRoute>} />
               <Route path="/pipeline" element={<ProtectedRoute><Pipeline /></ProtectedRoute>} />
               <Route path="/tareas" element={<ProtectedRoute><Tareas /></ProtectedRoute>} />
+              <Route path="/espacio" element={<ProtectedRoute><Espacio /></ProtectedRoute>} />
               <Route path="/pagos" element={<ProtectedRoute><Pagos /></ProtectedRoute>} />
               <Route path="/facturas" element={<ProtectedRoute><Facturas /></ProtectedRoute>} />
               <Route path="/contratos" element={<ProtectedRoute><Contratos /></ProtectedRoute>} />

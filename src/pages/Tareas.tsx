@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus, CheckCircle2, Clock, AlertTriangle, Calendar, Phone, Mail, Users, ListTodo } from "lucide-react";
+import { Plus, CheckCircle2, Clock, AlertTriangle, Calendar, Phone, Mail, Users, ListTodo, Search, Trash2, StickyNote } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { supabaseCRM } from "@/integrations/supabase/crm-client";
 import { toast } from "sonner";
@@ -22,6 +22,11 @@ export default function Tareas() {
     const [dialogOpen, setDialogOpen] = useState(false);
     const [clientes, setClientes] = useState<any[]>([]);
     const [filtro, setFiltro] = useState("todas");
+    const [search, setSearch] = useState("");
+    const [filtroCliente, setFiltroCliente] = useState("todos");
+    const [quickAdd, setQuickAdd] = useState("");
+    const [editingNote, setEditingNote] = useState<string | null>(null);
+    const [noteText, setNoteText] = useState("");
     const [form, setForm] = useState({
         titulo: "",
         descripcion: "",
@@ -35,9 +40,12 @@ export default function Tareas() {
 
     const loadTareas = async () => {
         try {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user) return;
             const { data, error } = await supabaseCRM
                 .from("tareas")
                 .select("*, clientes(nombre, empresa)")
+                .eq("usuario_id", user.id)
                 .order("fecha_vencimiento", { ascending: true, nullsFirst: false });
             if (error) throw error;
             setTareas(data || []);
@@ -82,16 +90,58 @@ export default function Tareas() {
         if (error) { toast.error("Error actualizando"); loadTareas(); }
     };
 
+    const handleQuickAdd = async () => {
+        if (!quickAdd.trim()) return;
+        try {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user) return;
+            const { error } = await supabaseCRM.from("tareas").insert({
+                usuario_id: user.id,
+                titulo: quickAdd.trim(),
+                tipo: "tarea",
+                prioridad: "media",
+            });
+            if (error) throw error;
+            setQuickAdd("");
+            toast.success("Tarea añadida");
+            loadTareas();
+        } catch { toast.error("Error creando tarea"); }
+    };
+
+    const handleDelete = async (id: string) => {
+        setTareas(prev => prev.filter(t => t.id !== id));
+        const { error } = await supabaseCRM.from("tareas").delete().eq("id", id);
+        if (error) { toast.error("Error eliminando"); loadTareas(); }
+        else toast.success("Tarea eliminada");
+    };
+
+    const handleSaveNote = async (id: string) => {
+        const { error } = await supabaseCRM.from("tareas").update({ descripcion: noteText }).eq("id", id);
+        if (error) toast.error("Error guardando nota");
+        else {
+            setTareas(prev => prev.map(t => t.id === id ? { ...t, descripcion: noteText } : t));
+            setEditingNote(null);
+        }
+    };
+
     const filtered = tareas.filter((t) => {
-        if (filtro === "pendientes") return t.estado === "pendiente";
-        if (filtro === "completadas") return t.estado === "completada";
-        if (filtro === "vencidas") return t.estado === "pendiente" && t.fecha_vencimiento && new Date(t.fecha_vencimiento) < new Date();
+        if (filtro === "pendientes" && t.estado !== "pendiente") return false;
+        if (filtro === "completadas" && t.estado !== "completada") return false;
+        if (filtro === "vencidas" && !(t.estado === "pendiente" && t.fecha_vencimiento && new Date(t.fecha_vencimiento) < new Date())) return false;
+        if (filtroCliente !== "todos" && t.cliente_id !== filtroCliente) return false;
+        if (search && !t.titulo.toLowerCase().includes(search.toLowerCase())) return false;
         return true;
     });
 
     const pendientes = tareas.filter(t => t.estado === "pendiente").length;
     const completadas = tareas.filter(t => t.estado === "completada").length;
     const vencidas = tareas.filter(t => t.estado === "pendiente" && t.fecha_vencimiento && new Date(t.fecha_vencimiento) < new Date()).length;
+
+    // Pagination
+    const PAGE_SIZE = 10;
+    const [page, setPage] = useState(1);
+    const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+    const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
     const getPrioridadBadge = (p: string) => {
         switch (p) {
@@ -131,30 +181,30 @@ export default function Tareas() {
                 {/* KPI Cards */}
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                     <Card className="p-4 border-yellow-500/20 bg-yellow-500/5">
-                        <div className="flex items-center gap-3">
-                            <div className="p-3 rounded-xl bg-yellow-500/10"><Clock className="w-5 h-5 text-yellow-400" /></div>
+                        <div className="flex items-center justify-between">
                             <div>
-                                <p className="text-xs text-muted-foreground uppercase">Pendientes</p>
+                                <p className="text-xs text-muted-foreground uppercase tracking-wider">Pendientes</p>
                                 <p className="text-2xl font-bold text-yellow-400">{pendientes}</p>
                             </div>
+                            <div className="p-3 rounded-xl bg-yellow-500/10"><Clock className="w-5 h-5 text-yellow-400" /></div>
                         </div>
                     </Card>
                     <Card className="p-4 border-green-500/20 bg-green-500/5">
-                        <div className="flex items-center gap-3">
-                            <div className="p-3 rounded-xl bg-green-500/10"><CheckCircle2 className="w-5 h-5 text-green-400" /></div>
+                        <div className="flex items-center justify-between">
                             <div>
-                                <p className="text-xs text-muted-foreground uppercase">Completadas</p>
+                                <p className="text-xs text-muted-foreground uppercase tracking-wider">Completadas</p>
                                 <p className="text-2xl font-bold text-green-400">{completadas}</p>
                             </div>
+                            <div className="p-3 rounded-xl bg-green-500/10"><CheckCircle2 className="w-5 h-5 text-green-400" /></div>
                         </div>
                     </Card>
                     <Card className="p-4 border-red-500/20 bg-red-500/5">
-                        <div className="flex items-center gap-3">
-                            <div className="p-3 rounded-xl bg-red-500/10"><AlertTriangle className="w-5 h-5 text-red-400" /></div>
+                        <div className="flex items-center justify-between">
                             <div>
-                                <p className="text-xs text-muted-foreground uppercase">Vencidas</p>
+                                <p className="text-xs text-muted-foreground uppercase tracking-wider">Vencidas</p>
                                 <p className="text-2xl font-bold text-red-400">{vencidas}</p>
                             </div>
+                            <div className="p-3 rounded-xl bg-red-500/10"><AlertTriangle className="w-5 h-5 text-red-400" /></div>
                         </div>
                     </Card>
                 </div>
@@ -169,6 +219,35 @@ export default function Tareas() {
                     </TabsList>
                 </Tabs>
 
+                {/* Search + Client Filter */}
+                <div className="flex flex-col sm:flex-row gap-3">
+                    <div className="relative flex-1">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                        <Input placeholder="Buscar tareas..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
+                    </div>
+                    <Select value={filtroCliente} onValueChange={setFiltroCliente}>
+                        <SelectTrigger className="w-[200px]"><SelectValue placeholder="Todos los clientes" /></SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="todos">Todos los clientes</SelectItem>
+                            {clientes.map((c) => <SelectItem key={c.id} value={c.id}>{c.nombre}</SelectItem>)}
+                        </SelectContent>
+                    </Select>
+                </div>
+
+                {/* Quick Add — Notion style */}
+                <div className="flex gap-2">
+                    <Input
+                        placeholder="+ Añadir tarea rápida...  (Enter para crear)"
+                        value={quickAdd}
+                        onChange={(e) => setQuickAdd(e.target.value)}
+                        onKeyDown={(e) => e.key === "Enter" && handleQuickAdd()}
+                        className="bg-muted/30 border-dashed"
+                    />
+                    <Button size="icon" variant="ghost" onClick={handleQuickAdd} disabled={!quickAdd.trim()}>
+                        <Plus className="w-4 h-4" />
+                    </Button>
+                </div>
+
                 {/* Task List */}
                 <div className="space-y-2">
                     {loading ? (
@@ -176,10 +255,10 @@ export default function Tareas() {
                     ) : filtered.length === 0 ? (
                         <Card className="p-8 text-center text-muted-foreground">No hay tareas en esta categoría</Card>
                     ) : (
-                        filtered.map((tarea) => (
+                        paginated.map((tarea) => (
                             <Card
                                 key={tarea.id}
-                                className={`p-4 transition-all hover:shadow-md ${tarea.estado === "completada" ? "opacity-60" : ""} ${isVencida(tarea) ? "border-red-500/30 bg-red-500/5" : ""}`}
+                                className={`p-4 transition-all hover:shadow-md group ${tarea.estado === "completada" ? "opacity-60" : ""} ${isVencida(tarea) ? "border-red-500/30 bg-red-500/5" : ""}`}
                             >
                                 <div className="flex items-start gap-3">
                                     <Checkbox
@@ -211,12 +290,54 @@ export default function Tareas() {
                                             )}
                                             <span className="capitalize">{tarea.tipo}</span>
                                         </div>
+                                        {/* Inline note editing */}
+                                        {editingNote === tarea.id ? (
+                                            <div className="mt-2 flex gap-2">
+                                                <Textarea
+                                                    value={noteText}
+                                                    onChange={(e) => setNoteText(e.target.value)}
+                                                    rows={2}
+                                                    className="text-sm"
+                                                    placeholder="Escribe una nota..."
+                                                    autoFocus
+                                                />
+                                                <div className="flex flex-col gap-1">
+                                                    <Button size="sm" variant="default" onClick={() => handleSaveNote(tarea.id)}>Guardar</Button>
+                                                    <Button size="sm" variant="ghost" onClick={() => setEditingNote(null)}>Cancelar</Button>
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <button
+                                                onClick={() => { setEditingNote(tarea.id); setNoteText(tarea.descripcion || ""); }}
+                                                className="mt-1 text-xs text-muted-foreground hover:text-primary flex items-center gap-1 transition-colors"
+                                            >
+                                                <StickyNote className="w-3 h-3" />
+                                                {tarea.descripcion ? "Editar nota" : "Añadir nota"}
+                                            </button>
+                                        )
+                                        }
                                     </div>
+                                    <Button variant="ghost" size="icon" className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive flex-shrink-0" onClick={() => handleDelete(tarea.id)}>
+                                        <Trash2 className="w-4 h-4" />
+                                    </Button>
                                 </div>
                             </Card>
                         ))
                     )}
                 </div>
+
+                {/* Pagination */}
+                {filtered.length > PAGE_SIZE && (
+                    <div className="flex items-center justify-between p-3 bg-card/50 rounded-lg border">
+                        <p className="text-xs text-muted-foreground">
+                            Mostrando {(page - 1) * PAGE_SIZE + 1}-{Math.min(page * PAGE_SIZE, filtered.length)} de {filtered.length}
+                        </p>
+                        <div className="flex gap-1">
+                            <Button size="sm" variant="outline" disabled={page <= 1} onClick={() => setPage(page - 1)}>Anterior</Button>
+                            <Button size="sm" variant="outline" disabled={page >= totalPages} onClick={() => setPage(page + 1)}>Siguiente</Button>
+                        </div>
+                    </div>
+                )}
             </div>
 
             {/* Dialog */}

@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
+import { supabaseCRM } from "@/integrations/supabase/crm-client";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -8,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Progress } from "@/components/ui/progress";
-import { ArrowLeft, Calendar, FileText, CheckCircle2, Clock, AlertTriangle, ShieldAlert, BadgeDollarSign } from "lucide-react";
+import { ArrowLeft, Calendar, FileText, CheckCircle2, Clock, AlertTriangle, ShieldAlert, BadgeDollarSign, Play, Pause, Check, Archive, ListTodo, DollarSign, Plus } from "lucide-react";
 import { toast } from "sonner";
 
 export default function ProyectoDetalle() {
@@ -20,6 +21,8 @@ export default function ProyectoDetalle() {
     const [modulos, setModulos] = useState<any[]>([]);
     const [presupuestos, setPresupuestos] = useState<any[]>([]);
     const [activeTab, setActiveTab] = useState<string>("checklist");
+    const [tareasProyecto, setTareasProyecto] = useState<any[]>([]);
+    const [pagosProyecto, setPagosProyecto] = useState<any[]>([]);
 
     useEffect(() => {
         if (id) {
@@ -65,6 +68,14 @@ export default function ProyectoDetalle() {
             if (!errPresups) {
                 setPresupuestos(presups || []);
             }
+
+            // Cargar tareas del proyecto
+            const { data: tareasData } = await supabaseCRM.from("tareas").select("*").eq("proyecto_id", id).order("created_at", { ascending: false });
+            setTareasProyecto(tareasData || []);
+
+            // Cargar pagos del proyecto
+            const { data: pagosData } = await supabaseCRM.from("pagos").select("*, clientes(nombre)").eq("proyecto_id", id).order("fecha_pago", { ascending: false });
+            setPagosProyecto(pagosData || []);
         } catch (error: any) {
             console.error("Error cargando proyecto:", error);
             toast.error("Error al cargar el proyecto");
@@ -135,6 +146,25 @@ export default function ProyectoDetalle() {
         });
     };
 
+    const ESTADOS_FLUJO = ['borrador', 'activo', 'en_progreso', 'completado', 'cerrado'];
+    const ESTADO_ICONS: Record<string, any> = {
+        borrador: <FileText className="w-4 h-4" />,
+        activo: <Play className="w-4 h-4" />,
+        en_progreso: <Clock className="w-4 h-4" />,
+        completado: <Check className="w-4 h-4" />,
+        cerrado: <Archive className="w-4 h-4" />,
+    };
+
+    const handleChangeEstado = async (nuevoEstado: string) => {
+        const { error } = await supabase.from('proyectos').update({ estado: nuevoEstado }).eq('id', id);
+        if (error) {
+            toast.error("Error cambiando estado");
+        } else {
+            toast.success(`Proyecto actualizado a: ${nuevoEstado}`);
+            setProyecto({ ...proyecto, estado: nuevoEstado });
+        }
+    };
+
     if (loading) {
         return (
             <DashboardLayout>
@@ -182,6 +212,22 @@ export default function ProyectoDetalle() {
                             <BadgeDollarSign className="w-4 h-4" />
                             Generar Presupuesto Formal
                         </Button>
+                        {/* Estado Lifecycle Buttons */}
+                        <div className="flex flex-wrap gap-2 mt-3">
+                            {ESTADOS_FLUJO.map(est => (
+                                <Button
+                                    key={est}
+                                    size="sm"
+                                    variant={proyecto.estado === est ? "default" : "outline"}
+                                    className={`gap-1 capitalize ${proyecto.estado === est ? "" : "opacity-70"}`}
+                                    onClick={() => handleChangeEstado(est)}
+                                    disabled={proyecto.estado === est}
+                                >
+                                    {ESTADO_ICONS[est]}
+                                    {est.replace('_', ' ')}
+                                </Button>
+                            ))}
+                        </div>
                     </div>
 
                     <div className="flex items-center gap-4 bg-secondary/10 p-4 rounded-lg border border-secondary/20">
@@ -202,6 +248,8 @@ export default function ProyectoDetalle() {
                 <Tabs defaultValue="checklist" className="space-y-6">
                     <TabsList>
                         <TabsTrigger value="checklist">Checklist de Implementación</TabsTrigger>
+                        <TabsTrigger value="tareas">Tareas ({tareasProyecto.length})</TabsTrigger>
+                        <TabsTrigger value="pagos">Pagos ({pagosProyecto.length})</TabsTrigger>
                         <TabsTrigger value="detalles">Detalles y Riesgos</TabsTrigger>
                         <TabsTrigger value="versiones">Presupuesto Vinculado</TabsTrigger>
                     </TabsList>
@@ -259,6 +307,77 @@ export default function ProyectoDetalle() {
                                 </Card>
                             ))}
                         </div>
+                    </TabsContent>
+
+                    {/* Tareas del Proyecto */}
+                    <TabsContent value="tareas" className="space-y-4">
+                        <div className="flex items-center justify-between">
+                            <h3 className="text-xl font-semibold flex items-center gap-2">
+                                <ListTodo className="w-5 h-5 text-orange-400" />
+                                Tareas del Proyecto ({tareasProyecto.length})
+                            </h3>
+                        </div>
+                        {tareasProyecto.length === 0 ? (
+                            <Card className="p-8 text-center text-muted-foreground">No hay tareas vinculadas a este proyecto</Card>
+                        ) : (
+                            <div className="space-y-2">
+                                {tareasProyecto.map(t => (
+                                    <Card key={t.id} className={`p-4 ${t.estado === "completada" ? "opacity-60" : ""}`}>
+                                        <div className="flex items-center gap-3">
+                                            <Checkbox
+                                                checked={t.estado === "completada"}
+                                                onCheckedChange={async () => {
+                                                    const newEstado = t.estado === "completada" ? "pendiente" : "completada";
+                                                    setTareasProyecto(prev => prev.map(x => x.id === t.id ? { ...x, estado: newEstado } : x));
+                                                    await supabaseCRM.from("tareas").update({ estado: newEstado, fecha_completada: newEstado === "completada" ? new Date().toISOString() : null }).eq("id", t.id);
+                                                }}
+                                            />
+                                            <div className="flex-1">
+                                                <p className={`font-medium ${t.estado === "completada" ? "line-through text-muted-foreground" : ""}`}>{t.titulo}</p>
+                                                {t.descripcion && <p className="text-sm text-muted-foreground">{t.descripcion}</p>}
+                                            </div>
+                                            <Badge variant="secondary" className="capitalize">{t.prioridad}</Badge>
+                                        </div>
+                                    </Card>
+                                ))}
+                            </div>
+                        )}
+                    </TabsContent>
+
+                    {/* Pagos del Proyecto */}
+                    <TabsContent value="pagos" className="space-y-4">
+                        <div className="flex items-center justify-between">
+                            <h3 className="text-xl font-semibold flex items-center gap-2">
+                                <DollarSign className="w-5 h-5 text-green-400" />
+                                Pagos del Proyecto ({pagosProyecto.length})
+                            </h3>
+                        </div>
+                        {pagosProyecto.length === 0 ? (
+                            <Card className="p-8 text-center text-muted-foreground">No hay pagos vinculados a este proyecto</Card>
+                        ) : (
+                            <Card className="overflow-hidden">
+                                <table className="w-full">
+                                    <thead>
+                                        <tr className="border-b bg-muted/30">
+                                            <th className="text-left p-3 text-xs font-semibold text-muted-foreground uppercase">Cliente</th>
+                                            <th className="text-left p-3 text-xs font-semibold text-muted-foreground uppercase">Monto</th>
+                                            <th className="text-left p-3 text-xs font-semibold text-muted-foreground uppercase">Estado</th>
+                                            <th className="text-left p-3 text-xs font-semibold text-muted-foreground uppercase">Fecha</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {pagosProyecto.map(p => (
+                                            <tr key={p.id} className="border-b border-border/50">
+                                                <td className="p-3 text-sm">{p.clientes?.nombre || "—"}</td>
+                                                <td className="p-3 font-bold">${Number(p.monto).toLocaleString()}</td>
+                                                <td className="p-3"><Badge className={p.estado === "completado" ? "bg-green-500/20 text-green-400" : "bg-yellow-500/20 text-yellow-400"}>{p.estado}</Badge></td>
+                                                <td className="p-3 text-sm text-muted-foreground">{new Date(p.fecha_pago).toLocaleDateString("es-CL")}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </Card>
+                        )}
                     </TabsContent>
 
                     <TabsContent value="detalles">

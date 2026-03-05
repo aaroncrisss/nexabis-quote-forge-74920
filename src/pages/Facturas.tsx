@@ -40,9 +40,12 @@ export default function Facturas() {
 
     const loadFacturas = async () => {
         try {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user) return;
             const { data, error } = await supabaseCRM
                 .from("facturas")
                 .select("*, clientes(nombre, empresa)")
+                .eq("usuario_id", user.id)
                 .order("created_at", { ascending: false });
             if (error) throw error;
             setFacturas(data || []);
@@ -161,6 +164,11 @@ export default function Facturas() {
         return (search === "" || matchSearch) && matchEstado;
     });
 
+    const PAGE_SIZE = 10;
+    const [page, setPage] = useState(1);
+    const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+    const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
     const getEstadoBadge = (estado: string) => {
         switch (estado) {
             case "borrador": return <Badge variant="secondary">Borrador</Badge>;
@@ -245,7 +253,7 @@ export default function Facturas() {
                                 ) : filtered.length === 0 ? (
                                     <tr><td colSpan={7} className="p-8 text-center text-muted-foreground">No hay facturas</td></tr>
                                 ) : (
-                                    filtered.map((f) => (
+                                    paginated.map((f) => (
                                         <tr key={f.id} className="border-b border-border/50 hover:bg-accent/5 transition-colors">
                                             <td className="p-3 font-mono text-sm font-bold">{f.numero}</td>
                                             <td className="p-3 text-sm">{f.titulo}</td>
@@ -276,6 +284,17 @@ export default function Facturas() {
                             </tbody>
                         </table>
                     </div>
+                    {filtered.length > PAGE_SIZE && (
+                        <div className="flex items-center justify-between p-3 border-t border-border/50">
+                            <p className="text-xs text-muted-foreground">
+                                Mostrando {(page - 1) * PAGE_SIZE + 1}-{Math.min(page * PAGE_SIZE, filtered.length)} de {filtered.length}
+                            </p>
+                            <div className="flex gap-1">
+                                <Button size="sm" variant="outline" disabled={page <= 1} onClick={() => setPage(page - 1)}>Anterior</Button>
+                                <Button size="sm" variant="outline" disabled={page >= totalPages} onClick={() => setPage(page + 1)}>Siguiente</Button>
+                            </div>
+                        </div>
+                    )}
                 </Card>
             </div>
 

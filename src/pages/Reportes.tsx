@@ -34,13 +34,16 @@ export default function Reportes() {
             const fechaDesde = new Date();
             fechaDesde.setMonth(fechaDesde.getMonth() - mesesAtras);
 
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user) return;
+
             // Load all data in parallel
             const [clientesRes, pagosRes, presupuestosRes, oportunidadesRes, etapasRes] = await Promise.all([
-                supabaseCRM.from("clientes").select("id, nombre, empresa, etapa_ciclo, fuente, created_at"),
-                supabaseCRM.from("pagos").select("id, monto, estado, fecha_pago, cliente_id, clientes(nombre)").gte("fecha_pago", fechaDesde.toISOString()),
-                supabase.from("presupuestos").select("id, total, estado, created_at"),
-                supabaseCRM.from("oportunidades").select("id, valor, estado, etapa_id").eq("estado", "abierta"),
-                supabaseCRM.from("pipeline_etapas").select("id, nombre, color, orden").order("orden"),
+                supabaseCRM.from("clientes").select("id, nombre, empresa, etapa_ciclo, fuente, created_at").eq("usuario_id", user.id),
+                supabaseCRM.from("pagos").select("id, monto, estado, fecha_pago, cliente_id, clientes(nombre)").eq("usuario_id", user.id).gte("fecha_pago", fechaDesde.toISOString()),
+                supabase.from("presupuestos").select("id, total, estado, created_at").eq("usuario_id", user.id),
+                supabaseCRM.from("oportunidades").select("id, valor, estado, etapa_id").eq("usuario_id", user.id).eq("estado", "abierta"),
+                supabaseCRM.from("pipeline_etapas").select("id, nombre, color, orden").eq("usuario_id", user.id).order("orden"),
             ]);
 
             const clientes = clientesRes.data || [];

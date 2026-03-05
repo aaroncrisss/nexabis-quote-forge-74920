@@ -23,7 +23,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Plus, Pencil, Trash2, Mail, Building, Phone, MapPin, Search, Grid3x3, List } from "lucide-react";
+import { Plus, Pencil, Trash2, Mail, Building, Phone, MapPin, Search, Grid3x3, List, Users, UserPlus, Building2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { z } from "zod";
@@ -74,6 +74,22 @@ export default function Clientes() {
     });
     setFilteredClientes(filtered);
   }, [searchTerm, clientes]);
+
+  // Pagination
+  const PAGE_SIZE = 12;
+  const [page, setPage] = useState(1);
+  const totalPages = Math.max(1, Math.ceil(filteredClientes.length / PAGE_SIZE));
+  const paginated = filteredClientes.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+  // KPIs
+  const totalClientes = clientes.length;
+  const nuevosEsteMes = clientes.filter((c: any) => {
+    if (!c.created_at) return false;
+    const d = new Date(c.created_at);
+    const now = new Date();
+    return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+  }).length;
+  const conEmpresa = clientes.filter((c) => c.empresa).length;
 
   const loadClientes = async () => {
     try {
@@ -241,6 +257,37 @@ export default function Clientes() {
           </Button>
         </div>
 
+        {/* KPI Cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <Card className="p-4 border-primary/20 bg-primary/5">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs text-muted-foreground uppercase tracking-wider">Total Clientes</p>
+                <p className="text-2xl font-bold">{totalClientes}</p>
+              </div>
+              <div className="p-3 rounded-xl bg-primary/10"><Users className="w-5 h-5 text-primary" /></div>
+            </div>
+          </Card>
+          <Card className="p-4 border-green-500/20 bg-green-500/5">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs text-muted-foreground uppercase tracking-wider">Nuevos Este Mes</p>
+                <p className="text-2xl font-bold text-green-400">{nuevosEsteMes}</p>
+              </div>
+              <div className="p-3 rounded-xl bg-green-500/10"><UserPlus className="w-5 h-5 text-green-400" /></div>
+            </div>
+          </Card>
+          <Card className="p-4 border-blue-500/20 bg-blue-500/5">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs text-muted-foreground uppercase tracking-wider">Con Empresa</p>
+                <p className="text-2xl font-bold text-blue-400">{conEmpresa}</p>
+              </div>
+              <div className="p-3 rounded-xl bg-blue-500/10"><Building2 className="w-5 h-5 text-blue-400" /></div>
+            </div>
+          </Card>
+        </div>
+
         {/* Search and View Toggle */}
         <div className="flex flex-col md:flex-row gap-3 md:gap-4 items-stretch md:items-center">
           <div className="relative flex-1">
@@ -272,7 +319,7 @@ export default function Clientes() {
 
         {viewMode === "grid" ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
-            {filteredClientes.map((cliente) => (
+            {paginated.map((cliente) => (
               <Card key={cliente.id} className="p-4 md:p-6 bg-card/50 border-border hover-glow transition-all">
                 <div className="space-y-3 md:space-y-4">
                   <div className="flex items-start justify-between">
@@ -357,21 +404,10 @@ export default function Clientes() {
                     )}
                   </div>
                   <div className="flex gap-2">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => handleOpenDialog(cliente)}
-                    >
+                    <Button variant="ghost" size="icon" onClick={() => handleOpenDialog(cliente)}>
                       <Pencil className="w-4 h-4" />
                     </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => {
-                        setClienteToDelete(cliente.id);
-                        setDeleteDialogOpen(true);
-                      }}
-                    >
+                    <Button variant="ghost" size="icon" onClick={() => { setClienteToDelete(cliente.id); setDeleteDialogOpen(true); }}>
                       <Trash2 className="w-4 h-4 text-destructive" />
                     </Button>
                   </div>
@@ -381,10 +417,17 @@ export default function Clientes() {
           </div>
         )}
 
-        {filteredClientes.length === 0 && clientes.length > 0 && (
-          <Card className="p-12 bg-card/50 border-border text-center">
-            <p className="text-muted-foreground mb-4">No se encontraron clientes</p>
-          </Card>
+        {/* Pagination */}
+        {filteredClientes.length > PAGE_SIZE && (
+          <div className="flex items-center justify-between p-3 bg-card/50 rounded-lg border">
+            <p className="text-xs text-muted-foreground">
+              Mostrando {(page - 1) * PAGE_SIZE + 1}-{Math.min(page * PAGE_SIZE, filteredClientes.length)} de {filteredClientes.length}
+            </p>
+            <div className="flex gap-1">
+              <Button size="sm" variant="outline" disabled={page <= 1} onClick={() => setPage(page - 1)}>Anterior</Button>
+              <Button size="sm" variant="outline" disabled={page >= totalPages} onClick={() => setPage(page + 1)}>Siguiente</Button>
+            </div>
+          </div>
         )}
 
         {clientes.length === 0 && (

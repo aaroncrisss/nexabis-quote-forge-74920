@@ -44,9 +44,12 @@ export default function Contratos() {
 
     const loadContratos = async () => {
         try {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user) return;
             const { data, error } = await supabaseCRM
                 .from("contratos")
                 .select("*, clientes(nombre, empresa)")
+                .eq("usuario_id", user.id)
                 .order("created_at", { ascending: false });
             if (error) throw error;
             setContratos(data || []);
@@ -103,6 +106,11 @@ export default function Contratos() {
         const matchEstado = filtroEstado === "todos" || c.estado === filtroEstado;
         return (search === "" || matchSearch) && matchEstado;
     });
+
+    const PAGE_SIZE = 10;
+    const [page, setPage] = useState(1);
+    const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+    const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
     const proximosVencer = contratos.filter((c) => {
         if (c.estado !== "activo" || !c.fecha_fin) return false;
@@ -189,52 +197,80 @@ export default function Contratos() {
                     </Select>
                 </div>
 
-                {/* List */}
-                <div className="space-y-3">
-                    {loading ? (
-                        <Card className="p-8 text-center text-muted-foreground">Cargando...</Card>
-                    ) : filtered.length === 0 ? (
-                        <Card className="p-8 text-center text-muted-foreground">No hay contratos</Card>
-                    ) : (
-                        filtered.map((c) => (
-                            <Card key={c.id} className="p-4 hover:shadow-md transition-shadow">
-                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                                    <div className="flex items-start gap-3">
-                                        <div className="p-2 rounded-lg bg-primary/10">
-                                            <FileSignature className="w-5 h-5 text-primary" />
-                                        </div>
-                                        <div>
-                                            <p className="font-medium">{c.titulo}</p>
-                                            <p className="text-sm text-muted-foreground">{c.clientes?.nombre} {c.clientes?.empresa ? `— ${c.clientes.empresa}` : ""}</p>
-                                            <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
-                                                {c.fecha_inicio && (
+                {/* Table */}
+                <Card className="overflow-hidden">
+                    <div className="overflow-x-auto">
+                        <table className="w-full">
+                            <thead>
+                                <tr className="border-b border-border bg-muted/30">
+                                    <th className="text-left p-3 text-xs font-semibold text-muted-foreground uppercase">Título</th>
+                                    <th className="text-left p-3 text-xs font-semibold text-muted-foreground uppercase hidden md:table-cell">Cliente</th>
+                                    <th className="text-left p-3 text-xs font-semibold text-muted-foreground uppercase">Valor</th>
+                                    <th className="text-left p-3 text-xs font-semibold text-muted-foreground uppercase hidden sm:table-cell">Período</th>
+                                    <th className="text-left p-3 text-xs font-semibold text-muted-foreground uppercase">Estado</th>
+                                    <th className="text-right p-3 text-xs font-semibold text-muted-foreground uppercase">Acciones</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {loading ? (
+                                    <tr><td colSpan={6} className="p-8 text-center text-muted-foreground">Cargando...</td></tr>
+                                ) : filtered.length === 0 ? (
+                                    <tr><td colSpan={6} className="p-8 text-center text-muted-foreground">No hay contratos</td></tr>
+                                ) : (
+                                    paginated.map((c) => (
+                                        <tr key={c.id} className="border-b border-border/50 hover:bg-accent/5 transition-colors">
+                                            <td className="p-3">
+                                                <div>
+                                                    <p className="font-medium">{c.titulo}</p>
+                                                    {c.renovacion_auto && <span className="text-[10px] text-muted-foreground">🔄 Auto-renovable</span>}
+                                                </div>
+                                            </td>
+                                            <td className="p-3 text-sm text-muted-foreground hidden md:table-cell">
+                                                {c.clientes?.nombre} {c.clientes?.empresa ? `— ${c.clientes.empresa}` : ""}
+                                            </td>
+                                            <td className="p-3">
+                                                {c.valor ? (
+                                                    <><span className="font-bold">${Number(c.valor).toLocaleString()}</span>
+                                                        <span className="text-xs text-muted-foreground ml-1">{c.moneda}</span></>
+                                                ) : <span className="text-muted-foreground">—</span>}
+                                            </td>
+                                            <td className="p-3 text-sm text-muted-foreground hidden sm:table-cell">
+                                                {c.fecha_inicio ? (
                                                     <span className="flex items-center gap-1">
-                                                        <Calendar className="w-3 h-3" /> {new Date(c.fecha_inicio).toLocaleDateString("es-CL")} - {c.fecha_fin ? new Date(c.fecha_fin).toLocaleDateString("es-CL") : "Indefinido"}
+                                                        <Calendar className="w-3 h-3" />
+                                                        {new Date(c.fecha_inicio).toLocaleDateString("es-CL")} \u2013 {c.fecha_fin ? new Date(c.fecha_fin).toLocaleDateString("es-CL") : "Indef."}
                                                     </span>
-                                                )}
-                                                {c.renovacion_auto && <span>🔄 Auto-renovable</span>}
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div className="flex items-center gap-3">
-                                        {c.valor && (
-                                            <span className="font-bold text-lg">${Number(c.valor).toLocaleString()} <span className="text-xs text-muted-foreground">{c.moneda}</span></span>
-                                        )}
-                                        {getEstadoBadge(c.estado)}
-                                        <div className="flex gap-1">
-                                            {c.estado === "borrador" && (
-                                                <Button size="sm" variant="ghost" className="text-green-400 text-xs" onClick={() => handleStatusChange(c.id, "activo")}>Activar</Button>
-                                            )}
-                                            <Button size="sm" variant="ghost" className="text-red-400" onClick={() => setDeleteId(c.id)}>
-                                                <Trash2 className="w-3 h-3" />
-                                            </Button>
-                                        </div>
-                                    </div>
-                                </div>
-                            </Card>
-                        ))
+                                                ) : "—"}
+                                            </td>
+                                            <td className="p-3">{getEstadoBadge(c.estado)}</td>
+                                            <td className="p-3">
+                                                <div className="flex items-center justify-end gap-1">
+                                                    {c.estado === "borrador" && (
+                                                        <Button size="sm" variant="ghost" className="h-8 text-xs text-green-400" onClick={() => handleStatusChange(c.id, "activo")}>Activar</Button>
+                                                    )}
+                                                    <Button size="sm" variant="ghost" className="h-8 text-red-400" onClick={() => setDeleteId(c.id)}>
+                                                        <Trash2 className="w-3 h-3" />
+                                                    </Button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    ))
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+                    {filtered.length > PAGE_SIZE && (
+                        <div className="flex items-center justify-between p-3 border-t border-border/50">
+                            <p className="text-xs text-muted-foreground">
+                                Mostrando {(page - 1) * PAGE_SIZE + 1}-{Math.min(page * PAGE_SIZE, filtered.length)} de {filtered.length}
+                            </p>
+                            <div className="flex gap-1">
+                                <Button size="sm" variant="outline" disabled={page <= 1} onClick={() => setPage(page - 1)}>Anterior</Button>
+                                <Button size="sm" variant="outline" disabled={page >= totalPages} onClick={() => setPage(page + 1)}>Siguiente</Button>
+                            </div>
+                        </div>
                     )}
-                </div>
+                </Card>
             </div>
 
             {/* Create Dialog */}
