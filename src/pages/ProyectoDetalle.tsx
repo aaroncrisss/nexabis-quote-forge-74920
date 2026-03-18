@@ -9,7 +9,8 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Progress } from "@/components/ui/progress";
-import { ArrowLeft, Calendar, FileText, CheckCircle2, Clock, AlertTriangle, ShieldAlert, BadgeDollarSign, Play, Pause, Check, Archive, ListTodo, DollarSign, Plus } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { ArrowLeft, Calendar, FileText, CheckCircle2, Clock, AlertTriangle, ShieldAlert, BadgeDollarSign, Play, Pause, Check, Archive, ListTodo, DollarSign, Plus, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 
 export default function ProyectoDetalle() {
@@ -114,6 +115,48 @@ export default function ProyectoDetalle() {
             toast.error("Error al actualizar estado");
             // Revertir
             setModulos(prev => prev.map(m => m.id === moduloId ? { ...m, estado: currentStatus } : m));
+        }
+    };
+
+    const handleSyncToKanban = async () => {
+        if (!proyecto || modulos.length === 0) return;
+
+        try {
+            toast.loading("Sincronizando módulos con el Kanban...");
+            const userRes = await supabase.auth.getUser();
+            if (!userRes.data.user) throw new Error("No user");
+            const userId = userRes.data.user.id;
+
+            // Revisa qué modulos faltan en tareas (esto requiere que tareas tenga modulo_id)
+            for (const mod of modulos) {
+                // Checa if already exists
+                const { data: existing } = await supabaseCRM.from("tareas").select("id").eq("modulo_id", mod.id).single();
+                if (!existing) {
+                    await supabaseCRM.from("tareas").insert({
+                        usuario_id: userId,
+                        titulo: `[Módulo] ${mod.nombre}`,
+                        descripcion: mod.descripcion || mod.justificacion || null,
+                        tipo: "tarea",
+                        prioridad: mod.prioridad === 1 ? "urgente" : mod.prioridad === 2 ? "alta" : mod.prioridad === 3 ? "media" : "baja",
+                        estado: mod.estado === "completado" ? "done" : "to_do",
+                        cliente_id: proyecto.cliente_id,
+                        proyecto_id: proyecto.id,
+                        modulo_id: mod.id,
+                        fecha_completada: mod.estado === "completado" ? new Date().toISOString() : null
+                    });
+                }
+            }
+
+            // Reload project tasks
+            const { data: tareasData } = await supabaseCRM.from("tareas").select("*").eq("proyecto_id", id).order("created_at", { ascending: false });
+            setTareasProyecto(tareasData || []);
+
+            toast.dismiss();
+            toast.success("Módulos sincronizados con Tablero Kanban!");
+        } catch (e: any) {
+            toast.dismiss();
+            toast.error("Hubo un error añadiendo los módulos al Kanban");
+            console.error(e);
         }
     };
 
@@ -261,13 +304,17 @@ export default function ProyectoDetalle() {
                                 Módulos a Desarrollar ({modulos.length})
                             </h3>
                             <div className="flex gap-2">
+                                <Button size="sm" variant="outline" onClick={handleSyncToKanban} className="gap-2 text-blue-500 border-blue-200 bg-blue-50 hover:bg-blue-100 dark:border-blue-900/50 dark:bg-blue-900/20 dark:hover:bg-blue-900/40">
+                                    <RefreshCw className="w-4 h-4" />
+                                    Push a Kanban Jira
+                                </Button>
                                 {estimaciones.map(est => (
                                     <Button
                                         key={est.id}
                                         variant={activeEstimacion?.id === est.id ? "default" : "outline"}
                                         size="sm"
                                         onClick={() => loadModules(est.id)}
-                                        className="text-xs"
+                                        className="text-xs hidden sm:flex"
                                     >
                                         {est.titulo}
                                     </Button>
@@ -321,25 +368,46 @@ export default function ProyectoDetalle() {
                             <Card className="p-8 text-center text-muted-foreground">No hay tareas vinculadas a este proyecto</Card>
                         ) : (
                             <div className="space-y-2">
-                                {tareasProyecto.map(t => (
-                                    <Card key={t.id} className={`p-4 ${t.estado === "completada" ? "opacity-60" : ""}`}>
-                                        <div className="flex items-center gap-3">
-                                            <Checkbox
-                                                checked={t.estado === "completada"}
-                                                onCheckedChange={async () => {
-                                                    const newEstado = t.estado === "completada" ? "pendiente" : "completada";
-                                                    setTareasProyecto(prev => prev.map(x => x.id === t.id ? { ...x, estado: newEstado } : x));
-                                                    await supabaseCRM.from("tareas").update({ estado: newEstado, fecha_completada: newEstado === "completada" ? new Date().toISOString() : null }).eq("id", t.id);
-                                                }}
-                                            />
-                                            <div className="flex-1">
-                                                <p className={`font-medium ${t.estado === "completada" ? "line-through text-muted-foreground" : ""}`}>{t.titulo}</p>
-                                                {t.descripcion && <p className="text-sm text-muted-foreground">{t.descripcion}</p>}
+                                {tareasProyecto.map(t => {
+                                    const estadoActual = t.estado === 'pendiente' ? 'to_do' : t.estado === 'completada' ? 'done' : t.estado || 'to_do';
+                                    return (
+                                        <Card key={t.id} className={`p-4 ${estadoActual === "done" ? "opacity-60 bg-muted/20" : ""}`}>
+                                            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                                                <div className="flex-1 min-w-0">
+                                                    <p className={`font-medium truncate ${estadoActual === "done" ? "line-through text-muted-foreground" : ""}`}>{t.titulo}</p>
+                                                    {t.descripcion && <p className="text-sm text-muted-foreground truncate">{t.descripcion}</p>}
+                                                </div>
+                                                <div className="flex items-center gap-3 shrink-0 w-full sm:w-auto mt-2 sm:mt-0">
+                                                    <Badge variant="secondary" className="capitalize">{t.prioridad}</Badge>
+                                                    <Select
+                                                        value={estadoActual}
+                                                        onValueChange={async (newEstado) => {
+                                                            setTareasProyecto(prev => prev.map(x => x.id === t.id ? { ...x, estado: newEstado } : x));
+                                                            await supabaseCRM.from("tareas").update({
+                                                                estado: newEstado,
+                                                                fecha_completada: newEstado === "done" ? new Date().toISOString() : null
+                                                            }).eq("id", t.id);
+                                                        }}
+                                                    >
+                                                        <SelectTrigger className={`w-full sm:w-[150px] h-8 text-xs font-bold ${estadoActual === 'done' ? 'bg-green-100/50 text-green-700 dark:bg-green-900/30 dark:text-green-400 border-green-200' :
+                                                            estadoActual === 'in_progress' ? 'bg-blue-100/50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 border-blue-200' :
+                                                                estadoActual === 'blocked' ? 'bg-red-100/50 text-red-700 dark:bg-red-900/30 dark:text-red-400 border-red-200' :
+                                                                    'bg-slate-100/50 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border-slate-200'
+                                                            }`}>
+                                                            <SelectValue />
+                                                        </SelectTrigger>
+                                                        <SelectContent>
+                                                            <SelectItem value="to_do">📝 To Do</SelectItem>
+                                                            <SelectItem value="in_progress">⏳ In Progress</SelectItem>
+                                                            <SelectItem value="blocked">⛔ Blocked</SelectItem>
+                                                            <SelectItem value="done">✅ Done</SelectItem>
+                                                        </SelectContent>
+                                                    </Select>
+                                                </div>
                                             </div>
-                                            <Badge variant="secondary" className="capitalize">{t.prioridad}</Badge>
-                                        </div>
-                                    </Card>
-                                ))}
+                                        </Card>
+                                    );
+                                })}
                             </div>
                         )}
                     </TabsContent>

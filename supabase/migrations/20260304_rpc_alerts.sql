@@ -13,7 +13,7 @@ DECLARE
   pg_sum DECIMAL;
   cl_count INT;
 BEGIN
-  SELECT count(*) INTO t_count FROM public.tareas WHERE estado='pendiente' AND fecha_vencimiento < now();
+  SELECT count(*) INTO t_count FROM public.tareas WHERE estado IN ('to_do', 'in_progress', 'blocked') AND fecha_vencimiento < now();
   SELECT count(*) INTO c_count FROM public.contratos WHERE estado='activo' AND fecha_fin BETWEEN current_date AND current_date + interval '30 days';
   SELECT count(*) INTO f_count FROM public.facturas WHERE estado IN ('borrador', 'enviada');
   SELECT count(*) INTO p_count FROM public.presupuestos WHERE estado='pendiente' AND fecha_vencimiento BETWEEN current_date AND current_date + interval '3 days';

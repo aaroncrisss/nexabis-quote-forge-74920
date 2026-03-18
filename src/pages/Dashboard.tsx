@@ -114,7 +114,7 @@ const Dashboard = () => {
       const presupuestosPendientes = presupuestos.filter(p => p.estado === "pendiente");
 
       // Tasks
-      const tareasPendientes = tareas.filter(t => t.estado === "pendiente");
+      const tareasPendientes = tareas.filter(t => ["to_do", "in_progress", "blocked"].includes(t.estado));
       const tareasVencidas = tareasPendientes.filter(t => t.fecha_vencimiento && new Date(t.fecha_vencimiento) < now);
 
       // Invoices

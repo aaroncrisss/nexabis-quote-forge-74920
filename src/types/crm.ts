@@ -81,6 +81,7 @@ export interface Tarea {
     cliente_id?: string | null;
     oportunidad_id?: string | null;
     proyecto_id?: string | null;
+    modulo_id?: string | null;
     titulo: string;
     descripcion?: string | null;
     tipo: string;
@@ -91,6 +92,7 @@ export interface Tarea {
     created_at: string;
     updated_at: string;
     clientes?: { nombre: string; empresa: string | null } | null;
+    proyectos?: { nombre: string } | null;
 }
 
 export interface NotaCliente {

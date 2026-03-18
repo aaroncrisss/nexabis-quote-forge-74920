@@ -5,50 +5,66 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetFooter } from "@/components/ui/sheet";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus, CheckCircle2, Clock, AlertTriangle, Calendar, Phone, Mail, Users, ListTodo, Search, Trash2, StickyNote } from "lucide-react";
+import { Plus, Clock, AlertTriangle, Calendar, Phone, Mail, Users, ListTodo, Search, Trash2, GripVertical, AlertCircle, FolderDot } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { supabaseCRM } from "@/integrations/supabase/crm-client";
 import { toast } from "sonner";
 import type { Tarea } from "@/types/crm";
+import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea/dnd";
+
+const COLUMNS = [
+    { id: "to_do", title: "📝 To Do", color: "bg-slate-100 dark:bg-slate-800/50 border-slate-200 dark:border-slate-800" },
+    { id: "in_progress", title: "⏳ In Progress", color: "bg-blue-50 dark:bg-blue-900/10 border-blue-200 dark:border-blue-900/30" },
+    { id: "blocked", title: "⛔ Blocked", color: "bg-red-50 dark:bg-red-900/10 border-red-200 dark:border-red-900/30" },
+    { id: "done", title: "✅ Done", color: "bg-green-50 dark:bg-green-900/10 border-green-200 dark:border-green-900/30" }
+];
 
 export default function Tareas() {
     const [tareas, setTareas] = useState<Tarea[]>([]);
     const [loading, setLoading] = useState(true);
-    const [dialogOpen, setDialogOpen] = useState(false);
+    const [sheetOpen, setSheetOpen] = useState(false);
     const [clientes, setClientes] = useState<any[]>([]);
-    const [filtro, setFiltro] = useState("todas");
+    const [proyectos, setProyectos] = useState<any[]>([]);
     const [search, setSearch] = useState("");
     const [filtroCliente, setFiltroCliente] = useState("todos");
     const [quickAdd, setQuickAdd] = useState("");
-    const [editingNote, setEditingNote] = useState<string | null>(null);
-    const [noteText, setNoteText] = useState("");
+
+    // For editing a task inside the generic Sheet
+    const [editingTask, setEditingTask] = useState<Tarea | null>(null);
     const [form, setForm] = useState({
         titulo: "",
         descripcion: "",
         tipo: "tarea",
         prioridad: "media",
+        estado: "to_do",
         cliente_id: "",
+        proyecto_id: "",
         fecha_vencimiento: "",
     });
 
-    useEffect(() => { loadTareas(); loadClientes(); }, []);
+    useEffect(() => { loadTareas(); loadClientes(); loadProyectos(); }, []);
 
     const loadTareas = async () => {
         try {
             const { data: { user } } = await supabase.auth.getUser();
             if (!user) return;
+            // Manejamos los estados antiguos por defecto como to_do o done si no han corrido el migrador
             const { data, error } = await supabaseCRM
                 .from("tareas")
-                .select("*, clientes(nombre, empresa)")
+                .select("*, clientes(nombre, empresa), proyectos(nombre)")
                 .eq("usuario_id", user.id)
                 .order("fecha_vencimiento", { ascending: true, nullsFirst: false });
             if (error) throw error;
-            setTareas(data || []);
+
+            // Map legacy states to new Jira states if needed
+            const normalizedData = (data || []).map(t => ({
+                ...t,
+                estado: t.estado === 'pendiente' ? 'to_do' : t.estado === 'completada' ? 'done' : t.estado || 'to_do'
+            }));
+            setTareas(normalizedData);
         } catch { toast.error("Error cargando tareas"); }
         finally { setLoading(false); }
     };
@@ -58,39 +74,72 @@ export default function Tareas() {
         setClientes(data || []);
     };
 
-    const handleCreate = async () => {
+    const loadProyectos = async () => {
+        const { data } = await supabase.from("proyectos").select("id, nombre, cliente_id").order("nombre");
+        setProyectos(data || []);
+    };
+
+    const openCreateSheet = () => {
+        setEditingTask(null);
+        setForm({ titulo: "", descripcion: "", tipo: "tarea", prioridad: "media", estado: "to_do", cliente_id: "", proyecto_id: "", fecha_vencimiento: "" });
+        setSheetOpen(true);
+    };
+
+    const openEditSheet = (tarea: Tarea) => {
+        setEditingTask(tarea);
+        setForm({
+            titulo: tarea.titulo,
+            descripcion: tarea.descripcion || "",
+            tipo: tarea.tipo || "tarea",
+            prioridad: tarea.prioridad || "media",
+            estado: tarea.estado || "to_do",
+            cliente_id: tarea.cliente_id || "",
+            proyecto_id: tarea.proyecto_id || "",
+            fecha_vencimiento: tarea.fecha_vencimiento ? new Date(tarea.fecha_vencimiento).toISOString().slice(0, 16) : "",
+        });
+        setSheetOpen(true);
+    };
+
+    const handleSave = async () => {
         if (!form.titulo) { toast.error("El título es obligatorio"); return; }
         try {
             const { data: { user } } = await supabase.auth.getUser();
             if (!user) return;
-            const { error } = await supabaseCRM.from("tareas").insert({
-                usuario_id: user.id,
+
+            const payload = {
                 titulo: form.titulo,
                 descripcion: form.descripcion || null,
                 tipo: form.tipo,
                 prioridad: form.prioridad,
-                cliente_id: form.cliente_id || null,
+                estado: form.estado,
+                cliente_id: form.cliente_id === "none" ? null : (form.cliente_id || null),
+                proyecto_id: form.proyecto_id === "none" ? null : (form.proyecto_id || null),
                 fecha_vencimiento: form.fecha_vencimiento || null,
-            });
-            if (error) throw error;
-            toast.success("Tarea creada");
-            setDialogOpen(false);
-            setForm({ titulo: "", descripcion: "", tipo: "tarea", prioridad: "media", cliente_id: "", fecha_vencimiento: "" });
+                fecha_completada: form.estado === "done" && (!editingTask || editingTask.estado !== "done") ? new Date().toISOString() : null
+            };
+
+            if (editingTask) {
+                const { error } = await supabaseCRM.from("tareas").update(payload).eq("id", editingTask.id);
+                if (error) throw error;
+                toast.success("Tarea actualizada");
+            } else {
+                const { error } = await supabaseCRM.from("tareas").insert({ ...payload, usuario_id: user.id });
+                if (error) throw error;
+                toast.success("Tarea creada");
+            }
+            setSheetOpen(false);
             loadTareas();
         } catch (e: any) { toast.error("Error: " + e.message); }
     };
 
-    const toggleCompletar = async (tarea: Tarea) => {
-        const newEstado = tarea.estado === "completada" ? "pendiente" : "completada";
-        setTareas(prev => prev.map(t => t.id === tarea.id ? { ...t, estado: newEstado, fecha_completada: newEstado === "completada" ? new Date().toISOString() : null } : t));
-        const { error } = await supabaseCRM.from("tareas").update({
-            estado: newEstado,
-            fecha_completada: newEstado === "completada" ? new Date().toISOString() : null,
-        }).eq("id", tarea.id);
-        if (error) { toast.error("Error actualizando"); loadTareas(); }
+    const handleDelete = async (id: string) => {
+        setTareas(prev => prev.filter(t => t.id !== id));
+        const { error } = await supabaseCRM.from("tareas").delete().eq("id", id);
+        if (error) { toast.error("Error eliminando"); loadTareas(); }
+        else { toast.success("Tarea eliminada"); setSheetOpen(false); }
     };
 
-    const handleQuickAdd = async () => {
+    const handleQuickAdd = async (columnId = "to_do") => {
         if (!quickAdd.trim()) return;
         try {
             const { data: { user } } = await supabase.auth.getUser();
@@ -100,6 +149,7 @@ export default function Tareas() {
                 titulo: quickAdd.trim(),
                 tipo: "tarea",
                 prioridad: "media",
+                estado: columnId
             });
             if (error) throw error;
             setQuickAdd("");
@@ -108,298 +158,319 @@ export default function Tareas() {
         } catch { toast.error("Error creando tarea"); }
     };
 
-    const handleDelete = async (id: string) => {
-        setTareas(prev => prev.filter(t => t.id !== id));
-        const { error } = await supabaseCRM.from("tareas").delete().eq("id", id);
-        if (error) { toast.error("Error eliminando"); loadTareas(); }
-        else toast.success("Tarea eliminada");
-    };
+    const handleDragEnd = async (result: DropResult) => {
+        const { destination, source, draggableId } = result;
+        if (!destination) return;
+        if (destination.droppableId === source.droppableId && destination.index === source.index) return;
 
-    const handleSaveNote = async (id: string) => {
-        const { error } = await supabaseCRM.from("tareas").update({ descripcion: noteText }).eq("id", id);
-        if (error) toast.error("Error guardando nota");
-        else {
-            setTareas(prev => prev.map(t => t.id === id ? { ...t, descripcion: noteText } : t));
-            setEditingNote(null);
+        const newEstado = destination.droppableId;
+        const tareaMoved = tareas.find(t => t.id === draggableId);
+        if (!tareaMoved) return;
+
+        // Optimistic UI update
+        const updatedTareas = Array.from(tareas);
+        const taskIndex = updatedTareas.findIndex(t => t.id === draggableId);
+
+        updatedTareas[taskIndex] = {
+            ...updatedTareas[taskIndex],
+            estado: newEstado,
+            fecha_completada: newEstado === "done" ? new Date().toISOString() : null
+        };
+        setTareas(updatedTareas);
+
+        // Supabase DB update
+        const { error } = await supabaseCRM.from("tareas").update({
+            estado: newEstado,
+            fecha_completada: newEstado === "done" ? new Date().toISOString() : null
+        }).eq("id", draggableId);
+
+        if (error) {
+            toast.error("Error moviendo tarea");
+            loadTareas(); // revert sync
         }
     };
 
     const filtered = tareas.filter((t) => {
-        if (filtro === "pendientes" && t.estado !== "pendiente") return false;
-        if (filtro === "completadas" && t.estado !== "completada") return false;
-        if (filtro === "vencidas" && !(t.estado === "pendiente" && t.fecha_vencimiento && new Date(t.fecha_vencimiento) < new Date())) return false;
         if (filtroCliente !== "todos" && t.cliente_id !== filtroCliente) return false;
         if (search && !t.titulo.toLowerCase().includes(search.toLowerCase())) return false;
         return true;
     });
 
-    const pendientes = tareas.filter(t => t.estado === "pendiente").length;
-    const completadas = tareas.filter(t => t.estado === "completada").length;
-    const vencidas = tareas.filter(t => t.estado === "pendiente" && t.fecha_vencimiento && new Date(t.fecha_vencimiento) < new Date()).length;
-
-    // Pagination
-    const PAGE_SIZE = 10;
-    const [page, setPage] = useState(1);
-    const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-    const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+    const isVencida = (t: Tarea) => t.estado !== "done" && t.fecha_vencimiento && new Date(t.fecha_vencimiento) < new Date();
 
     const getPrioridadBadge = (p: string) => {
         switch (p) {
-            case "urgente": return <Badge className="bg-red-500/20 text-red-400 border-red-500/30">Urgente</Badge>;
-            case "alta": return <Badge className="bg-orange-500/20 text-orange-400 border-orange-500/30">Alta</Badge>;
-            case "media": return <Badge className="bg-yellow-500/20 text-yellow-400 border-yellow-500/30">Media</Badge>;
-            case "baja": return <Badge className="bg-blue-500/20 text-blue-400 border-blue-500/30">Baja</Badge>;
-            default: return <Badge variant="secondary">{p}</Badge>;
+            case "urgente": return <Badge className="bg-red-500/20 text-red-400 border-red-500/30 cursor-default px-1 py-0 text-[10px] uppercase">Urgente</Badge>;
+            case "alta": return <Badge className="bg-orange-500/20 text-orange-400 border-orange-500/30 cursor-default px-1 py-0 text-[10px] uppercase">Alta</Badge>;
+            case "media": return <Badge className="bg-yellow-500/20 text-yellow-500 border-yellow-500/30 cursor-default px-1 py-0 text-[10px] uppercase">Media</Badge>;
+            case "baja": return <Badge className="bg-blue-500/20 text-blue-400 border-blue-500/30 cursor-default px-1 py-0 text-[10px] uppercase">Baja</Badge>;
+            default: return null;
         }
     };
 
     const getTipoIcon = (tipo: string) => {
         switch (tipo) {
-            case "llamada": return <Phone className="w-4 h-4 text-green-400" />;
-            case "reunion": return <Users className="w-4 h-4 text-blue-400" />;
-            case "email": return <Mail className="w-4 h-4 text-purple-400" />;
-            case "seguimiento": return <Clock className="w-4 h-4 text-orange-400" />;
-            default: return <ListTodo className="w-4 h-4 text-primary" />;
+            case "llamada": return <Phone className="w-3.5 h-3.5 text-green-500" />;
+            case "reunion": return <Users className="w-3.5 h-3.5 text-blue-500" />;
+            case "email": return <Mail className="w-3.5 h-3.5 text-purple-500" />;
+            case "seguimiento": return <Clock className="w-3.5 h-3.5 text-orange-500" />;
+            default: return <ListTodo className="w-3.5 h-3.5 text-primary" />;
         }
     };
 
-    const isVencida = (t: Tarea) => t.estado === "pendiente" && t.fecha_vencimiento && new Date(t.fecha_vencimiento) < new Date();
-
     return (
         <DashboardLayout>
-            <div className="space-y-6 animate-in fade-in duration-500">
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="space-y-6 h-[calc(100vh-80px)] flex flex-col pt-4">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 shrink-0">
                     <div>
-                        <h1 className="text-3xl font-bold tracking-tight">Tareas</h1>
-                        <p className="text-muted-foreground mt-1">Gestiona tus tareas y actividades programadas</p>
+                        <h1 className="text-3xl font-bold tracking-tight">Tablero de Tareas</h1>
+                        <p className="text-muted-foreground mt-1">Arrastra y suelta tus tareas en el flujo de trabajo</p>
                     </div>
-                    <Button onClick={() => setDialogOpen(true)} className="gap-2 gradient-button">
-                        <Plus className="w-4 h-4" /> Nueva Tarea
+                    <Button onClick={openCreateSheet} className="gap-2 gradient-button">
+                        <Plus className="w-4 h-4" /> Crear Tarea
                     </Button>
                 </div>
 
-                {/* KPI Cards */}
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                    <Card className="p-4 border-yellow-500/20 bg-yellow-500/5">
-                        <div className="flex items-center justify-between">
-                            <div>
-                                <p className="text-xs text-muted-foreground uppercase tracking-wider">Pendientes</p>
-                                <p className="text-2xl font-bold text-yellow-400">{pendientes}</p>
-                            </div>
-                            <div className="p-3 rounded-xl bg-yellow-500/10"><Clock className="w-5 h-5 text-yellow-400" /></div>
+                {/* Filters Row */}
+                <div className="flex flex-col sm:flex-row gap-3 overflow-visible shrink-0 items-center justify-between bg-card/40 p-3 rounded-lg border">
+                    <div className="flex flex-col sm:flex-row gap-3 flex-1 min-w-0">
+                        <div className="relative w-full md:w-[300px]">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                            <Input placeholder="Buscar por título..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9 h-9" />
                         </div>
-                    </Card>
-                    <Card className="p-4 border-green-500/20 bg-green-500/5">
-                        <div className="flex items-center justify-between">
-                            <div>
-                                <p className="text-xs text-muted-foreground uppercase tracking-wider">Completadas</p>
-                                <p className="text-2xl font-bold text-green-400">{completadas}</p>
-                            </div>
-                            <div className="p-3 rounded-xl bg-green-500/10"><CheckCircle2 className="w-5 h-5 text-green-400" /></div>
-                        </div>
-                    </Card>
-                    <Card className="p-4 border-red-500/20 bg-red-500/5">
-                        <div className="flex items-center justify-between">
-                            <div>
-                                <p className="text-xs text-muted-foreground uppercase tracking-wider">Vencidas</p>
-                                <p className="text-2xl font-bold text-red-400">{vencidas}</p>
-                            </div>
-                            <div className="p-3 rounded-xl bg-red-500/10"><AlertTriangle className="w-5 h-5 text-red-400" /></div>
-                        </div>
-                    </Card>
-                </div>
-
-                {/* Tabs */}
-                <Tabs value={filtro} onValueChange={setFiltro}>
-                    <TabsList>
-                        <TabsTrigger value="todas">Todas ({tareas.length})</TabsTrigger>
-                        <TabsTrigger value="pendientes">Pendientes ({pendientes})</TabsTrigger>
-                        <TabsTrigger value="vencidas">Vencidas ({vencidas})</TabsTrigger>
-                        <TabsTrigger value="completadas">Completadas ({completadas})</TabsTrigger>
-                    </TabsList>
-                </Tabs>
-
-                {/* Search + Client Filter */}
-                <div className="flex flex-col sm:flex-row gap-3">
-                    <div className="relative flex-1">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                        <Input placeholder="Buscar tareas..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
+                        <Select value={filtroCliente} onValueChange={setFiltroCliente}>
+                            <SelectTrigger className="w-full sm:w-[220px] h-9"><SelectValue placeholder="Filtrar por Cliente" /></SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="todos">Todos los clientes</SelectItem>
+                                {clientes.map((c) => <SelectItem key={c.id} value={c.id}>{c.nombre}</SelectItem>)}
+                            </SelectContent>
+                        </Select>
                     </div>
-                    <Select value={filtroCliente} onValueChange={setFiltroCliente}>
-                        <SelectTrigger className="w-[200px]"><SelectValue placeholder="Todos los clientes" /></SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="todos">Todos los clientes</SelectItem>
-                            {clientes.map((c) => <SelectItem key={c.id} value={c.id}>{c.nombre}</SelectItem>)}
-                        </SelectContent>
-                    </Select>
+                    <div className="flex items-center gap-2 w-full sm:w-auto mt-2 sm:mt-0">
+                        <Input
+                            placeholder="Añadir tarea rápida..."
+                            value={quickAdd}
+                            onChange={(e) => setQuickAdd(e.target.value)}
+                            onKeyDown={(e) => e.key === "Enter" && handleQuickAdd()}
+                            className="bg-muted/30 border-dashed h-9 w-full sm:w-[250px]"
+                        />
+                    </div>
                 </div>
 
-                {/* Quick Add — Notion style */}
-                <div className="flex gap-2">
-                    <Input
-                        placeholder="+ Añadir tarea rápida...  (Enter para crear)"
-                        value={quickAdd}
-                        onChange={(e) => setQuickAdd(e.target.value)}
-                        onKeyDown={(e) => e.key === "Enter" && handleQuickAdd()}
-                        className="bg-muted/30 border-dashed"
-                    />
-                    <Button size="icon" variant="ghost" onClick={handleQuickAdd} disabled={!quickAdd.trim()}>
-                        <Plus className="w-4 h-4" />
-                    </Button>
-                </div>
-
-                {/* Task List */}
-                <div className="space-y-2">
+                {/* KANBAN BOARD */}
+                <div className="flex-1 min-h-0 overflow-x-auto pb-6 custom-scrollbar">
                     {loading ? (
-                        <Card className="p-8 text-center text-muted-foreground">Cargando...</Card>
-                    ) : filtered.length === 0 ? (
-                        <Card className="p-8 text-center text-muted-foreground">No hay tareas en esta categoría</Card>
+                        <div className="flex h-full items-center justify-center"><p className="text-muted-foreground animate-pulse">Cargando tablero...</p></div>
                     ) : (
-                        paginated.map((tarea) => (
-                            <Card
-                                key={tarea.id}
-                                className={`p-4 transition-all hover:shadow-md group ${tarea.estado === "completada" ? "opacity-60" : ""} ${isVencida(tarea) ? "border-red-500/30 bg-red-500/5" : ""}`}
-                            >
-                                <div className="flex items-start gap-3">
-                                    <Checkbox
-                                        checked={tarea.estado === "completada"}
-                                        onCheckedChange={() => toggleCompletar(tarea)}
-                                        className="mt-1"
-                                    />
-                                    <div className="flex-1 min-w-0">
-                                        <div className="flex flex-col sm:flex-row sm:items-center gap-2 mb-1">
-                                            <div className="flex items-center gap-2">
-                                                {getTipoIcon(tarea.tipo)}
-                                                <span className={`font-medium ${tarea.estado === "completada" ? "line-through text-muted-foreground" : ""}`}>
-                                                    {tarea.titulo}
-                                                </span>
+                        <DragDropContext onDragEnd={handleDragEnd}>
+                            <div className="flex h-full gap-4 items-start min-w-[1000px]">
+                                {COLUMNS.map((col) => {
+                                    const colTasks = filtered.filter(t => t.estado === col.id);
+                                    return (
+                                        <div key={col.id} className={`flex flex-col h-full min-h-[500px] w-[320px] rounded-xl border ${col.color}`}>
+                                            <div className="flex items-center justify-between p-3 border-b border-black/5 dark:border-white/5 bg-white/40 dark:bg-black/10 rounded-t-xl shrink-0">
+                                                <h3 className="font-semibold text-sm flex items-center gap-2">
+                                                    {col.title} <span className="bg-background/80 text-muted-foreground px-2 py-0.5 rounded-full text-xs font-mono">{colTasks.length}</span>
+                                                </h3>
                                             </div>
-                                            <div className="flex items-center gap-2">
-                                                {getPrioridadBadge(tarea.prioridad)}
-                                                {isVencida(tarea) && <Badge className="bg-red-500/20 text-red-400 border-red-500/30 text-xs">⚠ Vencida</Badge>}
-                                            </div>
+
+                                            <Droppable droppableId={col.id}>
+                                                {(provided, snapshot) => (
+                                                    <div
+                                                        ref={provided.innerRef}
+                                                        {...provided.droppableProps}
+                                                        className={`flex-1 p-3 overflow-y-auto min-h-[150px] transition-colors space-y-3 ${snapshot.isDraggingOver ? "bg-black/5 dark:bg-white/5" : ""}`}
+                                                    >
+                                                        {colTasks.map((tarea, index) => (
+                                                            <Draggable key={tarea.id} draggableId={tarea.id} index={index}>
+                                                                {(provided, snapshot) => (
+                                                                    <div
+                                                                        ref={provided.innerRef}
+                                                                        {...provided.draggableProps}
+                                                                        {...provided.dragHandleProps}
+                                                                        onClick={() => openEditSheet(tarea)}
+                                                                        className={`group bg-card border rounded-lg p-3 shadow-sm hover:border-primary/50 transition-all cursor-pointer select-none
+                                                                            ${snapshot.isDragging ? "shadow-lg scale-105 rotate-2 z-50 ring-2 ring-primary border-primary" : ""}
+                                                                            ${isVencida(tarea) ? "border-red-500/50 bg-red-500/5" : ""}
+                                                                            ${tarea.estado === 'done' ? "opacity-60 hover:opacity-100" : ""}
+                                                                        `}
+                                                                    >
+                                                                        <div className="flex justify-between items-start mb-2">
+                                                                            <div className="flex items-center gap-1.5 flex-1 min-w-0 pr-2">
+                                                                                {getTipoIcon(tarea.tipo)}
+                                                                                <p className={`text-sm font-medium leading-tight truncate ${tarea.estado === 'done' ? 'line-through text-muted-foreground' : ''}`}>
+                                                                                    {tarea.titulo}
+                                                                                </p>
+                                                                            </div>
+                                                                            <GripVertical className="w-4 h-4 text-muted-foreground/30 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0" />
+                                                                        </div>
+
+                                                                        {tarea.descripcion && (
+                                                                            <p className="text-xs text-muted-foreground line-clamp-2 mb-3 pr-2">
+                                                                                {tarea.descripcion}
+                                                                            </p>
+                                                                        )}
+
+                                                                        <div className="flex flex-col gap-2 mt-auto pt-1">
+                                                                            {tarea.clientes && (
+                                                                                <div className="flex items-center gap-1.5 text-xs font-medium text-slate-600 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 w-fit px-2 py-0.5 rounded-md truncate max-w-full">
+                                                                                    👤 <span className="truncate">{tarea.clientes.nombre}</span>
+                                                                                </div>
+                                                                            )}
+                                                                            {tarea.proyectos && (
+                                                                                <div className="flex items-center gap-1.5 text-xs font-medium text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 w-fit px-2 py-0.5 rounded-md truncate max-w-full mt-1">
+                                                                                    <FolderDot className="w-3 h-3 flex-shrink-0" /> <span className="truncate">{tarea.proyectos.nombre}</span>
+                                                                                </div>
+                                                                            )}
+                                                                            <div className="flex items-center justify-between mt-1">
+                                                                                <div className="flex items-center gap-2">
+                                                                                    {getPrioridadBadge(tarea.prioridad)}
+                                                                                    {isVencida(tarea) && <AlertCircle className="w-3.5 h-3.5 text-red-500" />}
+                                                                                </div>
+                                                                                {tarea.fecha_vencimiento && (
+                                                                                    <div className={`flex items-center gap-1 text-[10px] font-medium ${isVencida(tarea) ? 'text-red-500' : 'text-muted-foreground'}`}>
+                                                                                        <Calendar className="w-3 h-3" />
+                                                                                        {new Date(tarea.fecha_vencimiento).toLocaleDateString("es-CL", { day: '2-digit', month: 'short' })}
+                                                                                    </div>
+                                                                                )}
+                                                                            </div>
+                                                                        </div>
+                                                                    </div>
+                                                                )}
+                                                            </Draggable>
+                                                        ))}
+                                                        {provided.placeholder}
+                                                    </div>
+                                                )}
+                                            </Droppable>
                                         </div>
-                                        {tarea.descripcion && <p className="text-sm text-muted-foreground mb-1">{tarea.descripcion}</p>}
-                                        <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-                                            {tarea.clientes && <span>👤 {tarea.clientes.nombre}</span>}
-                                            {tarea.fecha_vencimiento && (
-                                                <span className="flex items-center gap-1">
-                                                    <Calendar className="w-3 h-3" />
-                                                    {new Date(tarea.fecha_vencimiento).toLocaleDateString("es-CL")}
-                                                </span>
-                                            )}
-                                            <span className="capitalize">{tarea.tipo}</span>
-                                        </div>
-                                        {/* Inline note editing */}
-                                        {editingNote === tarea.id ? (
-                                            <div className="mt-2 flex gap-2">
-                                                <Textarea
-                                                    value={noteText}
-                                                    onChange={(e) => setNoteText(e.target.value)}
-                                                    rows={2}
-                                                    className="text-sm"
-                                                    placeholder="Escribe una nota..."
-                                                    autoFocus
-                                                />
-                                                <div className="flex flex-col gap-1">
-                                                    <Button size="sm" variant="default" onClick={() => handleSaveNote(tarea.id)}>Guardar</Button>
-                                                    <Button size="sm" variant="ghost" onClick={() => setEditingNote(null)}>Cancelar</Button>
-                                                </div>
-                                            </div>
-                                        ) : (
-                                            <button
-                                                onClick={() => { setEditingNote(tarea.id); setNoteText(tarea.descripcion || ""); }}
-                                                className="mt-1 text-xs text-muted-foreground hover:text-primary flex items-center gap-1 transition-colors"
-                                            >
-                                                <StickyNote className="w-3 h-3" />
-                                                {tarea.descripcion ? "Editar nota" : "Añadir nota"}
-                                            </button>
-                                        )
-                                        }
-                                    </div>
-                                    <Button variant="ghost" size="icon" className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive flex-shrink-0" onClick={() => handleDelete(tarea.id)}>
-                                        <Trash2 className="w-4 h-4" />
-                                    </Button>
-                                </div>
-                            </Card>
-                        ))
+                                    );
+                                })}
+                            </div>
+                        </DragDropContext>
                     )}
                 </div>
-
-                {/* Pagination */}
-                {filtered.length > PAGE_SIZE && (
-                    <div className="flex items-center justify-between p-3 bg-card/50 rounded-lg border">
-                        <p className="text-xs text-muted-foreground">
-                            Mostrando {(page - 1) * PAGE_SIZE + 1}-{Math.min(page * PAGE_SIZE, filtered.length)} de {filtered.length}
-                        </p>
-                        <div className="flex gap-1">
-                            <Button size="sm" variant="outline" disabled={page <= 1} onClick={() => setPage(page - 1)}>Anterior</Button>
-                            <Button size="sm" variant="outline" disabled={page >= totalPages} onClick={() => setPage(page + 1)}>Siguiente</Button>
-                        </div>
-                    </div>
-                )}
             </div>
 
-            {/* Dialog */}
-            <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-                <DialogContent className="max-w-lg">
-                    <DialogHeader><DialogTitle>Nueva Tarea</DialogTitle></DialogHeader>
-                    <div className="space-y-4">
-                        <div>
-                            <Label>Título *</Label>
-                            <Input placeholder="Ej: Llamar a cliente para seguimiento" value={form.titulo} onChange={(e) => setForm({ ...form, titulo: e.target.value })} />
-                        </div>
-                        <div>
-                            <Label>Descripción</Label>
-                            <Textarea placeholder="Detalles..." value={form.descripcion} onChange={(e) => setForm({ ...form, descripcion: e.target.value })} rows={2} />
-                        </div>
-                        <div className="grid grid-cols-2 gap-3">
+            {/* Jira-Style Task Details Sheet */}
+            <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
+                <SheetContent className="sm:max-w-xl w-[90vw] overflow-y-auto flex flex-col p-0 h-full">
+                    <SheetHeader className="p-6 border-b shrink-0 bg-background/95 sticky top-0 z-10 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+                        <div className="flex justify-between items-start">
                             <div>
-                                <Label>Tipo</Label>
+                                <SheetTitle className="text-xl">{editingTask ? "Editar Tarea" : "Nueva Tarea"}</SheetTitle>
+                                <SheetDescription>Agrega todos los detalles y enlaza al cliente.</SheetDescription>
+                            </div>
+                            {editingTask && (
+                                <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30 -mt-2" onClick={() => handleDelete(editingTask.id)}>
+                                    <Trash2 className="w-4 h-4" />
+                                </Button>
+                            )}
+                        </div>
+                    </SheetHeader>
+
+                    <div className="flex-1 p-6 space-y-6">
+                        <div className="space-y-4">
+                            <div>
+                                <Label className="text-muted-foreground text-xs uppercase font-bold tracking-wider mb-2 block">QUÉ HAY QUE HACER</Label>
+                                <Input placeholder="Ej: Llamar a cliente para seguimiento de cotización" className="font-medium text-lg h-12" value={form.titulo} onChange={(e) => setForm({ ...form, titulo: e.target.value })} />
+                            </div>
+
+                            <div>
+                                <Label className="text-muted-foreground text-xs uppercase font-bold tracking-wider mb-2 block">DESCRIPCIÓN EXTENDIDA</Label>
+                                <Textarea placeholder="Agrega toda la información que necesites, notas de contexto, links, etc..." value={form.descripcion} onChange={(e) => setForm({ ...form, descripcion: e.target.value })} className="min-h-[150px] resize-y bg-muted/30" />
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-5 bg-card/50 p-5 rounded-xl border border-border/50">
+                            <div>
+                                <Label className="text-xs text-muted-foreground mb-1 block">Estado (Columna)</Label>
+                                <Select value={form.estado} onValueChange={(v) => setForm({ ...form, estado: v })}>
+                                    <SelectTrigger className="font-medium">
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="to_do">📝 To Do</SelectItem>
+                                        <SelectItem value="in_progress">⏳ In Progress</SelectItem>
+                                        <SelectItem value="blocked">⛔ Blocked</SelectItem>
+                                        <SelectItem value="done">✅ Done</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            </div>
+
+                            <div>
+                                <Label className="text-xs text-muted-foreground mb-1 block">Prioridad</Label>
+                                <Select value={form.prioridad} onValueChange={(v) => setForm({ ...form, prioridad: v })}>
+                                    <SelectTrigger>
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="urgente">🚨 Urgente</SelectItem>
+                                        <SelectItem value="alta">🔴 Alta</SelectItem>
+                                        <SelectItem value="media">🟡 Media</SelectItem>
+                                        <SelectItem value="baja">🔵 Baja</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            </div>
+
+                            <div className="md:col-span-1">
+                                <Label className="text-xs text-muted-foreground mb-1 block">Cliente / Organización</Label>
+                                <Select value={form.cliente_id} onValueChange={(v) => setForm({ ...form, cliente_id: v })}>
+                                    <SelectTrigger className={!form.cliente_id ? "text-muted-foreground" : ""}>
+                                        <SelectValue placeholder="Enlazar a un cliente..." />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="none" className="text-muted-foreground italic">Desvincular cliente</SelectItem>
+                                        {clientes.map((c) => <SelectItem key={c.id} value={c.id}>{c.nombre} {c.empresa ? `(${c.empresa})` : ""}</SelectItem>)}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+
+                            <div className="md:col-span-1">
+                                <Label className="text-xs text-muted-foreground mb-1 block">Proyecto (Opcional)</Label>
+                                <Select value={form.proyecto_id} onValueChange={(v) => setForm({ ...form, proyecto_id: v })}>
+                                    <SelectTrigger className={!form.proyecto_id ? "text-muted-foreground" : ""}>
+                                        <SelectValue placeholder="Vincular a un proyecto..." />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="none" className="text-muted-foreground italic">Ningún proyecto</SelectItem>
+                                        {proyectos
+                                            .filter(p => !form.cliente_id || form.cliente_id === "none" || p.cliente_id === form.cliente_id)
+                                            .map((p) => <SelectItem key={p.id} value={p.id}>{p.nombre}</SelectItem>)
+                                        }
+                                    </SelectContent>
+                                </Select>
+                            </div>
+
+                            <div>
+                                <Label className="text-xs text-muted-foreground mb-1 block">Tipo de Tarea</Label>
                                 <Select value={form.tipo} onValueChange={(v) => setForm({ ...form, tipo: v })}>
                                     <SelectTrigger><SelectValue /></SelectTrigger>
                                     <SelectContent>
-                                        <SelectItem value="tarea">Tarea</SelectItem>
-                                        <SelectItem value="llamada">Llamada</SelectItem>
-                                        <SelectItem value="reunion">Reunión</SelectItem>
-                                        <SelectItem value="email">Email</SelectItem>
+                                        <SelectItem value="tarea">Tarea general</SelectItem>
+                                        <SelectItem value="llamada">Llamada telefónica</SelectItem>
+                                        <SelectItem value="reunion">Reunión presencial/virtual</SelectItem>
+                                        <SelectItem value="email">Enviar Email</SelectItem>
                                         <SelectItem value="seguimiento">Seguimiento</SelectItem>
                                     </SelectContent>
                                 </Select>
                             </div>
+
                             <div>
-                                <Label>Prioridad</Label>
-                                <Select value={form.prioridad} onValueChange={(v) => setForm({ ...form, prioridad: v })}>
-                                    <SelectTrigger><SelectValue /></SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="baja">Baja</SelectItem>
-                                        <SelectItem value="media">Media</SelectItem>
-                                        <SelectItem value="alta">Alta</SelectItem>
-                                        <SelectItem value="urgente">Urgente</SelectItem>
-                                    </SelectContent>
-                                </Select>
+                                <Label className="text-xs text-muted-foreground mb-1 block">Fecha límite (Vencimiento)</Label>
+                                <Input type="datetime-local" value={form.fecha_vencimiento} onChange={(e) => setForm({ ...form, fecha_vencimiento: e.target.value })} className="cursor-pointer" />
                             </div>
                         </div>
-                        <div>
-                            <Label>Cliente (opcional)</Label>
-                            <Select value={form.cliente_id} onValueChange={(v) => setForm({ ...form, cliente_id: v })}>
-                                <SelectTrigger><SelectValue placeholder="Sin cliente" /></SelectTrigger>
-                                <SelectContent>
-                                    {clientes.map((c) => <SelectItem key={c.id} value={c.id}>{c.nombre} {c.empresa ? `(${c.empresa})` : ""}</SelectItem>)}
-                                </SelectContent>
-                            </Select>
-                        </div>
-                        <div>
-                            <Label>Fecha de vencimiento</Label>
-                            <Input type="datetime-local" value={form.fecha_vencimiento} onChange={(e) => setForm({ ...form, fecha_vencimiento: e.target.value })} />
-                        </div>
                     </div>
-                    <DialogFooter>
-                        <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancelar</Button>
-                        <Button onClick={handleCreate} className="gradient-button">Crear Tarea</Button>
-                    </DialogFooter>
-                </DialogContent>
-            </Dialog>
+
+                    <SheetFooter className="p-6 border-t shrink-0 bg-background/95 mt-auto">
+                        <Button variant="outline" onClick={() => setSheetOpen(false)}>Cancelar</Button>
+                        <Button onClick={handleSave} className="gradient-button min-w-[120px]">
+                            {editingTask ? "Guardar cambios" : "Crear Tarea"}
+                        </Button>
+                    </SheetFooter>
+                </SheetContent>
+            </Sheet>
         </DashboardLayout>
     );
 }
