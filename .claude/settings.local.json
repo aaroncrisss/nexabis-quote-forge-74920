@@ -1,0 +1,40 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pg_restore --version)",
+      "Bash(npx supabase:*)",
+      "Bash(docker --version)",
+      "Bash(wsl --version)",
+      "Bash(winget --version)",
+      "Bash(winget install:*)",
+      "Bash(winget search:*)",
+      "Read(//c/Users/ubose/.config/supabase/**)",
+      "Read(//c/Users/ubose/AppData/Roaming/supabase/**)",
+      "Read(//c/Users/ubose/AppData/Roaming/**)",
+      "Read(//c/Users/ubose/AppData/Local/supabase/**)",
+      "Read(//c/Users/ubose/AppData/Local/**)",
+      "Bash(\"/c/Program Files/PostgreSQL/17/bin/pg_restore.exe\" --version)",
+      "Bash(PGPASSWORD='CIAa.02040918..' \"/c/Program Files/PostgreSQL/17/bin/pg_restore.exe\" --no-owner --no-acl --clean --if-exists --host=aws-0-us-east-1.pooler.supabase.com --port=6543 --username=postgres.htwuamsbzaznmwuypflt --dbname=postgres \"/c/Users/ubose/OneDrive/Escritorio/Proyectos/nexabis-quote-forge-74920/backup.dump\")",
+      "Bash(PGPASSWORD='CIAa.02040918..' \"/c/Program Files/PostgreSQL/17/bin/pg_restore.exe\" --no-owner --no-acl --clean --if-exists --host=db.htwuamsbzaznmwuypflt.supabase.co --port=5432 --username=postgres --dbname=postgres \"/c/Users/ubose/OneDrive/Escritorio/Proyectos/nexabis-quote-forge-74920/backup.dump\")",
+      "Bash(nslookup db.htwuamsbzaznmwuypflt.supabase.co)",
+      "Bash(nslookup aws-0-us-east-1.pooler.supabase.com)",
+      "Bash(PGPASSWORD='CIAa.02040918..' \"/c/Program Files/PostgreSQL/17/bin/pg_restore.exe\" --no-owner --no-acl --clean --if-exists --host=aws-0-us-east-1.pooler.supabase.com --port=5432 --username=postgres.htwuamsbzaznmwuypflt --dbname=postgres \"/c/Users/ubose/OneDrive/Escritorio/Proyectos/nexabis-quote-forge-74920/backup.dump\")",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" \"https://htwuamsbzaznmwuypflt.supabase.co/rest/v1/\")",
+      "Bash(\"/c/Program Files/PostgreSQL/17/bin/pg_restore.exe\" --no-owner --no-acl --clean --if-exists -f \"/c/Users/ubose/OneDrive/Escritorio/Proyectos/nexabis-quote-forge-74920/backup.sql\" \"/c/Users/ubose/OneDrive/Escritorio/Proyectos/nexabis-quote-forge-74920/backup.dump\")",
+      "Bash(echo \"Exit: $?\")",
+      "Bash(PGPASSWORD='CIAa.02040918..' \"/c/Program Files/PostgreSQL/17/bin/psql.exe\" -h \"2600:1f1e:75b:4b17:298a:7b14:63bc:6ee9\" -p 5432 -U postgres -d postgres -c \"SELECT version\\(\\);\")",
+      "Bash(for region:*)",
+      "Bash(do echo:*)",
+      "Bash(SUPABASE_ACCESS_TOKEN=sbp_8fa1d26c6137b2896e3f9fa33d99eb1de6b2e3f5 npx supabase db query \"SELECT version\\(\\);\" --project-ref htwuamsbzaznmwuypflt)",
+      "Bash(SUPABASE_ACCESS_TOKEN=sbp_8fa1d26c6137b2896e3f9fa33d99eb1de6b2e3f5 npx supabase db query \"SELECT version\\(\\);\" --linked)",
+      "Bash(SUPABASE_ACCESS_TOKEN=sbp_8fa1d26c6137b2896e3f9fa33d99eb1de6b2e3f5 npx supabase link --project-ref htwuamsbzaznmwuypflt --password 'CIAa.02040918..')",
+      "Bash(SUPABASE_ACCESS_TOKEN=sbp_8fa1d26c6137b2896e3f9fa33d99eb1de6b2e3f5 npx supabase db query --linked -f \"/c/Users/ubose/OneDrive/Escritorio/Proyectos/nexabis-quote-forge-74920/backup.sql\")",
+      "Bash(grep -c \"^\\\\\\\\\" \"/c/Users/ubose/OneDrive/Escritorio/Proyectos/nexabis-quote-forge-74920/backup.sql \")",
+      "Bash(PGPASSWORD='CIAa.02040918..' \"/c/Program Files/PostgreSQL/17/bin/pg_restore.exe\" --no-owner --no-acl --clean --if-exists --host=aws-1-sa-east-1.pooler.supabase.com --port=5432 --username=postgres.htwuamsbzaznmwuypflt --dbname=postgres \"/c/Users/ubose/OneDrive/Escritorio/Proyectos/nexabis-quote-forge-74920/backup.dump\")",
+      "Bash(SUPABASE_ACCESS_TOKEN=sbp_8fa1d26c6137b2896e3f9fa33d99eb1de6b2e3f5 npx supabase db query --linked \"SELECT tablename FROM pg_tables WHERE schemaname = ''public'' ORDER BY tablename;\")",
+      "Bash(SUPABASE_ACCESS_TOKEN=sbp_8fa1d26c6137b2896e3f9fa33d99eb1de6b2e3f5 npx supabase functions deploy --project-ref htwuamsbzaznmwuypflt)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" -H \"apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh0d3VhbXNiemF6bm13dXlwZmx0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM4MzYwNDQsImV4cCI6MjA4OTQxMjA0NH0.KeJQZ5P9l1FkiwI3CCdyLhlPKTvhm7Xat0vIlQbUPPw\" \"https://htwuamsbzaznmwuypflt.supabase.co/rest/v1/profiles?select=id&limit=1\")",
+      "Bash(curl -s -w \"\\\\nHTTP: %{http_code}\" -H \"apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh0d3VhbXNiemF6bm13dXlwZmx0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM4MzYwNDQsImV4cCI6MjA4OTQxMjA0NH0.KeJQZ5P9l1FkiwI3CCdyLhlPKTvhm7Xat0vIlQbUPPw\" -H \"Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh0d3VhbXNiemF6bm13dXlwZmx0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM4MzYwNDQsImV4cCI6MjA4OTQxMjA0NH0.KeJQZ5P9l1FkiwI3CCdyLhlPKTvhm7Xat0vIlQbUPPw\" \"https://htwuamsbzaznmwuypflt.supabase.co/rest/v1/profiles?select=id&limit=1\")"
+    ]
+  }
+}
