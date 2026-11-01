@@ -2,7 +2,12 @@ import type { Config } from "tailwindcss";
 
 export default {
   darkMode: ["class"],
-  content: ["./pages/**/*.{ts,tsx}", "./components/**/*.{ts,tsx}", "./app/**/*.{ts,tsx}", "./src/**/*.{ts,tsx}"],
+  content: [
+    "./pages/**/*.{ts,tsx,js,jsx}",
+    "./components/**/*.{ts,tsx,js,jsx}",
+    "./app/**/*.{ts,tsx,js,jsx}",
+    "./src/**/*.{ts,tsx,js,jsx}",
+  ],
   prefix: "",
   theme: {
     container: {
@@ -14,8 +19,8 @@ export default {
     },
     extend: {
       fontFamily: {
-        sans: ['Raleway', 'sans-serif'],
-        heading: ['Montserrat', 'sans-serif'],
+        sans: ["Raleway", "sans-serif"],
+        heading: ["Montserrat", "sans-serif"],
       },
       colors: {
         border: "hsl(var(--border))",
@@ -61,7 +66,7 @@ export default {
         },
       },
       backgroundImage: {
-        'gradient-nexabis': 'linear-gradient(135deg, #FF5C5C 0%, #FF8042 50%, #FFC24D 100%)',
+        "gradient-nexabis": "linear-gradient(135deg, #FF5C5C 0%, #FF8042 50%, #FFC24D 100%)",
       },
       borderRadius: {
         lg: "var(--radius)",

@@ -10,6 +10,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useSubscription } from "@/hooks/useSubscription";
+import { generarItemsDesdeTexto, optimizarPresupuesto } from "@/lib/cotizadorEngine";
 
 interface ItemsStepProps {
   items: PresupuestoItem[];
@@ -169,49 +170,36 @@ export function ItemsStep({
     setIsAiLoading(true);
 
     try {
-      const response = await fetch("https://supabase.nexabistech.com/functions/v1/nl_to_items", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          prompt: aiPrompt,
-          moneda,
-          rubro: rubro || "tecnologia"
-        })
+      const generated = await generarItemsDesdeTexto({
+        prompt: aiPrompt,
+        moneda,
+        rubro: rubro || "tecnologia",
       });
 
-      const data = await response.json();
+      const newItems = generated.map((i) => ({
+        descripcion: i.descripcion,
+        cantidad: String(i.cantidad || 1),
+        precio_unitario: String(i.precio_unitario || 0),
+        total: (i.cantidad || 1) * (i.precio_unitario || 0),
+      }));
 
-      if (!response.ok) throw new Error(data.error || "Error al procesar");
+      onUpdate({
+        items: [...items, ...newItems],
+      });
 
-      if (data.items && Array.isArray(data.items)) {
-        // Formatear items
-        const newItems = data.items.map((i: any) => ({
-          descripcion: i.descripcion,
-          cantidad: String(i.cantidad || 1),
-          precio_unitario: String(i.precio_unitario || 0),
-          total: (i.cantidad || 1) * (i.precio_unitario || 0)
-        }));
+      toast({
+        title: "✨ Ítems generados exitosamente",
+        description: `Se estructuraron y agregaron ${newItems.length} ítems listos para cotizar.`,
+      });
 
-        onUpdate({
-          items: [...items, ...newItems]
-        });
-
-        toast({
-          title: "Ítems generados",
-          description: `Se agregaron ${newItems.length} ítems desde la IA.`,
-        });
-
-        setAiPrompt("");
-        setIsAiModalOpen(false);
-      } else {
-        throw new Error("Formato de respuesta inválido");
-      }
+      setAiPrompt("");
+      setIsAiModalOpen(false);
     } catch (error: any) {
       console.error(error);
       toast({
         title: "Error",
         description: error.message || "No se pudo generar los ítems",
-        variant: "destructive"
+        variant: "destructive",
       });
     } finally {
       setIsAiLoading(false);
@@ -224,49 +212,37 @@ export function ItemsStep({
     setIsOptimizeLoading(true);
 
     try {
-      const response = await fetch("https://supabase.nexabistech.com/functions/v1/optimize_budget", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          items,
-          target: targetValue,
-          moneda,
-          rubro: rubro || "tecnologia"
-        })
+      const { items: optimized, explanation } = await optimizarPresupuesto({
+        items,
+        target: targetValue,
+        moneda,
+        rubro: rubro || "tecnologia",
       });
 
-      const data = await response.json();
+      const newItems = optimized.map((i) => ({
+        descripcion: i.descripcion,
+        cantidad: String(i.cantidad || 1),
+        precio_unitario: String(i.precio_unitario || 0),
+        total: (i.cantidad || 1) * (i.precio_unitario || 0),
+      }));
 
-      if (!response.ok) throw new Error(data.error || "Error al procesar");
+      onUpdate({
+        items: newItems,
+      });
 
-      if (data.items && Array.isArray(data.items)) {
-        const newItems = data.items.map((i: any) => ({
-          descripcion: i.descripcion,
-          cantidad: String(i.cantidad || 0),
-          precio_unitario: String(i.precio_unitario || 0),
-          total: (i.cantidad || 0) * (i.precio_unitario || 0)
-        }));
+      toast({
+        title: "✨ Presupuesto Optimizado",
+        description: explanation || "Los ítems han sido ajustados al nuevo objetivo.",
+      });
 
-        onUpdate({
-          items: newItems
-        });
-
-        toast({
-          title: "Presupuesto Optimizado",
-          description: `Los ítems han sido ajustados al nuevo objetivo.`,
-        });
-
-        setOptimizeTarget("");
-        setIsOptimizeModalOpen(false);
-      } else {
-        throw new Error("Formato de respuesta inválido");
-      }
+      setOptimizeTarget("");
+      setIsOptimizeModalOpen(false);
     } catch (error: any) {
       console.error(error);
       toast({
         title: "Error",
         description: error.message || "No se pudo optimizar el presupuesto",
-        variant: "destructive"
+        variant: "destructive",
       });
     } finally {
       setIsOptimizeLoading(false);
@@ -277,17 +253,17 @@ export function ItemsStep({
   const simbolo = moneda === "USD" ? "$" : "$";
 
   return (
-    <div className="space-y-4 md:space-y-6">
+    <div className="space-y-4">
       <div>
-        <h2 className="text-xl md:text-2xl font-bold gradient-text mb-3 md:mb-4">Paso 2: Agregar Items</h2>
-        <p className="text-sm md:text-base text-muted-foreground mb-4 md:mb-6">Defina los productos o servicios del presupuesto</p>
+        <h2 className="text-base md:text-lg font-heading font-bold gradient-text mb-1">Paso 2: Agregar Items</h2>
+        <p className="text-xs md:text-sm text-muted-foreground mb-4">Defina los productos o servicios del presupuesto</p>
       </div>
 
-      <div className="flex flex-col sm:flex-row gap-4 mb-4 md:mb-6">
+      <div className="flex flex-col sm:flex-row gap-4 mb-4">
         <div className="flex-1">
-          <Label className="text-sm md:text-base">Moneda</Label>
+          <Label className="text-xs md:text-sm">Moneda</Label>
           <Select value={moneda} onValueChange={(value) => onUpdate({ moneda: value })}>
-            <SelectTrigger className="mt-2">
+            <SelectTrigger className="mt-1.5">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -364,15 +340,15 @@ export function ItemsStep({
 
             <Dialog open={isAiModalOpen} onOpenChange={setIsAiModalOpen}>
               <DialogTrigger asChild>
-                <Button className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white gap-2">
+                <Button className="flex-1 gradient-button font-heading font-semibold gap-2">
                   <Sparkles className="w-4 h-4" />
-                  Magia IA: Crear desde texto
+                  Generador Asistido: Crear desde texto
                 </Button>
               </DialogTrigger>
               <DialogContent className="sm:max-w-xl">
                 <DialogHeader>
                   <DialogTitle className="flex items-center gap-2">
-                    <Wand2 className="w-5 h-5 text-indigo-500" />
+                    <Wand2 className="w-5 h-5 text-primary" />
                     Generador Inteligente de Ítems
                   </DialogTitle>
                 </DialogHeader>
@@ -381,12 +357,12 @@ export function ItemsStep({
                     <Label>Describe lo que necesitas cotizar</Label>
                     <Textarea
                       placeholder="Ej: Necesito instalar 3 aires acondicionados split y hacer mantenimiento a 2 equipos industriales..."
-                      className="min-h-[120px] resize-none focus-visible:ring-indigo-500"
+                      className="min-h-[120px] resize-none focus-visible:ring-primary"
                       value={aiPrompt}
                       onChange={(e) => setAiPrompt(e.target.value)}
                     />
                     <p className="text-xs text-muted-foreground mt-2">
-                      La IA detectará automáticamente tu rubro (<span className="capitalize">{rubro || 'tecnología'}</span>) y estimará cantidades y precios en {moneda}.
+                      El motor estructurará cantidades y precios de mercado acordes a tu rubro (<span className="capitalize">{rubro || 'tecnología'}</span>) en {moneda}.
                     </p>
                   </div>
                   <div className="flex justify-end gap-3 pt-2">
@@ -394,10 +370,13 @@ export function ItemsStep({
                     <Button
                       onClick={handleAiGenerate}
                       disabled={!aiPrompt.trim() || isAiLoading}
-                      className="bg-indigo-600 hover:bg-indigo-700 text-white gap-2 min-w-[150px]"
+                      className="gradient-button font-heading font-semibold gap-2 min-w-[150px]"
                     >
                       {isAiLoading ? (
-                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          Analizando y estructurando...
+                        </>
                       ) : (
                         <>
                           <Sparkles className="w-4 h-4" />
@@ -413,16 +392,16 @@ export function ItemsStep({
             {items.length > 0 && (
               <Dialog open={isOptimizeModalOpen} onOpenChange={setIsOptimizeModalOpen}>
                 <DialogTrigger asChild>
-                  <Button variant="outline" className="flex-1 border-indigo-500 text-indigo-500 hover:bg-indigo-50 hover:text-indigo-600 gap-2">
+                  <Button variant="outline" className="flex-1 border-primary/40 text-primary hover:bg-primary/10 font-heading font-semibold gap-2">
                     <DollarSign className="w-4 h-4" />
-                    Optimizar Target IA
+                    Ajustar a Presupuesto Objetivo
                   </Button>
                 </DialogTrigger>
                 <DialogContent className="sm:max-w-md">
                   <DialogHeader>
                     <DialogTitle className="flex items-center gap-2">
-                      <Sparkles className="w-5 h-5 text-indigo-500" />
-                      Optimizar Presupuesto
+                      <Sparkles className="w-5 h-5 text-primary" />
+                      Ajustar al Presupuesto Objetivo
                     </DialogTitle>
                   </DialogHeader>
                   <div className="space-y-4 pt-4">
@@ -433,10 +412,10 @@ export function ItemsStep({
                         placeholder="Ej: 500000"
                         value={optimizeTarget}
                         onChange={(e) => setOptimizeTarget(e.target.value)}
-                        className="focus-visible:ring-indigo-500"
+                        className="focus-visible:ring-primary"
                       />
                       <p className="text-xs text-muted-foreground mt-2">
-                        La IA ajustará cantidades, precios o alcance de los ítems actuales para acercarse a este valor.
+                        El motor calculará automáticamente la distribución de cantidades, horas o precios para aproximarse con precisión a este objetivo.
                       </p>
                     </div>
                     <div className="flex justify-end gap-3 pt-2">
@@ -444,10 +423,13 @@ export function ItemsStep({
                       <Button
                         onClick={handleOptimizeGenerate}
                         disabled={!optimizeTarget || isOptimizeLoading}
-                        className="bg-indigo-600 hover:bg-indigo-700 text-white gap-2"
+                        className="gradient-button font-heading font-semibold gap-2"
                       >
                         {isOptimizeLoading ? (
-                          <Loader2 className="w-4 h-4 animate-spin" />
+                          <>
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            Optimizando...
+                          </>
                         ) : (
                           "Ajustar Ítems"
                         )}
@@ -522,38 +504,38 @@ export function ItemsStep({
           </div>
         </div>
 
-        <div className="bg-gradient-to-r from-primary/10 via-accent/10 to-warning/10 p-4 md:p-6 rounded-lg space-y-2">
-          <div className="flex justify-between text-base md:text-lg">
+        <div className="bg-gradient-to-r from-primary/10 via-accent/10 to-warning/10 p-4 rounded-lg space-y-1.5">
+          <div className="flex justify-between text-sm">
             <span className="text-muted-foreground">Subtotal:</span>
-            <span className="font-bold">
+            <span className="font-semibold font-mono">
               {simbolo} {Math.round(subtotal).toLocaleString()}
             </span>
           </div>
           {neto !== undefined && (
-            <div className="flex justify-between text-base md:text-lg text-muted-foreground">
+            <div className="flex justify-between text-sm text-muted-foreground">
               <span>Valor Neto:</span>
-              <span className="font-bold">
+              <span className="font-semibold font-mono">
                 {simbolo} {Math.round(neto).toLocaleString()}
               </span>
             </div>
           )}
-          <div className="flex justify-between text-base md:text-lg text-accent">
+          <div className="flex justify-between text-sm text-accent">
             <span>IVA (19%):</span>
-            <span className="font-bold">
+            <span className="font-semibold font-mono">
               {simbolo} {Math.round(iva_monto).toLocaleString()}
             </span>
           </div>
           {descuento_total > 0 && (
-            <div className="flex justify-between text-base md:text-lg text-warning">
+            <div className="flex justify-between text-sm text-warning">
               <span>Descuento {descuentoTipo === 'porcentaje' ? `(${descuentoValor}%)` : ''}:</span>
-              <span className="font-bold">
+              <span className="font-semibold font-mono">
                 - {simbolo} {Math.round(descuento_total).toLocaleString()}
               </span>
             </div>
           )}
-          <div className="flex justify-between text-xl md:text-2xl border-t border-primary/20 pt-2">
-            <span className="gradient-text font-bold">TOTAL:</span>
-            <span className="gradient-text font-bold">
+          <div className="flex justify-between text-lg md:text-xl border-t border-primary/20 pt-2">
+            <span className="gradient-text font-heading font-bold">TOTAL:</span>
+            <span className="gradient-text font-mono font-bold">
               {simbolo} {Math.round(total).toLocaleString()} {moneda}
             </span>
           </div>

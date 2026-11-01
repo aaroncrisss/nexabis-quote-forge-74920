@@ -1,0 +1,1107 @@
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Link } from "react-router-dom";
+import {
+  Instagram as InstagramIcon,
+  MousePointerClick,
+  Users,
+  Bot,
+  FileText,
+  DollarSign,
+  PauseCircle,
+  Plus,
+  Pencil,
+  Trash2,
+  RefreshCw,
+  Copy,
+  Link2,
+  Send,
+  MessageCircle,
+  CheckCircle2,
+  AlertTriangle,
+  PlayCircle,
+  ImageIcon,
+} from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
+import { supabaseCRM } from "@/integrations/supabase/crm-client";
+import { toast } from "sonner";
+import { EmptyState } from "@/components/ui/empty-state";
+
+// -----------------------------------------------------------------------------
+// Tipos
+// -----------------------------------------------------------------------------
+type Campaign = {
+  id?: string;
+  nombre: string;
+  activa: boolean;
+  prioridad: number;
+  media_ids: string[];
+  keywords: string[];
+  match_mode: "contiene" | "exacta" | "cualquiera";
+  responder_dm: boolean;
+  modo: "directo" | "dos_pasos";
+  mensaje_inicial: string;
+  boton_texto: string;
+  mensaje_oferta: string;
+  link_url: string | null;
+  link_titulo: string;
+  respuestas_publicas: string[];
+  delay_segundos: number;
+  una_vez_por_usuario: boolean;
+  utm_activo: boolean;
+  rastrear_clics: boolean;
+};
+
+type IgSettings = {
+  crm_sync: boolean;
+  crm_owner_id: string | null;
+  ai_enabled: boolean;
+  ai_prompt: string;
+  ai_link: string | null;
+  ai_max_turnos_dia: number;
+};
+
+type IgContact = {
+  ig_user_id: string;
+  username: string | null;
+  primer_contacto: string;
+  ultimo_contacto: string;
+  total_comentarios: number;
+  oferta_enviada_at: string | null;
+  ultima_campaign_id: string | null;
+  cliente_id: string | null;
+  clics: number;
+  ai_pausado_hasta: string | null;
+  notas: string | null;
+};
+
+type Funnel = {
+  comentarios: number;
+  con_campania: number;
+  dms_enviados: number;
+  ofertas: number;
+  errores: number;
+  clics: number;
+  personas_clic: number;
+  leads_crm: number;
+  presupuestos: number;
+  aprobados: number;
+  ingresos: number;
+  conversaciones_ia: number;
+  por_campania: { campaign_id: string; enviados: number; ofertas: number; clics: number; leads: number }[];
+};
+
+type EdgeStatus = {
+  ai_provider?: string | null;
+};
+
+type AccountStatus = {
+  connected: boolean;
+  ig_user_id: string | null;
+  username: string | null;
+  token_expires_at: string | null;
+  token_refreshed_at: string | null;
+  subscribed_fields: string[] | null;
+};
+
+type IgEvent = {
+  id: number;
+  comment_id: string;
+  media_id: string | null;
+  from_username: string | null;
+  texto: string | null;
+  campaign_id: string | null;
+  estado: "recibido" | "enviado" | "omitido" | "error";
+  motivo: string | null;
+  public_reply_ok: boolean | null;
+  oferta_enviada_at: string | null;
+  created_at: string;
+};
+
+type Media = {
+  id: string;
+  caption?: string;
+  media_type?: string;
+  media_product_type?: string;
+  thumbnail_url?: string;
+  media_url?: string;
+  permalink?: string;
+  timestamp?: string;
+  comments_count?: number;
+};
+
+const FUNCTION_NAME = "instagram-webhook";
+const WEBHOOK_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/${FUNCTION_NAME}`;
+
+const EMPTY_CAMPAIGN: Campaign = {
+  nombre: "",
+  activa: false,
+  prioridad: 0,
+  media_ids: [],
+  keywords: [],
+  match_mode: "contiene",
+  responder_dm: false,
+  modo: "dos_pasos",
+  mensaje_inicial: "¡Hola {username}! 👋 Vi tu comentario. ¿Te mando la info por aquí? Toca el botón 👇",
+  boton_texto: "Sí, envíamela",
+  mensaje_oferta: "Aquí tienes toda la info 🚀",
+  link_url: "",
+  link_titulo: "Ver oferta",
+  respuestas_publicas: ["¡Te escribí por DM, {username}! 📩"],
+  delay_segundos: 0,
+  una_vez_por_usuario: true,
+  utm_activo: true,
+  rastrear_clics: false,
+};
+
+const pct = (a: number, b: number) => (b ? `${Math.round((a / b) * 100)}%` : "—");
+const clp = (n: number) =>
+  new Intl.NumberFormat("es-CL", { style: "currency", currency: "CLP", maximumFractionDigits: 0 }).format(n || 0);
+
+const ESTADO_STYLES: Record<IgEvent["estado"], string> = {
+  enviado: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30",
+  omitido: "bg-muted text-muted-foreground border-border",
+  error: "bg-red-500/15 text-red-400 border-red-500/30",
+  recibido: "bg-blue-500/15 text-blue-400 border-blue-500/30",
+};
+
+const preview = (tpl: string, username = "maria.perez") =>
+  (tpl || "").replace(/\{username\}|\{nombre\}/g, `@${username}`);
+
+type IgResult = {
+  ok?: boolean;
+  error?: string;
+  username?: string;
+  subscribed?: boolean;
+  subscribe_error?: string;
+  media?: Media[];
+  match?: { id: string; nombre: string; modo: string } | null;
+  private_reply?: string;
+  boton?: string | null;
+  oferta?: string;
+  link?: string | null;
+  rastreo?: boolean;
+  reply?: string;
+  handoff?: boolean;
+  ai_provider?: string | null;
+};
+
+async function invokeIg(body: Record<string, unknown>): Promise<IgResult> {
+  const { data, error } = await supabase.functions.invoke(FUNCTION_NAME, { body });
+  if (error) {
+    // Intentar leer el mensaje de error del cuerpo
+    let msg = error.message;
+    try {
+      const ctx = (error as { context?: Response }).context;
+      if (ctx?.json) msg = (await ctx.json())?.error ?? msg;
+    } catch {
+      /* ignore */
+    }
+    throw new Error(msg);
+  }
+  return data as IgResult;
+}
+
+// -----------------------------------------------------------------------------
+// Página
+// -----------------------------------------------------------------------------
+export default function Instagram() {
+  const [status, setStatus] = useState<AccountStatus | null>(null);
+  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  const [events, setEvents] = useState<IgEvent[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const [tokenInput, setTokenInput] = useState("");
+  const [connecting, setConnecting] = useState(false);
+
+  const [editing, setEditing] = useState<Campaign | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  const [media, setMedia] = useState<Media[]>([]);
+  const [loadingMedia, setLoadingMedia] = useState(false);
+
+  const [simText, setSimText] = useState("info");
+  const [simResult, setSimResult] = useState<IgResult | null>(null);
+
+  const [funnel, setFunnel] = useState<Funnel | null>(null);
+  const [contacts, setContacts] = useState<IgContact[]>([]);
+  const [settings, setSettings] = useState<IgSettings | null>(null);
+  const [savingSettings, setSavingSettings] = useState(false);
+  const [edgeStatus, setEdgeStatus] = useState<EdgeStatus | null>(null);
+  const [aiText, setAiText] = useState("Hola, ¿cuánto cuesta un sistema como el del reel?");
+  const [aiChat, setAiChat] = useState<{ role: "user" | "assistant"; content: string }[]>([]);
+  const [aiTesting, setAiTesting] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const [st, cs, ev, fn, ct, se] = await Promise.all([
+      supabaseCRM.rpc("ig_account_status"),
+      supabaseCRM.from("ig_campaigns").select("*").order("prioridad", { ascending: false }).order("created_at"),
+      supabaseCRM.from("ig_comment_events").select("*").order("created_at", { ascending: false }).limit(300),
+      supabaseCRM.rpc("ig_funnel_stats"),
+      supabaseCRM.from("ig_contacts").select("*").order("ultimo_contacto", { ascending: false }).limit(200),
+      supabaseCRM.from("ig_settings").select("*").eq("id", 1).maybeSingle(),
+    ]);
+    if (st.error) toast.error(`Estado IG: ${st.error.message}`);
+    setStatus((st.data as AccountStatus[] | null)?.[0] ?? null);
+    if (cs.error) toast.error(`Campañas: ${cs.error.message}`);
+    setCampaigns((cs.data as Campaign[]) ?? []);
+    setEvents((ev.data as IgEvent[]) ?? []);
+    // Las tablas/RPC nuevas pueden no existir aún si la migración 20261101_02 no se aplicó
+    setFunnel(fn.error ? null : (fn.data as Funnel));
+    setContacts(ct.error ? [] : ((ct.data as IgContact[]) ?? []));
+    setSettings(se.error ? null : ((se.data as IgSettings | null) ?? null));
+    setLoading(false);
+    invokeIg({ action: "status" })
+      .then((r) => setEdgeStatus({ ai_provider: r.ai_provider ?? null }))
+      .catch(() => setEdgeStatus(null));
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const campaignName = useMemo(() => {
+    const m = new Map<string, string>();
+    campaigns.forEach((c) => c.id && m.set(c.id, c.nombre));
+    return m;
+  }, [campaigns]);
+
+  // Embudo: server-side (ig_funnel_stats) o, si la migración no está aplicada, últimos 300 eventos
+  const stats = useMemo(() => {
+    if (funnel) {
+      return {
+        comentarios: funnel.comentarios,
+        enviados: funnel.dms_enviados,
+        ofertas: funnel.ofertas,
+        errores: funnel.errores,
+        clics: funnel.clics,
+        personasClic: funnel.personas_clic,
+        leads: funnel.leads_crm,
+        presupuestos: funnel.presupuestos,
+        aprobados: funnel.aprobados,
+        ingresos: Number(funnel.ingresos) || 0,
+        conversacionesIa: funnel.conversaciones_ia,
+      };
+    }
+    return {
+      comentarios: events.length,
+      enviados: events.filter((e) => e.estado === "enviado").length,
+      ofertas: events.filter((e) => e.oferta_enviada_at).length,
+      errores: events.filter((e) => e.estado === "error").length,
+      clics: 0,
+      personasClic: 0,
+      leads: 0,
+      presupuestos: 0,
+      aprobados: 0,
+      ingresos: 0,
+      conversacionesIa: 0,
+    };
+  }, [events, funnel]);
+
+  const campaignStats = useMemo(() => {
+    const m = new Map<string, Funnel["por_campania"][number]>();
+    funnel?.por_campania?.forEach((p) => m.set(p.campaign_id, p));
+    return m;
+  }, [funnel]);
+
+  const daysLeft = status?.token_expires_at
+    ? Math.round((new Date(status.token_expires_at).getTime() - Date.now()) / 86400000)
+    : null;
+
+  // ---------------------------------------------------------------------------
+  // Acciones
+  // ---------------------------------------------------------------------------
+  const handleConnect = async () => {
+    if (!tokenInput.trim()) return toast.error("Pega el token de acceso de Instagram");
+    setConnecting(true);
+    try {
+      const r = await invokeIg({ action: "connect", access_token: tokenInput.trim() });
+      if (!r.ok) throw new Error(r.error);
+      toast.success(`Conectado como @${r.username}`);
+      if (!r.subscribed) toast.warning(`Conectado, pero la suscripción a webhooks falló: ${r.subscribe_error}`);
+      setTokenInput("");
+      load();
+    } catch (e) {
+      toast.error((e as Error).message || "No se pudo conectar");
+    } finally {
+      setConnecting(false);
+    }
+  };
+
+  const handleSubscribe = async () => {
+    try {
+      const r = await invokeIg({ action: "subscribe" });
+      if (!r.ok) throw new Error(r.error);
+      toast.success("Webhooks re-suscritos (comments, messages)");
+      load();
+    } catch (e) {
+      toast.error((e as Error).message);
+    }
+  };
+
+  const handleLoadMedia = async () => {
+    setLoadingMedia(true);
+    try {
+      const r = await invokeIg({ action: "list_media" });
+      if (!r.ok) throw new Error(r.error);
+      setMedia(r.media ?? []);
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setLoadingMedia(false);
+    }
+  };
+
+  const handleSimulate = async () => {
+    try {
+      setSimResult(await invokeIg({ action: "simulate", text: simText, username: "maria.perez" }));
+    } catch (e) {
+      toast.error((e as Error).message);
+    }
+  };
+
+  const toggleActive = async (c: Campaign) => {
+    const { error } = await supabaseCRM.from("ig_campaigns").update({ activa: !c.activa }).eq("id", c.id);
+    if (error) return toast.error(error.message);
+    setCampaigns((prev) => prev.map((x) => (x.id === c.id ? { ...x, activa: !c.activa } : x)));
+  };
+
+  const deleteCampaign = async (c: Campaign) => {
+    if (!confirm(`¿Eliminar la campaña "${c.nombre}"?`)) return;
+    const { error } = await supabaseCRM.from("ig_campaigns").delete().eq("id", c.id);
+    if (error) return toast.error(error.message);
+    toast.success("Campaña eliminada");
+    load();
+  };
+
+  const saveCampaign = async () => {
+    if (!editing) return;
+    if (!editing.nombre.trim()) return toast.error("Ponle un nombre a la campaña");
+    if (!editing.mensaje_oferta.trim()) return toast.error("El mensaje de la oferta es obligatorio");
+    if (editing.link_url && !/^https?:\/\//i.test(editing.link_url)) return toast.error("El link debe partir con https://");
+    setSaving(true);
+    const { id, ...rest } = editing;
+    // Si la migración 20261101_02 aún no está aplicada, no enviar columnas que no existen
+    const { utm_activo, rastrear_clics, ...base } = rest;
+    const payload = settings ? { ...base, utm_activo, rastrear_clics } : base;
+    const row = {
+      ...payload,
+      link_url: payload.link_url?.trim() || null,
+      keywords: payload.keywords.map((k) => k.trim()).filter(Boolean),
+      respuestas_publicas: payload.respuestas_publicas.map((r) => r.trim()).filter(Boolean),
+    };
+    const { error } = id
+      ? await supabaseCRM.from("ig_campaigns").update(row).eq("id", id)
+      : await supabaseCRM.from("ig_campaigns").insert(row);
+    setSaving(false);
+    if (error) return toast.error(error.message);
+    toast.success("Campaña guardada");
+    setEditing(null);
+    load();
+  };
+
+  const saveSettings = async (patch?: Partial<IgSettings>) => {
+    if (!settings) return;
+    const next = { ...settings, ...patch };
+    setSavingSettings(true);
+    const { error } = await supabaseCRM
+      .from("ig_settings")
+      .update({
+        crm_sync: next.crm_sync,
+        ai_enabled: next.ai_enabled,
+        ai_prompt: next.ai_prompt,
+        ai_link: next.ai_link?.trim() || null,
+        ai_max_turnos_dia: Math.min(100, Math.max(1, Number(next.ai_max_turnos_dia) || 15)),
+      })
+      .eq("id", 1);
+    setSavingSettings(false);
+    if (error) return toast.error(error.message);
+    setSettings(next);
+    toast.success("Configuración guardada");
+  };
+
+  const testAi = async () => {
+    if (!aiText.trim() || !settings) return;
+    setAiTesting(true);
+    const history = aiChat;
+    const userTurn = { role: "user" as const, content: aiText.trim() };
+    setAiChat([...history, userTurn]);
+    setAiText("");
+    try {
+      const r = await invokeIg({ action: "simulate_ai", text: userTurn.content, history, prompt: settings.ai_prompt });
+      if (!r.ok) throw new Error(r.error);
+      setAiChat((prev) => [
+        ...prev,
+        { role: "assistant", content: `${r.reply ?? ""}${r.handoff ? "\n\n⚠️ [Derivaría a humano y pausaría la IA 24h]" : ""}` },
+      ]);
+    } catch (e) {
+      const msg = (e as Error).message;
+      toast.error(msg === "sin_api_key_ia" ? "Falta configurar ANTHROPIC_API_KEY o GEMINI_API_KEY en Supabase" : msg);
+      setAiChat(history);
+    } finally {
+      setAiTesting(false);
+    }
+  };
+
+  const toggleAiPause = async (c: IgContact) => {
+    const paused = c.ai_pausado_hasta && new Date(c.ai_pausado_hasta).getTime() > Date.now();
+    // "Pausar" = indefinido en la práctica (10 años); "Reanudar" = null
+    const value = paused ? null : new Date(Date.now() + 3650 * 86400000).toISOString();
+    const { error } = await supabaseCRM.from("ig_contacts").update({ ai_pausado_hasta: value }).eq("ig_user_id", c.ig_user_id);
+    if (error) return toast.error(error.message);
+    setContacts((prev) => prev.map((x) => (x.ig_user_id === c.ig_user_id ? { ...x, ai_pausado_hasta: value } : x)));
+    toast.success(paused ? "IA reanudada para este contacto" : "IA pausada para este contacto");
+  };
+
+  const copy = (text: string) => {
+    navigator.clipboard.writeText(text);
+    toast.success("Copiado");
+  };
+
+  // ---------------------------------------------------------------------------
+  // UI
+  // ---------------------------------------------------------------------------
+  return (
+    <div className="space-y-4 animate-fade-in">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div>
+          <h1 className="text-lg md:text-xl font-heading font-bold gradient-text flex items-center gap-2">
+            <InstagramIcon className="w-5 h-5 text-primary" />
+            Instagram Auto-DM
+          </h1>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Cuando alguien comenta tus reels, le llega por DM lo que estás ofreciendo. Sin ManyChat.
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button size="sm" variant="outline" onClick={load} className="h-8 text-xs gap-1.5">
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} /> Actualizar
+          </Button>
+          <Button
+            size="sm"
+            onClick={() => setEditing({ ...EMPTY_CAMPAIGN })}
+            className="h-8 text-xs px-3 gradient-button font-heading font-semibold gap-1.5"
+          >
+            <Plus className="w-3.5 h-3.5" /> Nueva campaña
+          </Button>
+        </div>
+      </div>
+
+      {/* Conexión */}
+      <Card className="p-4 space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            {status?.connected ? (
+              <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+            ) : (
+              <AlertTriangle className="w-4 h-4 text-orange-400" />
+            )}
+            <p className="text-sm font-semibold">
+              {status?.connected ? `Conectado como @${status.username}` : "Cuenta de Instagram no conectada"}
+            </p>
+            {status?.connected && daysLeft !== null && (
+              <Badge variant="outline" className={daysLeft < 10 ? "text-orange-400 border-orange-500/40" : ""}>
+                Token: {daysLeft} días (se valida/renueva cada lunes)
+              </Badge>
+            )}
+            {status?.connected && daysLeft === null && (
+              <Badge variant="outline">Token de página sin vencimiento</Badge>
+            )}
+          </div>
+          {status?.connected && (
+            <Button size="sm" variant="outline" className="h-7 text-xs" onClick={handleSubscribe}>
+              Re-suscribir webhooks
+            </Button>
+          )}
+        </div>
+
+        <div className="grid md:grid-cols-2 gap-3">
+          <div className="space-y-1">
+            <Label className="text-xs">Callback URL (pégala en Meta → Webhooks)</Label>
+            <div className="flex gap-2">
+              <Input readOnly value={WEBHOOK_URL} className="h-8 text-xs font-mono" />
+              <Button size="sm" variant="outline" className="h-8" onClick={() => copy(WEBHOOK_URL)}>
+                <Copy className="w-3.5 h-3.5" />
+              </Button>
+            </div>
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">
+              {status?.connected ? "Reemplazar token (opcional)" : "Token de acceso de Instagram (Generate token en Meta)"}
+            </Label>
+            <div className="flex gap-2">
+              <Input
+                type="password"
+                value={tokenInput}
+                onChange={(e) => setTokenInput(e.target.value)}
+                placeholder="IGAA..."
+                className="h-8 text-xs font-mono"
+              />
+              <Button size="sm" className="h-8 text-xs gradient-button" onClick={handleConnect} disabled={connecting}>
+                {connecting ? "Conectando..." : "Conectar"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      </Card>
+
+      {/* Embudo de ventas */}
+      <div className="space-y-1.5">
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-semibold">Embudo de ventas</h2>
+          {!funnel && !loading && (
+            <span className="text-[11px] text-orange-400">Aplica la migración 20261101_02 para ver clics, leads y ventas</span>
+          )}
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3">
+          {[
+            { label: "Comentarios", value: stats.comentarios, sub: null, icon: MessageCircle },
+            { label: "DMs enviados", value: stats.enviados, sub: pct(stats.enviados, stats.comentarios), icon: Send },
+            { label: "Ofertas", value: stats.ofertas, sub: pct(stats.ofertas, stats.enviados), icon: Link2 },
+            { label: "Clics", value: stats.clics, sub: `${stats.personasClic} personas`, icon: MousePointerClick },
+            { label: "Leads CRM", value: stats.leads, sub: pct(stats.leads, stats.ofertas), icon: Users },
+            { label: "Presupuestos", value: stats.presupuestos, sub: `${stats.aprobados} aprobados`, icon: FileText },
+            { label: "Ventas", value: clp(stats.ingresos), sub: pct(stats.aprobados, stats.leads), icon: DollarSign },
+            { label: "Errores", value: stats.errores, sub: stats.conversacionesIa ? `${stats.conversacionesIa} chats IA` : null, icon: AlertTriangle },
+          ].map((s) => (
+            <Card key={s.label} className="p-3">
+              <div className="flex items-center gap-2 text-muted-foreground text-xs">
+                <s.icon className="w-3.5 h-3.5" /> {s.label}
+              </div>
+              <p className="text-xl font-bold mt-1 truncate">{s.value}</p>
+              {s.sub && <p className="text-[10px] text-muted-foreground">{s.sub}</p>}
+            </Card>
+          ))}
+        </div>
+      </div>
+
+      <Tabs defaultValue="campanias" className="space-y-3">
+        <TabsList>
+          <TabsTrigger value="campanias" className="text-xs">Campañas</TabsTrigger>
+          <TabsTrigger value="leads" className="text-xs">Leads ({contacts.length})</TabsTrigger>
+          <TabsTrigger value="ia" className="text-xs gap-1"><Bot className="w-3.5 h-3.5" /> Nexabot IA</TabsTrigger>
+          <TabsTrigger value="actividad" className="text-xs">Actividad</TabsTrigger>
+        </TabsList>
+
+      <TabsContent value="campanias" className="space-y-4">
+      {/* Campañas */}
+      <div className="space-y-2">
+        <h2 className="text-sm font-semibold">Campañas</h2>
+        {campaigns.length === 0 && !loading ? (
+          <EmptyState
+            icon={InstagramIcon}
+            title="Sin campañas"
+            description="Crea una campaña: elige la palabra clave, el reel y el mensaje que quieres enviar."
+            actionLabel="Nueva campaña"
+            onAction={() => setEditing({ ...EMPTY_CAMPAIGN })}
+          />
+        ) : (
+          <div className="grid md:grid-cols-2 gap-3">
+            {campaigns.map((c) => {
+              const cs = c.id ? campaignStats.get(c.id) : undefined;
+              const sent = cs?.enviados ?? events.filter((e) => e.campaign_id === c.id && e.estado === "enviado").length;
+              return (
+                <Card key={c.id} className={`p-4 space-y-2 ${c.activa ? "border-primary/40" : "opacity-80"}`}>
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <p className="font-semibold text-sm">{c.nombre}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {c.modo === "dos_pasos" ? "Dos pasos (botón → link)" : "Directo (link en el 1er DM)"} ·{" "}
+                        {c.media_ids.length ? `${c.media_ids.length} publicación(es)` : "Todas las publicaciones"} ·
+                        prioridad {c.prioridad}
+                      </p>
+                    </div>
+                    <Switch checked={c.activa} onCheckedChange={() => toggleActive(c)} />
+                  </div>
+                  <div className="flex flex-wrap gap-1">
+                    {c.match_mode === "cualquiera" || c.keywords.length === 0 ? (
+                      <Badge variant="secondary" className="text-[10px]">Cualquier comentario</Badge>
+                    ) : (
+                      c.keywords.map((k) => (
+                        <Badge key={k} variant="secondary" className="text-[10px]">{k}</Badge>
+                      ))
+                    )}
+                  </div>
+                  <p className="text-xs text-muted-foreground line-clamp-2">{preview(c.mensaje_oferta)}</p>
+                  <div className="flex items-center justify-between pt-1">
+                    <span className="text-xs text-muted-foreground">
+                      {sent} DMs{cs ? ` · ${cs.ofertas} ofertas · ${cs.clics} clics · ${cs.leads} leads` : " enviados"}
+                    </span>
+                    <div className="flex gap-1">
+                      <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => setEditing({ ...c })}>
+                        <Pencil className="w-3.5 h-3.5" />
+                      </Button>
+                      <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-red-400" onClick={() => deleteCampaign(c)}>
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </Button>
+                    </div>
+                  </div>
+                </Card>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Simulador */}
+      <Card className="p-4 space-y-2">
+        <h2 className="text-sm font-semibold flex items-center gap-2">
+          <PlayCircle className="w-4 h-4 text-primary" /> Probar sin publicar
+        </h2>
+        <p className="text-xs text-muted-foreground">
+          Escribe un comentario de ejemplo y verás qué campaña activa responde y con qué mensaje (no envía nada).
+        </p>
+        <div className="flex gap-2">
+          <Input value={simText} onChange={(e) => setSimText(e.target.value)} className="h-8 text-xs" />
+          <Button size="sm" variant="outline" className="h-8 text-xs" onClick={handleSimulate}>
+            Simular
+          </Button>
+        </div>
+        {simResult && (
+          <div className="text-xs rounded-lg bg-muted/40 p-3 space-y-1">
+            {simResult.match ? (
+              <>
+                <p><b>Campaña:</b> {simResult.match.nombre}</p>
+                <p><b>DM 1:</b> {simResult.private_reply}</p>
+                {simResult.boton && <p><b>Botón:</b> [{simResult.boton}]</p>}
+                {simResult.match.modo === "dos_pasos" && <p><b>Al tocar el botón:</b> {simResult.oferta}</p>}
+                {simResult.link && (
+                  <p className="break-all">
+                    <b>Link:</b> {simResult.link}
+                    {simResult.rastreo && <span className="text-muted-foreground"> (se enviará como link rastreable)</span>}
+                  </p>
+                )}
+              </>
+            ) : (
+              <p>Ninguna campaña activa responde a ese comentario.</p>
+            )}
+          </div>
+        )}
+      </Card>
+
+      </TabsContent>
+
+      {/* Leads */}
+      <TabsContent value="leads">
+        <Card className="p-4 space-y-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-sm font-semibold">Leads de Instagram</h2>
+            {settings && (
+              <div className="flex items-center gap-2">
+                <Label className="text-xs">Crear cliente + oportunidad en el CRM al entregar la oferta</Label>
+                <Switch checked={settings.crm_sync} onCheckedChange={(v) => saveSettings({ crm_sync: v })} disabled={savingSettings} />
+              </div>
+            )}
+          </div>
+          {contacts.length === 0 ? (
+            <p className="text-xs text-muted-foreground">Aún no hay contactos.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead className="text-muted-foreground text-left">
+                  <tr>
+                    <th className="py-1.5 pr-3">Usuario</th>
+                    <th className="py-1.5 pr-3">Último contacto</th>
+                    <th className="py-1.5 pr-3">Coment.</th>
+                    <th className="py-1.5 pr-3">Campaña</th>
+                    <th className="py-1.5 pr-3">Oferta</th>
+                    <th className="py-1.5 pr-3">Clics</th>
+                    <th className="py-1.5 pr-3">CRM</th>
+                    <th className="py-1.5">IA</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {contacts.map((c) => {
+                    const paused = c.ai_pausado_hasta && new Date(c.ai_pausado_hasta).getTime() > Date.now();
+                    return (
+                      <tr key={c.ig_user_id} className="border-t border-border/50 align-top">
+                        <td className="py-1.5 pr-3">
+                          {c.username ? (
+                            <a href={`https://instagram.com/${c.username}`} target="_blank" rel="noreferrer" className="text-primary hover:underline">
+                              @{c.username}
+                            </a>
+                          ) : (
+                            <span className="text-muted-foreground font-mono">{c.ig_user_id.slice(0, 10)}…</span>
+                          )}
+                        </td>
+                        <td className="py-1.5 pr-3 whitespace-nowrap">
+                          {new Date(c.ultimo_contacto).toLocaleString("es-CL", { dateStyle: "short", timeStyle: "short" })}
+                        </td>
+                        <td className="py-1.5 pr-3">{c.total_comentarios}</td>
+                        <td className="py-1.5 pr-3">{c.ultima_campaign_id ? campaignName.get(c.ultima_campaign_id) ?? "—" : "—"}</td>
+                        <td className="py-1.5 pr-3">{c.oferta_enviada_at ? "✅" : ""}</td>
+                        <td className="py-1.5 pr-3">{c.clics || ""}</td>
+                        <td className="py-1.5 pr-3">
+                          {c.cliente_id ? (
+                            <Link to={`/clientes/${c.cliente_id}`} className="text-primary hover:underline">Ver cliente</Link>
+                          ) : "—"}
+                        </td>
+                        <td className="py-1.5">
+                          <Button size="sm" variant="ghost" className="h-6 px-2 text-[10px] gap-1" onClick={() => toggleAiPause(c)}>
+                            {paused ? <><PlayCircle className="w-3 h-3" /> Reanudar</> : <><PauseCircle className="w-3 h-3" /> Pausar</>}
+                          </Button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Card>
+      </TabsContent>
+
+      {/* Agente IA */}
+      <TabsContent value="ia">
+        {!settings ? (
+          <Card className="p-4 text-xs text-muted-foreground">Aplica la migración 20261101_02 para configurar el agente IA.</Card>
+        ) : (
+          <div className="grid lg:grid-cols-2 gap-3">
+            <Card className="p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <h2 className="text-sm font-semibold flex items-center gap-2"><Bot className="w-4 h-4 text-primary" /> Nexabot: agente de ventas en DM</h2>
+                <Switch checked={settings.ai_enabled} onCheckedChange={(v) => saveSettings({ ai_enabled: v })} disabled={savingSettings} />
+              </div>
+              <p className="text-[11px] text-muted-foreground">
+                Responde los DMs que no calzan con ninguna palabra clave. Se pausa 12 h si respondes tú desde Instagram, y 24 h si deriva la conversación a un humano.
+              </p>
+              <Badge variant="outline" className={edgeStatus?.ai_provider ? "" : "text-orange-400 border-orange-500/40"}>
+                {edgeStatus?.ai_provider ? `Modelo: ${edgeStatus.ai_provider}` : "Sin API key: configura ANTHROPIC_API_KEY o GEMINI_API_KEY"}
+              </Badge>
+              <div className="space-y-1">
+                <Label className="text-xs">Conocimiento e instrucciones (qué vendes, para quién, cómo cotizas)</Label>
+                <Textarea rows={9} value={settings.ai_prompt} onChange={(e) => setSettings({ ...settings, ai_prompt: e.target.value })} className="text-xs" />
+              </div>
+              <div className="grid grid-cols-3 gap-3">
+                <div className="col-span-2 space-y-1">
+                  <Label className="text-xs">Link principal</Label>
+                  <Input value={settings.ai_link ?? ""} onChange={(e) => setSettings({ ...settings, ai_link: e.target.value })} className="h-8 text-xs" />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Máx. respuestas/día por persona</Label>
+                  <Input
+                    type="number"
+                    min={1}
+                    max={100}
+                    value={settings.ai_max_turnos_dia}
+                    onChange={(e) => setSettings({ ...settings, ai_max_turnos_dia: Number(e.target.value) || 15 })}
+                    className="h-8 text-xs"
+                  />
+                </div>
+              </div>
+              <Button size="sm" className="gradient-button h-8 text-xs" onClick={() => saveSettings()} disabled={savingSettings}>
+                {savingSettings ? "Guardando..." : "Guardar"}
+              </Button>
+            </Card>
+
+            <Card className="p-4 space-y-2 flex flex-col">
+              <div className="flex items-center justify-between">
+                <h2 className="text-sm font-semibold">Probar conversación (no envía nada)</h2>
+                {aiChat.length > 0 && (
+                  <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setAiChat([])}>Reiniciar</Button>
+                )}
+              </div>
+              <div className="flex-1 min-h-[220px] max-h-[380px] overflow-y-auto rounded-lg bg-muted/40 p-3 space-y-2 text-xs">
+                {aiChat.length === 0 && <p className="text-muted-foreground">Escribe como si fueras un cliente. Usa las instrucciones actuales del editor, aunque no las hayas guardado.</p>}
+                {aiChat.map((m, i) => (
+                  <div
+                    key={i}
+                    className={`rounded-2xl px-3 py-2 w-fit max-w-[85%] whitespace-pre-wrap ${m.role === "user" ? "ml-auto bg-primary/20" : "bg-background"}`}
+                  >
+                    {m.content}
+                  </div>
+                ))}
+                {aiTesting && <p className="text-muted-foreground">Nexabot está escribiendo…</p>}
+              </div>
+              <div className="flex gap-2">
+                <Input
+                  value={aiText}
+                  onChange={(e) => setAiText(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && !aiTesting && testAi()}
+                  className="h-8 text-xs"
+                />
+                <Button size="sm" variant="outline" className="h-8 text-xs" onClick={testAi} disabled={aiTesting}>
+                  <Send className="w-3.5 h-3.5" />
+                </Button>
+              </div>
+            </Card>
+          </div>
+        )}
+      </TabsContent>
+
+      <TabsContent value="actividad">
+      {/* Actividad */}
+      <Card className="p-4 space-y-2">
+        <h2 className="text-sm font-semibold">Actividad reciente</h2>
+        {events.length === 0 ? (
+          <p className="text-xs text-muted-foreground">Aún no llegan comentarios.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead className="text-muted-foreground text-left">
+                <tr>
+                  <th className="py-1.5 pr-3">Fecha</th>
+                  <th className="py-1.5 pr-3">Usuario</th>
+                  <th className="py-1.5 pr-3">Comentario</th>
+                  <th className="py-1.5 pr-3">Campaña</th>
+                  <th className="py-1.5 pr-3">Estado</th>
+                  <th className="py-1.5">Oferta</th>
+                </tr>
+              </thead>
+              <tbody>
+                {events.slice(0, 50).map((e) => (
+                  <tr key={e.id} className="border-t border-border/50 align-top">
+                    <td className="py-1.5 pr-3 whitespace-nowrap">
+                      {new Date(e.created_at).toLocaleString("es-CL", { dateStyle: "short", timeStyle: "short" })}
+                    </td>
+                    <td className="py-1.5 pr-3">
+                      {e.from_username ? (
+                        <a href={`https://instagram.com/${e.from_username}`} target="_blank" rel="noreferrer" className="text-primary hover:underline">
+                          @{e.from_username}
+                        </a>
+                      ) : "—"}
+                    </td>
+                    <td className="py-1.5 pr-3 max-w-[220px] truncate" title={e.texto ?? ""}>{e.texto}</td>
+                    <td className="py-1.5 pr-3">{e.campaign_id ? campaignName.get(e.campaign_id) ?? "—" : "—"}</td>
+                    <td className="py-1.5 pr-3">
+                      <Badge variant="outline" className={`text-[10px] ${ESTADO_STYLES[e.estado]}`} title={e.motivo ?? ""}>
+                        {e.estado}
+                      </Badge>
+                      {e.motivo && <p className="text-[10px] text-muted-foreground mt-0.5 max-w-[180px] truncate" title={e.motivo}>{e.motivo}</p>}
+                    </td>
+                    <td className="py-1.5">{e.oferta_enviada_at ? "✅" : ""}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+      </TabsContent>
+      </Tabs>
+
+      {/* Editor de campaña */}
+      <Dialog open={!!editing} onOpenChange={(o) => !o && setEditing(null)}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{editing?.id ? "Editar campaña" : "Nueva campaña"}</DialogTitle>
+          </DialogHeader>
+          {editing && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-3 gap-3">
+                <div className="col-span-2 space-y-1">
+                  <Label className="text-xs">Nombre</Label>
+                  <Input value={editing.nombre} onChange={(e) => setEditing({ ...editing, nombre: e.target.value })} placeholder="Reel landing pages - comenta WEB" />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Prioridad</Label>
+                  <Input type="number" value={editing.prioridad} onChange={(e) => setEditing({ ...editing, prioridad: Number(e.target.value) || 0 })} />
+                </div>
+              </div>
+
+              {/* Disparador */}
+              <div className="rounded-lg border border-border/60 p-3 space-y-3">
+                <p className="text-xs font-semibold">1. ¿Cuándo se dispara?</p>
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="col-span-2 space-y-1">
+                    <Label className="text-xs">Palabras clave (separadas por coma)</Label>
+                    <Input
+                      value={editing.keywords.join(", ")}
+                      onChange={(e) => setEditing({ ...editing, keywords: e.target.value.split(",") })}
+                      placeholder="info, precio, quiero, web"
+                      disabled={editing.match_mode === "cualquiera"}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Coincidencia</Label>
+                    <Select value={editing.match_mode} onValueChange={(v) => setEditing({ ...editing, match_mode: v as Campaign["match_mode"] })}>
+                      <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="contiene">Contiene la palabra</SelectItem>
+                        <SelectItem value="exacta">Comentario exacto</SelectItem>
+                        <SelectItem value="cualquiera">Cualquier comentario</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs">
+                      Publicaciones: {editing.media_ids.length ? `${editing.media_ids.length} seleccionada(s)` : "todas"}
+                    </Label>
+                    <div className="flex gap-2">
+                      {editing.media_ids.length > 0 && (
+                        <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setEditing({ ...editing, media_ids: [] })}>
+                          Usar todas
+                        </Button>
+                      )}
+                      <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={handleLoadMedia} disabled={loadingMedia || !status?.connected}>
+                        <ImageIcon className="w-3.5 h-3.5" /> {loadingMedia ? "Cargando..." : "Elegir reels"}
+                      </Button>
+                    </div>
+                  </div>
+                  {media.length > 0 && (
+                    <div className="grid grid-cols-5 sm:grid-cols-6 gap-2 max-h-56 overflow-y-auto">
+                      {media.map((m) => {
+                        const selected = editing.media_ids.includes(m.id);
+                        return (
+                          <button
+                            key={m.id}
+                            type="button"
+                            title={m.caption ?? m.id}
+                            onClick={() =>
+                              setEditing({
+                                ...editing,
+                                media_ids: selected ? editing.media_ids.filter((x) => x !== m.id) : [...editing.media_ids, m.id],
+                              })
+                            }
+                            className={`relative aspect-square rounded-md overflow-hidden border-2 ${selected ? "border-primary" : "border-transparent opacity-70 hover:opacity-100"}`}
+                          >
+                            <img src={m.thumbnail_url || m.media_url} alt="" className="w-full h-full object-cover" />
+                            {selected && <CheckCircle2 className="absolute top-1 right-1 w-4 h-4 text-primary bg-background rounded-full" />}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs">También responder si escriben la palabra clave por DM</Label>
+                  <Switch checked={editing.responder_dm} onCheckedChange={(v) => setEditing({ ...editing, responder_dm: v })} />
+                </div>
+              </div>
+
+              {/* Mensajes */}
+              <div className="rounded-lg border border-border/60 p-3 space-y-3">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-semibold">2. ¿Qué le enviamos?</p>
+                  <Select value={editing.modo} onValueChange={(v) => setEditing({ ...editing, modo: v as Campaign["modo"] })}>
+                    <SelectTrigger className="h-8 w-56 text-xs"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="dos_pasos">Dos pasos (recomendado)</SelectItem>
+                      <SelectItem value="directo">Directo (link en el primer DM)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <p className="text-[11px] text-muted-foreground">
+                  Usa <code>{"{username}"}</code> para nombrar a la persona.{" "}
+                  {editing.modo === "dos_pasos"
+                    ? "El primer DM lleva un botón; al tocarlo se abre la conversación y llega la oferta con botón-link (mejor entrega y sin caer en spam)."
+                    : "El link va en el primer DM. Más simple, pero los links en solicitudes de mensaje se ven menos."}
+                </p>
+
+                {editing.modo === "dos_pasos" && (
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="col-span-2 space-y-1">
+                      <Label className="text-xs">Primer DM</Label>
+                      <Textarea rows={3} value={editing.mensaje_inicial} onChange={(e) => setEditing({ ...editing, mensaje_inicial: e.target.value })} />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Texto del botón (máx 20)</Label>
+                      <Input maxLength={20} value={editing.boton_texto} onChange={(e) => setEditing({ ...editing, boton_texto: e.target.value })} />
+                    </div>
+                  </div>
+                )}
+
+                <div className="space-y-1">
+                  <Label className="text-xs">Mensaje con la oferta</Label>
+                  <Textarea rows={4} value={editing.mensaje_oferta} onChange={(e) => setEditing({ ...editing, mensaje_oferta: e.target.value })} />
+                </div>
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="col-span-2 space-y-1">
+                    <Label className="text-xs">Link (landing, WhatsApp, checkout...)</Label>
+                    <Input value={editing.link_url ?? ""} onChange={(e) => setEditing({ ...editing, link_url: e.target.value })} placeholder="https://..." />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Texto botón link (máx 20)</Label>
+                    <Input maxLength={20} value={editing.link_titulo} onChange={(e) => setEditing({ ...editing, link_titulo: e.target.value })} />
+                  </div>
+                </div>
+                <div className="grid sm:grid-cols-2 gap-3">
+                  <div className="flex items-center justify-between gap-2 rounded-md border border-border/60 px-3 py-2">
+                    <Label className="text-xs">Agregar UTM al link (utm_source=instagram…)</Label>
+                    <Switch checked={editing.utm_activo} onCheckedChange={(v) => setEditing({ ...editing, utm_activo: v })} />
+                  </div>
+                  <div className="flex items-center justify-between gap-2 rounded-md border border-border/60 px-3 py-2">
+                    <Label className="text-xs">Rastrear clics (link corto propio, cuenta quién abre)</Label>
+                    <Switch checked={editing.rastrear_clics} onCheckedChange={(v) => setEditing({ ...editing, rastrear_clics: v })} />
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Respuestas públicas en el comentario (una por línea, se elige al azar; vacío = no responder)</Label>
+                  <Textarea
+                    rows={3}
+                    value={editing.respuestas_publicas.join("\n")}
+                    onChange={(e) => setEditing({ ...editing, respuestas_publicas: e.target.value.split("\n") })}
+                  />
+                </div>
+              </div>
+
+              {/* Ajustes */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label className="text-xs">Espera antes de responder (seg, 0–60)</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    max={60}
+                    value={editing.delay_segundos}
+                    onChange={(e) => setEditing({ ...editing, delay_segundos: Math.min(60, Math.max(0, Number(e.target.value) || 0)) })}
+                  />
+                </div>
+                <div className="flex items-center justify-between pt-5">
+                  <Label className="text-xs">Solo un DM por persona en esta campaña</Label>
+                  <Switch checked={editing.una_vez_por_usuario} onCheckedChange={(v) => setEditing({ ...editing, una_vez_por_usuario: v })} />
+                </div>
+              </div>
+
+              {/* Preview */}
+              <div className="rounded-lg bg-muted/40 p-3 text-xs space-y-2">
+                <p className="font-semibold">Vista previa del DM</p>
+                <div className="rounded-2xl bg-background px-3 py-2 w-fit max-w-[85%] whitespace-pre-wrap">
+                  {preview(editing.modo === "dos_pasos" ? editing.mensaje_inicial : editing.mensaje_oferta)}
+                  {editing.modo === "directo" && editing.link_url ? `\n\n👉 ${editing.link_url}` : ""}
+                </div>
+                {editing.modo === "dos_pasos" && (
+                  <>
+                    <span className="inline-block rounded-full border border-primary/50 px-3 py-1 text-primary">{editing.boton_texto}</span>
+                    <div className="rounded-2xl bg-background px-3 py-2 w-fit max-w-[85%] whitespace-pre-wrap">
+                      {preview(editing.mensaje_oferta)}
+                      {editing.link_url && (
+                        <div className="mt-2 rounded-md border border-border text-center py-1 text-primary">{editing.link_titulo}</div>
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
+
+              <div className="flex items-center justify-between">
+                <Label className="text-xs">Campaña activa</Label>
+                <Switch checked={editing.activa} onCheckedChange={(v) => setEditing({ ...editing, activa: v })} />
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditing(null)}>Cancelar</Button>
+            <Button className="gradient-button" onClick={saveCampaign} disabled={saving}>
+              {saving ? "Guardando..." : "Guardar"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}

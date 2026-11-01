@@ -125,7 +125,12 @@ export default function PresupuestoPublico() {
           body: JSON.stringify({
             presupuesto_id: presupuesto.id,
             numero: presupuesto.numero,
+            titulo: presupuesto.titulo,
+            total: presupuesto.total,
+            moneda: presupuesto.moneda,
+            cliente_nombre: cliente?.nombre || "",
             estado: nuevoEstado,
+            comentarios: comentarios,
             comentarios_cliente: comentarios,
             fecha_respuesta: new Date().toISOString(),
           }),

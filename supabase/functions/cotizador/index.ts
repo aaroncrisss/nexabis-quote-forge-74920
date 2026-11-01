@@ -1,16 +1,7 @@
 
-const ALLOWED_ORIGINS = [
-  'https://nexabistech.com',
-  'https://www.nexabistech.com',
-  'http://localhost:8080',
-  'http://localhost:5173',
-];
-
-function getCorsHeaders(req: Request) {
-  const origin = req.headers.get('origin') || '';
-  const allowedOrigin = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
+function getCorsHeaders(_req: Request) {
   return {
-    'Access-Control-Allow-Origin': allowedOrigin,
+    'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
   };
 }
@@ -448,6 +439,267 @@ REGLA DE ORO: **NUNCA** elimines módulos de la estimación principal por presup
 // HTTP HANDLER
 // ============================================================
 
+function normalizeServerText(text: string): string {
+  return (text || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+}
+
+const SERVER_PATTERNS: Array<{
+  rubros: string[];
+  keywords: string[];
+  nombre: string;
+  horas: number;
+  prioridad: number;
+  riesgo: 'bajo' | 'medio' | 'alto';
+  justificacion: string;
+}> = [
+  {
+    rubros: ['tecnologia', 'freelance', 'otro'],
+    keywords: ['login', 'autenticacion', 'registro', 'usuarios', 'roles', 'permisos', 'oauth'],
+    nombre: 'Autenticación, Gestión de Usuarios & Control de Roles (RBAC)',
+    horas: 9,
+    prioridad: 1,
+    riesgo: 'bajo',
+    justificacion: 'Implementación de inicio de sesión seguro, recuperación de credenciales y matriz de permisos por rol.',
+  },
+  {
+    rubros: ['tecnologia', 'marketing', 'educacion', 'salud', 'eventos', 'freelance'],
+    keywords: ['pago', 'pagos', 'pasarela', 'webpay', 'transbank', 'mercadopago', 'stripe', 'flow', 'checkout'],
+    nombre: 'Integración de Pasarela de Pagos & Conciliación Transaccional',
+    horas: 13,
+    prioridad: 1,
+    riesgo: 'medio',
+    justificacion: 'Integración con API de pasarela de pago, manejo de webhooks de confirmación y certificación en producción.',
+  },
+  {
+    rubros: ['tecnologia', 'marketing', 'diseno', 'freelance'],
+    keywords: ['tienda', 'ecommerce', 'e-commerce', 'carrito', 'catalogo', 'productos', 'pedidos'],
+    nombre: 'Motor de Catálogo, Carrito de Compras & Gestión de Pedidos',
+    horas: 16,
+    prioridad: 1,
+    riesgo: 'medio',
+    justificacion: 'Desarrollo de catálogo filtrable, persistencia de carrito, reglas de despacho y flujo de compra.',
+  },
+  {
+    rubros: ['tecnologia', 'consultoria', 'salud', 'educacion', 'freelance'],
+    keywords: ['admin', 'administrador', 'panel', 'backoffice', 'dashboard', 'reportes', 'metricas', 'kpi'],
+    nombre: 'Panel Administrativo (Backoffice) & Dashboard de Indicadores',
+    horas: 14,
+    prioridad: 2,
+    riesgo: 'bajo',
+    justificacion: 'Construcción de panel de control con mantenedores CRUD, filtros avanzados y exportación de reportes.',
+  },
+  {
+    rubros: ['tecnologia', 'marketing', 'salud', 'educacion', 'freelance'],
+    keywords: ['whatsapp', 'chatbot', 'bot', 'n8n', 'automatizacion', 'webhook', 'ia'],
+    nombre: 'Automatización Conversacional & Orquestación de Flujos (WhatsApp / API)',
+    horas: 15,
+    prioridad: 2,
+    riesgo: 'medio',
+    justificacion: 'Configuración de flujos automatizados de atención, captura de prospectos y conexión mediante webhooks.',
+  },
+  {
+    rubros: ['tecnologia', 'salud', 'educacion', 'consultoria', 'eventos'],
+    keywords: ['agenda', 'agendamiento', 'reservas', 'citas', 'calendario', 'turnos'],
+    nombre: 'Motor de Agendamiento Inteligente, Calendario & Recordatorios',
+    horas: 12,
+    prioridad: 1,
+    riesgo: 'medio',
+    justificacion: 'Gestión de disponibilidad horaria, prevención de topes y confirmaciones automáticas a clientes.',
+  },
+  {
+    rubros: ['construccion'],
+    keywords: ['radier', 'fundacion', 'fundaciones', 'hormigon', 'losa', 'demolicion', 'excavacion'],
+    nombre: 'Preparación de Terreno, Fundaciones & Hormigonado de Radier',
+    horas: 34,
+    prioridad: 1,
+    riesgo: 'medio',
+    justificacion: 'Nivelación, cama de ripio compactada, malla estructural y vaciado de hormigón vibrado.',
+  },
+  {
+    rubros: ['construccion'],
+    keywords: ['tabique', 'tabiqueria', 'muro', 'metalcon', 'volcanita', 'pintura', 'empaste', 'piso', 'porcelanato', 'ceramica'],
+    nombre: 'Tabiquería Estructural, Revestimientos de Piso/Muro & Terminaciones',
+    horas: 28,
+    prioridad: 1,
+    riesgo: 'bajo',
+    justificacion: 'Montaje de estructura, aislación termoacústica, colocación de revestimientos y pintura de terminación.',
+  },
+  {
+    rubros: ['construccion', 'energia'],
+    keywords: ['electrica', 'electricidad', 'tablero', 'iluminacion', 'sec', 'gasfiteria', 'sanitario', 'bano', 'aire acondicionado', 'split', 'solar', 'paneles'],
+    nombre: 'Instalaciones Técnicas Especializadas (Eléctrica SEC / Climatización / Sanitaria)',
+    horas: 24,
+    prioridad: 1,
+    riesgo: 'medio',
+    justificacion: 'Canalización normativa, montaje de equipos/artefactos, protecciones y pruebas de operación.',
+  },
+  {
+    rubros: ['diseno', 'marketing', 'audiovisual', 'freelance'],
+    keywords: ['branding', 'marca', 'logo', 'ux', 'ui', 'figma', 'campana', 'meta ads', 'google ads', 'redes sociales', 'seo', 'video', 'rodaje', 'dron'],
+    nombre: 'Desarrollo Creativo, Identidad Visual & Producción Digital / Audiovisual',
+    horas: 14,
+    prioridad: 1,
+    riesgo: 'bajo',
+    justificacion: 'Conceptualización gráfica, diseño de piezas maestras en alta resolución y optimización multicanal.',
+  },
+];
+
+function buildServerSmartFallback(payload: any) {
+  const tipoProyecto = payload?.tipoProyecto || 'Proyecto';
+  const rubro = normalizeServerText(payload?.rubro || 'tecnologia');
+  const descripcion = String(payload?.descripcion || '');
+  const funcionalidades = Array.isArray(payload?.funcionalidades) ? payload.funcionalidades : [];
+  const urgencia = normalizeServerText(payload?.urgencia || 'media');
+  const horasMaximas = payload?.horasMaximas ? Number(payload.horasMaximas) : undefined;
+  const extra = payload?.parametrosExtra || {};
+
+  const urgencyMult = urgencia === 'urgente' ? 1.22 : urgencia === 'alta' ? 1.14 : urgencia === 'baja' ? 0.94 : 1.0;
+  const searchPool = normalizeServerText(`${tipoProyecto} ${descripcion} ${funcionalidades.join(' ')}`);
+
+  const modulos: any[] = [
+    {
+      nombre: `Arquitectura, Planificación Técnica & Diseño Base (${tipoProyecto})`,
+      descripcion: `Definición técnica, estructura principal y diseño para ${tipoProyecto}.`,
+      horasEstimadas: Math.max(4, Math.round(9 * urgencyMult)),
+      prioridad: 1,
+      nivelRiesgo: 'bajo',
+      justificacion: `Levantamiento técnico detallado, estructuración de componentes y diseño inicial para ${tipoProyecto}.`,
+    },
+  ];
+
+  for (const pat of SERVER_PATTERNS) {
+    if (pat.keywords.some((kw) => searchPool.includes(kw))) {
+      modulos.push({
+        nombre: pat.nombre,
+        descripcion: pat.justificacion,
+        horasEstimadas: Math.max(4, Math.round(pat.horas * urgencyMult)),
+        prioridad: pat.prioridad,
+        nivelRiesgo: pat.riesgo,
+        justificacion: `${pat.justificacion} Adaptado al alcance de ${tipoProyecto}.`,
+      });
+    }
+  }
+
+  if (modulos.length < 3) {
+    modulos.push({
+      nombre: `Desarrollo & Ejecución Core — ${tipoProyecto}`,
+      descripcion: 'Implementación de los flujos y partidas centrales descritas en el requerimiento.',
+      horasEstimadas: Math.max(8, Math.round(17 * urgencyMult)),
+      prioridad: 1,
+      nivelRiesgo: 'medio',
+      justificacion: `Construcción e implementación del núcleo operativo de ${tipoProyecto} según especificaciones.`,
+    });
+  }
+
+  funcionalidades.forEach((f: string, idx: number) => {
+    const prio = idx < 2 ? 2 : idx < 4 ? 3 : 4;
+    modulos.push({
+      nombre: `Módulo Especializado: ${f}`,
+      descripcion: `Implementación e integración de ${f}.`,
+      horasEstimadas: Math.max(4, Math.round(8 * urgencyMult)),
+      prioridad: prio,
+      nivelRiesgo: prio === 2 ? 'medio' : 'bajo',
+      justificacion: `Desarrollo, integración y pruebas de validación para cubrir "${f}" dentro de ${tipoProyecto}.`,
+    });
+  });
+
+  if (modulos.length < 4) {
+    modulos.push({
+      nombre: `Gestión de Configuración, Integración & Optimización (${rubro})`,
+      descripcion: 'Ajustes de rendimiento, parametrización y validaciones cruzadas.',
+      horasEstimadas: Math.max(4, Math.round(8 * urgencyMult)),
+      prioridad: 3,
+      nivelRiesgo: 'bajo',
+      justificacion: 'Parametrización operativa y aseguramiento de estándares de rendimiento del proyecto.',
+    });
+  }
+
+  modulos.push({
+    nombre: 'Control de Calidad (QA), Pruebas Integrales & Puesta en Marcha',
+    descripcion: 'Validación integral, ajustes finales y entrega formal.',
+    horasEstimadas: Math.max(4, Math.round(6 * urgencyMult)),
+    prioridad: 2,
+    nivelRiesgo: 'bajo',
+    justificacion: 'Revisión exhaustiva de entregables, pruebas en escenario real y puesta en marcha asistida.',
+  });
+
+  const fixedKeys: Array<[string, string]> = [
+    ['costo_materiales', 'Provisión de Materiales e Insumos de Obra'],
+    ['costo_equipos', 'Suministro de Equipamiento e Inversores / Hardware'],
+    ['costos_servicios', 'Servicios Externos e Impresión'],
+    ['insumos_medicos', 'Insumos Clínicos y Materiales'],
+    ['arriendo_equipos', 'Arriendo de Equipos y Plataforma'],
+    ['costo_arriendo_banquetera', 'Arriendo de Local y Banquetería'],
+    ['arriendo_equipos_locacion', 'Arriendo de Equipos y Locación'],
+  ];
+
+  for (const [k, label] of fixedKeys) {
+    const val = Number(String(extra[k] || '').replace(/[^\d.]/g, ''));
+    if (!isNaN(val) && val > 0) {
+      modulos.push({
+        nombre: label,
+        descripcion: label,
+        horasEstimadas: 0,
+        costoFijo: val,
+        cantidad: 1,
+        prioridad: 1,
+        nivelRiesgo: 'bajo',
+        justificacion: `Costo directo ($${val.toLocaleString('es-CL')} CLP) declarado en los parámetros del rubro.`,
+      });
+    }
+  }
+
+  const horasTotales = modulos.reduce((s, m) => s + (m.horasEstimadas || 0), 0);
+  const excede = Boolean(horasMaximas && horasTotales > horasMaximas);
+  const recomendados = excede
+    ? modulos.filter((m) => m.prioridad <= 2).map((m) => m.nombre)
+    : modulos.map((m) => m.nombre);
+  const excluidos = excede
+    ? modulos.filter((m) => m.prioridad > 2).map((m) => m.nombre)
+    : [];
+  const horasAjustadas = modulos
+    .filter((m) => recomendados.includes(m.nombre))
+    .reduce((s, m) => s + (m.horasEstimadas || 0), 0);
+
+  return {
+    complejidad: horasTotales >= 70 || funcionalidades.length >= 4 ? 'alta' : horasTotales >= 35 ? 'media' : 'baja',
+    horasTotales,
+    rangoSemanas: {
+      min: Math.max(1, Math.ceil(horasTotales / 30)),
+      max: Math.max(2, Math.ceil(horasTotales / 20)),
+    },
+    nivelConfianza: descripcion.length > 40 ? 'alto' : 'medio',
+    modulos,
+    riesgosClave: [
+      'Incorporación de requerimientos adicionales no contemplados en la definición inicial del alcance.',
+      'Tiempos de entrega de insumos, credenciales, accesos o validaciones por parte del cliente.',
+      urgencia === 'alta' || urgencia === 'urgente'
+        ? 'Cronograma acelerado: requiere aprobación rápida de entregables en cada hito.'
+        : 'Coordinación técnica con servicios, proveedores o infraestructura preexistente.',
+      'Cambios en reglas operativas una vez iniciada la fase de ejecución.',
+    ],
+    suposiciones: [
+      'El cliente designará una contraparte con disponibilidad para validar avances semanalmente.',
+      'Los accesos, contenidos e insumos base serán provistos oportunamente al inicio del proyecto.',
+      'Incluye hasta 2 rondas de revisiones y ajustes menores sobre los entregables definidos.',
+      'Los trabajos se ejecutarán en jornada hábil estándar según planificación acordada.',
+    ],
+    ajustePresupuesto: {
+      excedePresupuesto: excede,
+      modulosRecomendados: recomendados,
+      modulosExcluidos: excluidos,
+      horasAjustadas,
+      mensajeAjuste: excede
+        ? `El proyecto completo requiere ${horasTotales}h, superando el tope de ${horasMaximas}h. Se sugiere abordar primero Fase 1 MVP (${horasAjustadas}h) con los módulos críticos y esenciales.`
+        : 'El proyecto se ajusta adecuadamente al presupuesto disponible.',
+    },
+    _fallback: true,
+  };
+}
+
 Deno.serve(async (req) => {
   const corsHeaders = getCorsHeaders(req);
 
@@ -455,15 +707,15 @@ Deno.serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
-  if (!GEMINI_API_KEY) {
-    return new Response(JSON.stringify({ error: 'GEMINI_API_KEY not configured' }), {
-      status: 500,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
-  }
-
   try {
-    const { tipoProyecto, descripcion, funcionalidades, urgencia, horasMaximas, rubro, parametrosExtra } = await req.json();
+    const body = await req.json();
+    const { tipoProyecto, descripcion, funcionalidades, urgencia, horasMaximas, rubro, parametrosExtra } = body;
+
+    if (!GEMINI_API_KEY) {
+      return new Response(JSON.stringify(buildServerSmartFallback(body)), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
 
     // Build rubro-aware system prompt
     const activeRubro = rubro || 'tecnologia';
@@ -522,12 +774,16 @@ Genera la estimación en formato JSON según la estructura requerida.`;
 
     if (!response.ok) {
       console.error('Gemini API Error:', data);
-      throw new Error(`Gemini API Error: ${JSON.stringify(data)}`);
+      return new Response(JSON.stringify(buildServerSmartFallback(body)), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
     }
 
     let textResponse = data.candidates?.[0]?.content?.parts?.[0]?.text;
     if (!textResponse) {
-      throw new Error('No content in Gemini response');
+      return new Response(JSON.stringify(buildServerSmartFallback(body)), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
     }
 
     // Clean up markdown code blocks if present

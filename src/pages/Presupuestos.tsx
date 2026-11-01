@@ -7,9 +7,25 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "react-router-dom";
-import { Eye, Trash2, Copy, Plus, Search, ExternalLink, Grid3x3, List, ArchiveRestore, KanbanSquare } from "lucide-react";
+import {
+  Eye,
+  Trash2,
+  Copy,
+  Plus,
+  Search,
+  ExternalLink,
+  Grid3x3,
+  List,
+  ArchiveRestore,
+  KanbanSquare,
+  FileText,
+  CheckCircle2,
+  Clock,
+  Download,
+} from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { KanbanBoard } from "@/components/presupuesto/KanbanBoard";
+import { EmptyState } from "@/components/ui/empty-state";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -44,11 +60,12 @@ const Presupuestos = () => {
     let filtered = [...presupuestos];
 
     if (searchTerm) {
-      filtered = filtered.filter((p) =>
-        p.titulo?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        p.numero?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        p.clientes?.nombre?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        p.clientes?.empresa?.toLowerCase().includes(searchTerm.toLowerCase())
+      filtered = filtered.filter(
+        (p) =>
+          p.titulo?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          p.numero?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          p.clientes?.nombre?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          p.clientes?.empresa?.toLowerCase().includes(searchTerm.toLowerCase())
       );
     }
 
@@ -61,7 +78,9 @@ const Presupuestos = () => {
 
   const loadPresupuestos = async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
       if (!user) return;
 
       const { data } = await supabase
@@ -85,22 +104,24 @@ const Presupuestos = () => {
 
       const { data: newPresupuesto, error: presupuestoError } = await supabase
         .from("presupuestos")
-        .insert([{
-          usuario_id: userData.user.id,
-          cliente_id: presupuesto.cliente_id,
-          titulo: `${presupuesto.titulo} (Copia)`,
-          numero: "TEMP",
-          moneda: presupuesto.moneda,
-          subtotal: presupuesto.subtotal,
-          descuento_tipo: presupuesto.descuento_tipo,
-          descuento_valor: presupuesto.descuento_valor,
-          descuento_total: presupuesto.descuento_total,
-          total: presupuesto.total,
-          validez_dias: presupuesto.validez_dias,
-          forma_pago: presupuesto.forma_pago,
-          terminos: presupuesto.terminos,
-          estado: "pendiente",
-        }])
+        .insert([
+          {
+            usuario_id: userData.user.id,
+            cliente_id: presupuesto.cliente_id,
+            titulo: `${presupuesto.titulo} (Copia)`,
+            numero: "", // Dispara trigger generate_presupuesto_numero en Postgres
+            moneda: presupuesto.moneda,
+            subtotal: presupuesto.subtotal,
+            descuento_tipo: presupuesto.descuento_tipo,
+            descuento_valor: presupuesto.descuento_valor,
+            descuento_total: presupuesto.descuento_total,
+            total: presupuesto.total,
+            validez_dias: presupuesto.validez_dias,
+            forma_pago: presupuesto.forma_pago,
+            terminos: presupuesto.terminos,
+            estado: "pendiente",
+          },
+        ])
         .select()
         .single();
 
@@ -139,85 +160,77 @@ const Presupuestos = () => {
     }
   };
 
-
-
   const handleConvertToProject = async (presupuesto: any) => {
     try {
       setLoading(true);
       const { data: userData } = await supabase.auth.getUser();
       if (!userData.user) return;
 
-      // 0. Fetch budget items to calculate hours
       const { data: items, error: itemsError } = await supabase
-        .from('items_presupuesto')
-        .select('*')
-        .eq('presupuesto_id', presupuesto.id);
+        .from("items_presupuesto")
+        .select("*")
+        .eq("presupuesto_id", presupuesto.id);
 
       if (itemsError) throw itemsError;
 
-      // Calculate total hours from items (assuming quantity = hours)
       const totalHoras = items?.reduce((acc, item) => acc + (item.cantidad || 0), 0) || 0;
-      // Calculate implied rate, default to 0 if hours is 0
-      const costoHoraImplicito = totalHoras > 0 ? (presupuesto.total / totalHoras) : 0;
+      const costoHoraImplicito = totalHoras > 0 ? presupuesto.total / totalHoras : 0;
 
-      // 1. Create Project
       const { data: proyecto, error: projError } = await supabase
-        .from('proyectos')
-        .insert([{
-          usuario_id: userData.user.id,
-          cliente_id: presupuesto.cliente_id,
-          nombre: presupuesto.titulo,
-          descripcion: `Proyecto generado a partir del presupuesto #${presupuesto.numero || 'S/N'}`,
-          tipo: 'Web', // Default type
-          presupuesto_cliente: presupuesto.total,
-          estado: 'activo'
-        }])
+        .from("proyectos")
+        .insert([
+          {
+            usuario_id: userData.user.id,
+            cliente_id: presupuesto.cliente_id,
+            nombre: presupuesto.titulo,
+            descripcion: `Proyecto generado a partir del presupuesto #${presupuesto.numero || "S/N"}`,
+            tipo: "Web",
+            presupuesto_cliente: presupuesto.total,
+            estado: "activo",
+          },
+        ])
         .select()
         .single();
 
       if (projError) throw projError;
 
-      // 2. Create Estimate
       const { data: estimacion, error: estError } = await supabase
-        .from('estimaciones')
-        .insert([{
-          proyecto_id: proyecto.id,
-          titulo: "Estimación Base (Desde Presupuesto)",
-          total_horas: totalHoras,
-          costo_total: presupuesto.total,
-          costo_hora: costoHoraImplicito,
-          es_elegida: true,
-          complejidad: 'media',
-          nivel_confianza: 'alto'
-        }])
+        .from("estimaciones")
+        .insert([
+          {
+            proyecto_id: proyecto.id,
+            titulo: "Estimación Base (Desde Presupuesto)",
+            total_horas: totalHoras,
+            costo_total: presupuesto.total,
+            costo_hora: costoHoraImplicito,
+            es_elegida: true,
+            complejidad: "media",
+            nivel_confianza: "alto",
+          },
+        ])
         .select()
         .single();
 
       if (estError) throw estError;
 
-      // 3. Create Modules from Items
       if (items && items.length > 0) {
-        const modulos = items.map(item => ({
+        const modulos = items.map((item) => ({
           estimacion_id: estimacion.id,
-          nombre: item.descripcion, // Using description as name
+          nombre: item.descripcion,
           descripcion: `Item del presupuesto: ${item.descripcion}`,
           horas_estimadas: item.cantidad || 0,
-          prioridad: 2, // Essential by default
-          estado: 'pendiente'
+          prioridad: 2,
+          estado: "pendiente",
         }));
 
-        const { error: modError } = await supabase
-          .from('modulos_estimacion')
-          .insert(modulos);
-
+        const { error: modError } = await supabase.from("modulos_estimacion").insert(modulos);
         if (modError) throw modError;
       }
 
-      // 4. Update Budget with Project Link
       const { error: updateError } = await supabase
-        .from('presupuestos')
+        .from("presupuestos")
         .update({ proyecto_id: proyecto.id })
-        .eq('id', presupuesto.id);
+        .eq("id", presupuesto.id);
 
       if (updateError) throw updateError;
 
@@ -226,9 +239,7 @@ const Presupuestos = () => {
         description: "El presupuesto se ha convertido en proyecto correctamente.",
       });
 
-      // Navigate to the new project
       navigate(`/proyectos/${proyecto.id}`);
-
     } catch (error: any) {
       console.error("Error converting to project:", error);
       toast({
@@ -241,27 +252,66 @@ const Presupuestos = () => {
     }
   };
 
+  const exportToCsv = () => {
+    if (filteredPresupuestos.length === 0) {
+      toast({
+        title: "Sin datos",
+        description: "No hay presupuestos para exportar con los filtros actuales.",
+      });
+      return;
+    }
+    const headers = ["Número", "Título", "Cliente", "Total", "Moneda", "Estado", "Fecha", "Vencimiento"];
+    const rows = filteredPresupuestos.map((p) => [
+      `"${p.numero || ""}"`,
+      `"${(p.titulo || "").replace(/"/g, '""')}"`,
+      `"${(p.clientes?.empresa || p.clientes?.nombre || "").replace(/"/g, '""')}"`,
+      p.total || 0,
+      `"${p.moneda || "CLP"}"`,
+      `"${p.estado || "pendiente"}"`,
+      `"${p.fecha || ""}"`,
+      `"${p.fecha_vencimiento || ""}"`,
+    ]);
+    const csvContent =
+      "data:text/csv;charset=utf-8,\uFEFF" + [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `nexabis-presupuestos-${new Date().toISOString().split("T")[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    toast({
+      title: "Exportación completada",
+      description: "Se ha descargado el archivo CSV con tus presupuestos.",
+    });
+  };
+
   const handleDelete = async () => {
     if (!deleteId) return;
 
     try {
-      const { error } = await supabase
-        .from("presupuestos")
-        .delete()
-        .eq("id", deleteId);
+      // 1. Desvincular facturas y pagos asociados a este presupuesto
+      await supabase.from("facturas").update({ presupuesto_id: null }).eq("presupuesto_id", deleteId);
+      await supabase.from("pagos").update({ presupuesto_id: null }).eq("presupuesto_id", deleteId);
+
+      // 2. Eliminar items de este presupuesto
+      await supabase.from("items_presupuesto").delete().eq("presupuesto_id", deleteId);
+
+      // 3. Eliminar el presupuesto
+      const { error } = await supabase.from("presupuestos").delete().eq("id", deleteId);
 
       if (error) throw error;
 
       toast({
         title: "Presupuesto eliminado",
-        description: "El presupuesto se ha eliminado correctamente",
+        description: "El presupuesto y sus items se han eliminado correctamente",
       });
 
       loadPresupuestos();
     } catch (error: any) {
       toast({
-        title: "Error",
-        description: error.message,
+        title: "Error al eliminar",
+        description: error.message || "Verifica dependencias del presupuesto",
         variant: "destructive",
       });
     } finally {
@@ -271,9 +321,8 @@ const Presupuestos = () => {
 
   const handleStatusChange = async (id: string, newStatus: string) => {
     try {
-      // Optimistic update
-      setPresupuestos(prev =>
-        prev.map(p => p.id === id ? { ...p, estado: newStatus } : p)
+      setPresupuestos((prev) =>
+        prev.map((p) => (p.id === id ? { ...p, estado: newStatus } : p))
       );
 
       const { error } = await supabase
@@ -282,7 +331,6 @@ const Presupuestos = () => {
         .eq("id", id);
 
       if (error) {
-        // Revert on error
         loadPresupuestos();
         throw error;
       }
@@ -311,40 +359,118 @@ const Presupuestos = () => {
 
   const getEstadoBadge = (estado: string) => {
     const badges = {
-      pendiente: <Badge className="bg-primary">Pendiente</Badge>,
-      aprobado: <Badge className="bg-accent text-accent-foreground">Aprobado</Badge>,
-      rechazado: <Badge variant="destructive">Rechazado</Badge>,
-      vencido: <Badge variant="secondary">Vencido</Badge>,
+      pendiente: <Badge className="bg-primary text-[10px] h-5">Pendiente</Badge>,
+      aprobado: <Badge className="bg-accent text-accent-foreground text-[10px] h-5">Aprobado</Badge>,
+      rechazado: (
+        <Badge variant="destructive" className="text-[10px] h-5">
+          Rechazado
+        </Badge>
+      ),
+      vencido: (
+        <Badge variant="secondary" className="text-[10px] h-5">
+          Vencido
+        </Badge>
+      ),
     };
     return badges[estado as keyof typeof badges] || null;
   };
 
+  const totalPresupuestos = presupuestos.length;
+  const aprobadosCount = presupuestos.filter((p) => p.estado === "aprobado").length;
+  const pendientesCount = presupuestos.filter((p) => p.estado === "pendiente").length;
+
   return (
     <DashboardLayout>
-      <div className="space-y-4 md:space-y-6">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div className="flex-1">
-            <h1 className="text-2xl md:text-3xl lg:text-4xl font-bold gradient-text">Presupuestos</h1>
-            <p className="text-sm md:text-base text-muted-foreground">Gestiona todos tus presupuestos</p>
+      <div className="space-y-4 animate-fade-in">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <h1 className="text-lg md:text-xl font-heading font-bold gradient-text flex items-center gap-2">
+              <FileText className="w-5 h-5 text-primary" />
+              Presupuestos
+            </h1>
+            <p className="text-xs text-muted-foreground mt-0.5">Gestiona todos tus presupuestos</p>
           </div>
-          <Button onClick={() => navigate("/crear")} variant="default" size="default" className="w-full sm:w-auto">
-            <Plus className="w-5 h-5 mr-2" />
-            Crear Nuevo
-          </Button>
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={exportToCsv}
+              className="h-8 text-xs px-3 border-border/80 hover:bg-card flex-1 sm:flex-none gap-1.5"
+              title="Exportar presupuestos a CSV"
+            >
+              <Download className="w-3.5 h-3.5 text-primary" />
+              Exportar CSV
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => navigate("/crear")}
+              className="h-8 text-xs px-3 gradient-button font-heading font-semibold gap-1.5 flex-1 sm:flex-none"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              Crear Nuevo
+            </Button>
+          </div>
         </div>
 
-        <div className="flex flex-col md:flex-row gap-3 md:gap-4">
+        {/* KPI Cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <Card className="p-3.5 border-primary/20 bg-primary/5 transition-all duration-200 hover:border-primary/40 hover:shadow-[0_4px_20px_-4px_rgba(255,92,92,0.15)]">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">
+                  Total Presupuestos
+                </p>
+                <p className="text-lg md:text-xl font-bold font-mono">{totalPresupuestos}</p>
+              </div>
+              <div className="p-2 rounded-lg bg-primary/10 text-primary">
+                <FileText className="w-4 h-4" />
+              </div>
+            </div>
+          </Card>
+          <Card className="p-3.5 border-emerald-500/20 bg-emerald-500/5 transition-all duration-200 hover:border-primary/40 hover:shadow-[0_4px_20px_-4px_rgba(255,92,92,0.15)]">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">
+                  Aprobados
+                </p>
+                <p className="text-lg md:text-xl font-bold font-mono text-emerald-400">
+                  {aprobadosCount}
+                </p>
+              </div>
+              <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-400">
+                <CheckCircle2 className="w-4 h-4" />
+              </div>
+            </div>
+          </Card>
+          <Card className="p-3.5 border-amber-500/20 bg-amber-500/5 transition-all duration-200 hover:border-primary/40 hover:shadow-[0_4px_20px_-4px_rgba(255,92,92,0.15)]">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">
+                  Pendientes
+                </p>
+                <p className="text-lg md:text-xl font-bold font-mono text-amber-400">
+                  {pendientesCount}
+                </p>
+              </div>
+              <div className="p-2 rounded-lg bg-amber-500/10 text-amber-400">
+                <Clock className="w-4 h-4" />
+              </div>
+            </div>
+          </Card>
+        </div>
+
+        <div className="flex flex-col sm:flex-row gap-2.5">
           <div className="flex-1 relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-3.5 h-3.5" />
             <Input
               placeholder="Buscar por número, empresa o nombre..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-10"
+              className="pl-9 h-8 text-xs md:text-sm"
             />
           </div>
           <Select value={estadoFilter} onValueChange={setEstadoFilter}>
-            <SelectTrigger className="w-full md:w-48">
+            <SelectTrigger className="w-full sm:w-44 h-8 text-xs">
               <SelectValue />
             </SelectTrigger>
             <SelectContent className="bg-card border-border z-50">
@@ -355,92 +481,113 @@ const Presupuestos = () => {
               <SelectItem value="vencido">Vencido</SelectItem>
             </SelectContent>
           </Select>
-          <div className="flex gap-2">
+          <div className="flex gap-1.5">
             <Button
               variant={viewMode === "grid" ? "default" : "outline"}
               size="icon"
+              className="h-8 w-8"
               onClick={() => setViewMode("grid")}
               title="Vista de cuadrícula"
             >
-              <Grid3x3 className="w-4 h-4" />
+              <Grid3x3 className="w-3.5 h-3.5" />
             </Button>
             <Button
               variant={viewMode === "list" ? "default" : "outline"}
               size="icon"
+              className="h-8 w-8"
               onClick={() => setViewMode("list")}
               title="Vista de lista"
             >
-              <List className="w-4 h-4" />
+              <List className="w-3.5 h-3.5" />
             </Button>
             <Button
               variant={viewMode === "kanban" ? "default" : "outline"}
               size="icon"
+              className="h-8 w-8"
               onClick={() => setViewMode("kanban")}
               title="Vista Kanban"
             >
-              <KanbanSquare className="w-4 h-4" />
+              <KanbanSquare className="w-3.5 h-3.5" />
             </Button>
           </div>
         </div>
 
         {loading ? (
-          <div className="text-center py-12">Cargando...</div>
+          <div className="text-center py-10 text-xs text-muted-foreground">Cargando presupuestos...</div>
         ) : filteredPresupuestos.length === 0 ? (
-          <Card className="p-8 md:p-12 text-center">
-            <p className="text-sm md:text-base text-muted-foreground mb-4">
-              {searchTerm || estadoFilter !== "todos" ? "No se encontraron presupuestos" : "No hay presupuestos aún"}
-            </p>
-            <Button onClick={() => navigate("/crear")} variant="default">
-              Crear tu primer presupuesto
-            </Button>
-          </Card>
+          searchTerm || estadoFilter !== "todos" ? (
+            <EmptyState
+              icon={Search}
+              title="Sin presupuestos encontrados"
+              description={`No hay presupuestos que coincidan con "${searchTerm || estadoFilter}". Prueba a cambiar los filtros o el término de búsqueda.`}
+              actionLabel="Restablecer filtros"
+              onAction={() => {
+                setSearchTerm("");
+                setEstadoFilter("todos");
+              }}
+            />
+          ) : (
+            <EmptyState
+              icon={FileText}
+              title="Aún no has generado presupuestos"
+              description="Crea propuestas comerciales transparentes y de alto impacto para tus clientes o genéralas con el cotizador inteligente."
+              actionLabel="Crear mi primer presupuesto"
+              onAction={() => navigate("/crear")}
+              secondaryActionLabel="Ir al Cotizador"
+              onSecondaryAction={() => navigate("/cotizador")}
+            />
+          )
         ) : viewMode === "grid" ? (
-          <div className="space-y-3 md:space-y-4">
+          <div className="space-y-3">
             {filteredPresupuestos.map((p) => (
-              <Card key={p.id} className="p-4 md:p-6 bg-card/50 border-primary/20 hover-glow transition-all">
-                <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4">
-                  <div className="flex-1 space-y-2">
-                    <div className="flex flex-wrap items-center gap-2 md:gap-3">
-                      <h3 className="font-bold text-base md:text-lg">{p.numero}</h3>
+              <Card
+                key={p.id}
+                className="p-4 bg-card/60 border-border/60 transition-all duration-200 hover:border-primary/40 hover:shadow-[0_4px_20px_-4px_rgba(255,92,92,0.15)]"
+              >
+                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+                  <div className="flex-1 space-y-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="font-bold font-mono text-sm md:text-base">{p.numero}</h3>
                       {getEstadoBadge(p.estado)}
                     </div>
-                    <p className="font-semibold text-sm md:text-base">{p.titulo}</p>
-                    <p className="text-xs md:text-sm text-muted-foreground">
-                      Cliente: {p.clientes?.empresa || p.clientes?.nombre}
-                    </p>
-                    <p className="text-xs md:text-sm text-muted-foreground">
-                      Fecha: {new Date(p.fecha).toLocaleDateString()} | Vence: {new Date(p.fecha_vencimiento).toLocaleDateString()}
+                    <p className="font-semibold text-sm">{p.titulo}</p>
+                    <p className="text-xs text-muted-foreground">
+                      Cliente: {p.clientes?.empresa || p.clientes?.nombre} · Fecha:{" "}
+                      {p.fecha ? new Date(p.fecha).toLocaleDateString("es-CL") : "Hoy"} | Vence:{" "}
+                      {p.fecha_vencimiento ? new Date(p.fecha_vencimiento).toLocaleDateString("es-CL") : "Sin vencimiento"}
                     </p>
                   </div>
-                  <div className="flex lg:flex-col items-center lg:items-end gap-3 lg:gap-3 w-full lg:w-auto">
-                    <p className="text-xl md:text-2xl font-bold gradient-text flex-1 lg:flex-none">
-                      {p.moneda === "USD" ? "$" : "$"} {Number(p.total).toLocaleString()} {p.moneda}
+                  <div className="flex lg:flex-col items-center lg:items-end justify-between gap-2 w-full lg:w-auto">
+                    <p className="text-base md:text-lg font-bold font-mono gradient-text">
+                      ${Number(p.total).toLocaleString()} {p.moneda}
                     </p>
-                    <div className="flex gap-2 flex-shrink-0">
+                    <div className="flex gap-1.5 flex-shrink-0">
                       <Button
                         size="sm"
                         variant="outline"
+                        className="h-7 w-7 p-0"
                         onClick={() => copyLink(p.token)}
                         title="Copiar enlace"
                       >
-                        <ExternalLink className="w-4 h-4" />
+                        <ExternalLink className="w-3.5 h-3.5" />
                       </Button>
                       <Button
                         size="sm"
                         variant="outline"
+                        className="h-7 w-7 p-0"
                         onClick={() => window.open(`/presupuesto/${p.token}`, "_blank")}
                         title="Ver presupuesto"
                       >
-                        <Eye className="w-4 h-4" />
+                        <Eye className="w-3.5 h-3.5" />
                       </Button>
                       <Button
                         size="sm"
                         variant="outline"
+                        className="h-7 w-7 p-0 hidden sm:inline-flex"
                         onClick={() => handleDuplicate(p)}
                         title="Duplicar"
-                        className="hidden sm:inline-flex"
                       >
-                        <Copy className="w-4 h-4" />
+                        <Copy className="w-3.5 h-3.5" />
                       </Button>
                       {!p.proyecto_id && (
                         <Button
@@ -448,19 +595,19 @@ const Presupuestos = () => {
                           variant="outline"
                           onClick={() => handleConvertToProject(p)}
                           title="Convertir a Proyecto"
-                          className="hidden sm:inline-flex text-blue-500 hover:text-blue-600 hover:bg-blue-50"
+                          className="h-7 w-7 p-0 hidden sm:inline-flex text-blue-500 hover:text-blue-600 hover:bg-blue-500/10"
                         >
-                          <ArchiveRestore className="w-4 h-4" />
+                          <ArchiveRestore className="w-3.5 h-3.5" />
                         </Button>
                       )}
                       <Button
                         size="sm"
                         variant="outline"
                         onClick={() => setDeleteId(p.id)}
-                        className="text-destructive hover:bg-destructive/10"
+                        className="h-7 w-7 p-0 text-destructive hover:bg-destructive/10"
                         title="Eliminar"
                       >
-                        <Trash2 className="w-4 h-4" />
+                        <Trash2 className="w-3.5 h-3.5" />
                       </Button>
                     </div>
                   </div>
@@ -470,60 +617,61 @@ const Presupuestos = () => {
           </div>
         ) : viewMode === "list" ? (
           <div className="space-y-2 overflow-x-auto">
-            <div className="min-w-[800px]">
+            <div className="min-w-[700px]">
               {filteredPresupuestos.map((p) => (
-                <Card key={p.id} className="p-4 bg-card/50 border-primary/20 hover-glow transition-all mb-2">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-4 md:gap-6 flex-1">
-                      <div className="min-w-[100px] md:min-w-[120px]">
-                        <p className="text-xs md:text-sm text-muted-foreground">Número</p>
-                        <p className="font-mono font-semibold text-sm md:text-base">{p.numero}</p>
+                <Card
+                  key={p.id}
+                  className="p-3.5 bg-card/60 border-border/60 transition-all duration-200 hover:border-primary/40 hover:shadow-[0_4px_20px_-4px_rgba(255,92,92,0.15)] mb-2"
+                >
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="flex items-center gap-4 flex-1">
+                      <div className="min-w-[100px]">
+                        <p className="text-[11px] text-muted-foreground">Número</p>
+                        <p className="font-mono font-semibold text-xs md:text-sm">{p.numero}</p>
                       </div>
                       <div className="flex-1">
-                        <p className="text-xs md:text-sm text-muted-foreground">Título</p>
-                        <p className="font-semibold text-sm md:text-base">{p.titulo}</p>
+                        <p className="text-[11px] text-muted-foreground">Título</p>
+                        <p className="font-semibold text-xs md:text-sm">{p.titulo}</p>
                       </div>
-                      <div className="min-w-[150px] md:min-w-[180px]">
-                        <p className="text-xs md:text-sm text-muted-foreground">Cliente</p>
-                        <p className="text-sm md:text-base">{p.clientes?.nombre}</p>
-                        {p.clientes?.empresa && (
-                          <p className="text-xs md:text-sm text-muted-foreground">{p.clientes.empresa}</p>
-                        )}
-                      </div>
-                      <div className="min-w-[100px] md:min-w-[120px]">
-                        <p className="text-xs md:text-sm text-muted-foreground">Total</p>
-                        <p className="font-semibold text-base md:text-lg">
-                          {p.moneda === "USD" ? "$" : "$"} {Number(p.total).toLocaleString()}
-                        </p>
+                      <div className="min-w-[140px]">
+                        <p className="text-[11px] text-muted-foreground">Cliente</p>
+                        <p className="text-xs md:text-sm">{p.clientes?.nombre}</p>
                       </div>
                       <div className="min-w-[100px]">
-                        {getEstadoBadge(p.estado)}
+                        <p className="text-[11px] text-muted-foreground">Total</p>
+                        <p className="font-semibold font-mono text-sm">
+                          ${Number(p.total).toLocaleString()}
+                        </p>
                       </div>
+                      <div className="min-w-[90px]">{getEstadoBadge(p.estado)}</div>
                     </div>
-                    <div className="flex gap-2">
+                    <div className="flex gap-1">
                       <Button
                         size="sm"
                         variant="ghost"
+                        className="h-7 w-7 p-0"
                         onClick={() => copyLink(p.token)}
                         title="Copiar enlace"
                       >
-                        <ExternalLink className="w-4 h-4" />
+                        <ExternalLink className="w-3.5 h-3.5" />
                       </Button>
                       <Button
                         size="sm"
                         variant="ghost"
+                        className="h-7 w-7 p-0"
                         onClick={() => window.open(`/presupuesto/${p.token}`, "_blank")}
                         title="Ver presupuesto"
                       >
-                        <Eye className="w-4 h-4" />
+                        <Eye className="w-3.5 h-3.5" />
                       </Button>
                       <Button
                         size="sm"
                         variant="ghost"
+                        className="h-7 w-7 p-0"
                         onClick={() => handleDuplicate(p)}
                         title="Duplicar"
                       >
-                        <Copy className="w-4 h-4" />
+                        <Copy className="w-3.5 h-3.5" />
                       </Button>
                       {!p.proyecto_id && (
                         <Button
@@ -531,19 +679,19 @@ const Presupuestos = () => {
                           variant="ghost"
                           onClick={() => handleConvertToProject(p)}
                           title="Convertir a Proyecto"
-                          className="text-blue-500 hover:text-blue-600 hover:bg-blue-50"
+                          className="h-7 w-7 p-0 text-blue-500 hover:text-blue-600 hover:bg-blue-500/10"
                         >
-                          <ArchiveRestore className="w-4 h-4" />
+                          <ArchiveRestore className="w-3.5 h-3.5" />
                         </Button>
                       )}
                       <Button
                         size="sm"
                         variant="ghost"
                         onClick={() => setDeleteId(p.id)}
-                        className="text-destructive hover:bg-destructive/10"
+                        className="h-7 w-7 p-0 text-destructive hover:bg-destructive/10"
                         title="Eliminar"
                       >
-                        <Trash2 className="w-4 h-4" />
+                        <Trash2 className="w-3.5 h-3.5" />
                       </Button>
                     </div>
                   </div>
@@ -552,7 +700,7 @@ const Presupuestos = () => {
             </div>
           </div>
         ) : viewMode === "kanban" ? (
-          <div className="mt-4">
+          <div className="mt-2">
             <KanbanBoard
               presupuestos={filteredPresupuestos}
               onStatusChange={handleStatusChange}
@@ -567,14 +715,20 @@ const Presupuestos = () => {
         <AlertDialog open={!!deleteId} onOpenChange={() => setDeleteId(null)}>
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>¿Eliminar presupuesto?</AlertDialogTitle>
-              <AlertDialogDescription>
-                Esta acción no se puede deshacer. El presupuesto y todos sus items serán eliminados permanentemente.
+              <AlertDialogTitle className="text-base font-heading">
+                ¿Eliminar presupuesto?
+              </AlertDialogTitle>
+              <AlertDialogDescription className="text-xs">
+                Esta acción no se puede deshacer. El presupuesto y todos sus items serán eliminados
+                permanentemente.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
-              <AlertDialogCancel>Cancelar</AlertDialogCancel>
-              <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground">
+              <AlertDialogCancel className="h-8 text-xs">Cancelar</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={handleDelete}
+                className="h-8 text-xs bg-destructive text-destructive-foreground"
+              >
                 Eliminar
               </AlertDialogAction>
             </AlertDialogFooter>

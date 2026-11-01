@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useNavigate, useLocation, Link } from "react-router-dom";
+import { useNavigate, useLocation, useSearchParams, Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
@@ -8,8 +8,9 @@ import { ClienteStep } from "@/components/presupuesto/ClienteStep";
 import { ItemsStep } from "@/components/presupuesto/ItemsStep";
 import { TermsStep } from "@/components/presupuesto/TermsStep";
 import { PreviewStep } from "@/components/presupuesto/PreviewStep";
-import { ArrowLeft, ArrowRight, Check, AlertTriangle, Sparkles } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, AlertTriangle, Sparkles, FileText } from "lucide-react";
 import { useSubscription } from "@/hooks/useSubscription";
+import DashboardLayout from "@/components/DashboardLayout";
 
 export interface PresupuestoItem {
   descripcion: string;
@@ -47,16 +48,17 @@ interface LocationState {
 export default function CrearPresupuesto() {
   const navigate = useNavigate();
   const location = useLocation();
+  const [searchParams] = useSearchParams();
   const { toast } = useToast();
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
   const { canCreate, getBlockMessage, loading: subLoading } = useSubscription();
 
-  // Check if coming from cotizador
   const locationState = location.state as LocationState | null;
+  const initialClienteId = searchParams.get("clienteId") || locationState?.clienteId || "";
 
   const [presupuesto, setPresupuesto] = useState<PresupuestoData>({
-    cliente_id: locationState?.clienteId || "",
+    cliente_id: initialClienteId,
     titulo: locationState?.titulo || "",
     items: locationState?.items || [],
     moneda: "CLP",
@@ -72,10 +74,8 @@ export default function CrearPresupuesto() {
     proyecto_id: locationState?.proyectoId || null,
   });
 
-  // Si viene del cotizador con datos, saltar al paso 2 (items)
   useEffect(() => {
     if (locationState?.fromCotizador && locationState.items && locationState.items.length > 0) {
-      // Si ya tiene cliente, ir directo a items
       if (locationState.clienteId) {
         setStep(2);
       }
@@ -91,12 +91,6 @@ export default function CrearPresupuesto() {
   };
 
   const calculateTotals = () => {
-    // Lógica solicitada por usuario:
-    // Subtotal = Suma de items
-    // IVA = 19% del Subtotal (Subtotal * 0.19)
-    // Neto = 81% del Subtotal (Subtotal * 0.81)
-    // Total Final = Subtotal - Descuento
-
     const subtotal = presupuesto.items.reduce((sum, item) => sum + item.total, 0);
     let descuento_total = 0;
 
@@ -115,7 +109,7 @@ export default function CrearPresupuesto() {
       descuento_total,
       iva_monto,
       neto,
-      total
+      total,
     };
   };
 
@@ -150,7 +144,6 @@ export default function CrearPresupuesto() {
         proyecto_id: presupuesto.proyecto_id || null,
       };
 
-
       const { data: presupuestoData, error: presupuestoError } = await supabase
         .from("presupuestos")
         .insert([payload])
@@ -174,18 +167,29 @@ export default function CrearPresupuesto() {
 
       if (itemsError) throw itemsError;
 
-      // Enviar webhook a n8n
       try {
+        const { data: cliData } = await supabase
+          .from("clientes")
+          .select("nombre, empresa, telefono, email")
+          .eq("id", presupuesto.cliente_id)
+          .maybeSingle();
+
         await fetch("https://myn8n.aaroncristech.cloud/webhook/presupuestos-nexabis", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             presupuesto_id: presupuestoData.id,
             numero: presupuestoData.numero,
+            titulo: presupuestoData.titulo,
             cliente_id: presupuesto.cliente_id,
+            cliente: cliData || null,
+            cliente_nombre: cliData?.nombre || "",
+            cliente_telefono: cliData?.telefono || "",
             total: total,
             moneda: presupuesto.moneda,
             estado: "pendiente",
+            link_publico: `${window.location.origin}/presupuesto/${presupuestoData.token}`,
+            enviar_whatsapp_cliente: true,
             fecha: new Date().toISOString(),
           }),
         });
@@ -203,7 +207,7 @@ export default function CrearPresupuesto() {
       console.error("Error completo al guardar:", error);
       toast({
         title: "Error al guardar (Detalles Técnicos)",
-        description: `Código: ${error.code} - Mensaje: ${error.message} - Detalles: ${error.details || 'N/A'}`,
+        description: `Código: ${error.code} - Mensaje: ${error.message} - Detalles: ${error.details || "N/A"}`,
         variant: "destructive",
         duration: 10000,
       });
@@ -227,129 +231,136 @@ export default function CrearPresupuesto() {
   ];
 
   return (
-    <div className="container mx-auto py-4 md:py-8 px-4 max-w-6xl">
-      {/* Subscription Gate */}
-      {!subLoading && !canCreate && (
-        <Card className="p-6 mb-6 border-destructive/50 bg-destructive/10">
-          <div className="flex flex-col sm:flex-row items-center gap-4">
-            <AlertTriangle className="w-8 h-8 text-destructive shrink-0" />
-            <div className="flex-1 text-center sm:text-left">
-              <p className="font-heading font-semibold text-destructive">No puedes crear presupuestos</p>
-              <p className="text-sm text-muted-foreground mt-1">{getBlockMessage()}</p>
-            </div>
-            <Link to="/suscripcion">
-              <Button className="bg-gradient-nexabis hover:opacity-90 gap-2 shrink-0">
-                <Sparkles className="w-4 h-4" />
-                Mejorar Plan
-              </Button>
-            </Link>
-          </div>
-        </Card>
-      )}
-      <div className="mb-6 md:mb-8">
-        <h1 className="text-2xl md:text-4xl font-bold gradient-text mb-2">Crear Nuevo Presupuesto</h1>
-        <div className="flex items-center gap-2 mb-2">
-          <p className="text-sm md:text-base text-muted-foreground">Complete los pasos para generar su presupuesto profesional</p>
-          {presupuesto.proyecto_id && (
-            <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">
-              🔗 Vinculado al Proyecto
-            </span>
-          )}
-        </div>
-      </div>
-
-      <div className="flex items-center justify-center mb-6 md:mb-8 gap-1 md:gap-2 overflow-x-auto">
-        {steps.map((s, idx) => (
-          <div key={s.number} className="flex items-center flex-shrink-0">
-            <div
-              className={`flex items-center gap-1 md:gap-2 px-2 md:px-4 py-2 rounded-lg transition-all ${step === s.number
-                ? "bg-gradient-to-r from-primary via-accent to-warning text-black"
-                : step > s.number
-                  ? "bg-primary/20 text-primary"
-                  : "bg-muted text-muted-foreground"
-                }`}
-            >
-              <div className="w-5 h-5 md:w-6 md:h-6 rounded-full bg-background/20 flex items-center justify-center font-bold text-xs md:text-sm">
-                {step > s.number ? <Check className="w-3 h-3 md:w-4 md:h-4" /> : s.number}
+    <DashboardLayout>
+      <div className="space-y-4 animate-fade-in">
+        {/* Subscription Gate */}
+        {!subLoading && !canCreate && (
+          <Card className="p-4 border-destructive/50 bg-destructive/10">
+            <div className="flex flex-col sm:flex-row items-center gap-3">
+              <AlertTriangle className="w-6 h-6 text-destructive shrink-0" />
+              <div className="flex-1 text-center sm:text-left">
+                <p className="text-sm font-heading font-semibold text-destructive">
+                  No puedes crear presupuestos
+                </p>
+                <p className="text-xs text-muted-foreground mt-0.5">{getBlockMessage()}</p>
               </div>
-              <span className="font-semibold text-xs md:text-sm hidden sm:inline">{s.title}</span>
+              <Link to="/suscripcion">
+                <Button size="sm" className="h-8 text-xs px-3 gradient-button gap-1.5 shrink-0">
+                  <Sparkles className="w-3.5 h-3.5" />
+                  Mejorar Plan
+                </Button>
+              </Link>
             </div>
-            {idx < steps.length - 1 && (
-              <div className="w-6 md:w-12 h-0.5 bg-muted mx-1 md:mx-2" />
+          </Card>
+        )}
+
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div>
+            <h1 className="text-lg md:text-xl font-heading font-bold gradient-text flex items-center gap-2">
+              <FileText className="w-5 h-5 text-primary" />
+              Crear Nuevo Presupuesto
+            </h1>
+            <div className="flex flex-wrap items-center gap-2 mt-0.5">
+              <p className="text-xs text-muted-foreground">
+                Completa los pasos para generar tu presupuesto profesional
+              </p>
+              {presupuesto.proyecto_id && (
+                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-blue-500/15 text-blue-400">
+                  🔗 Vinculado al Proyecto
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-center gap-1 md:gap-2 overflow-x-auto py-1">
+          {steps.map((s, idx) => (
+            <div key={s.number} className="flex items-center flex-shrink-0">
+              <div
+                className={`flex items-center gap-1.5 px-2.5 md:px-3.5 py-1.5 rounded-lg transition-all text-xs ${
+                  step === s.number
+                    ? "bg-gradient-to-r from-primary via-secondary to-accent text-white font-semibold shadow-sm"
+                    : step > s.number
+                    ? "bg-primary/20 text-primary"
+                    : "bg-muted text-muted-foreground"
+                }`}
+              >
+                <div className="w-5 h-5 rounded-full bg-background/20 flex items-center justify-center font-bold text-[11px]">
+                  {step > s.number ? <Check className="w-3 h-3" /> : s.number}
+                </div>
+                <span className="hidden sm:inline">{s.title}</span>
+              </div>
+              {idx < steps.length - 1 && <div className="w-4 md:w-10 h-0.5 bg-muted mx-1" />}
+            </div>
+          ))}
+        </div>
+
+        <Card className="p-4 bg-card/60 backdrop-blur border-primary/20 transition-all duration-200 hover:border-primary/40 hover:shadow-[0_4px_20px_-4px_rgba(255,92,92,0.15)]">
+          {step === 1 && (
+            <ClienteStep
+              clienteId={presupuesto.cliente_id}
+              titulo={presupuesto.titulo}
+              onUpdate={updatePresupuesto}
+            />
+          )}
+          {step === 2 && (
+            <ItemsStep
+              items={presupuesto.items}
+              moneda={presupuesto.moneda}
+              descuentoTipo={presupuesto.descuento_tipo}
+              descuentoValor={presupuesto.descuento_valor}
+              promocionAplicada={presupuesto.promocion_aplicada}
+              onUpdate={updatePresupuesto}
+              calculateTotals={calculateTotals}
+            />
+          )}
+          {step === 3 && (
+            <TermsStep
+              validezDias={presupuesto.validez_dias}
+              formaPago={presupuesto.forma_pago}
+              terminos={presupuesto.terminos}
+              notasTrabajo={presupuesto.notas_trabajo}
+              onUpdate={updatePresupuesto}
+            />
+          )}
+          {step === 4 && <PreviewStep presupuesto={presupuesto} totals={calculateTotals()} />}
+
+          <div className="flex flex-col sm:flex-row justify-between gap-2.5 mt-5 pt-4 border-t border-border/50">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => (step > 1 ? setStep(step - 1) : navigate("/presupuestos"))}
+              disabled={loading}
+              className="h-8 text-xs w-full sm:w-auto gap-1.5"
+            >
+              <ArrowLeft className="w-3.5 h-3.5" />
+              {step === 1 ? "Cancelar" : "Anterior"}
+            </Button>
+
+            {step < 4 ? (
+              <Button
+                size="sm"
+                onClick={() => setStep(step + 1)}
+                disabled={!canGoNext()}
+                className="h-8 text-xs px-3 gradient-button font-heading font-semibold gap-1.5 w-full sm:w-auto"
+              >
+                Siguiente
+                <ArrowRight className="w-3.5 h-3.5" />
+              </Button>
+            ) : (
+              <Button
+                size="sm"
+                onClick={handleSubmit}
+                disabled={loading}
+                className="h-8 text-xs px-3 gradient-button font-heading font-semibold gap-1.5 w-full sm:w-auto"
+              >
+                <Check className="w-3.5 h-3.5" />
+                {loading ? "Creando..." : "Crear Presupuesto"}
+              </Button>
             )}
           </div>
-        ))}
+        </Card>
       </div>
-
-      <Card className="p-4 md:p-6 bg-card/50 backdrop-blur border-primary/20">
-        {step === 1 && (
-          <ClienteStep
-            clienteId={presupuesto.cliente_id}
-            titulo={presupuesto.titulo}
-            onUpdate={updatePresupuesto}
-          />
-        )}
-        {step === 2 && (
-          <ItemsStep
-            items={presupuesto.items}
-            moneda={presupuesto.moneda}
-            descuentoTipo={presupuesto.descuento_tipo}
-            descuentoValor={presupuesto.descuento_valor}
-            promocionAplicada={presupuesto.promocion_aplicada}
-            onUpdate={updatePresupuesto}
-            calculateTotals={calculateTotals}
-          />
-        )}
-        {step === 3 && (
-          <TermsStep
-            validezDias={presupuesto.validez_dias}
-            formaPago={presupuesto.forma_pago}
-            terminos={presupuesto.terminos}
-            notasTrabajo={presupuesto.notas_trabajo}
-            onUpdate={updatePresupuesto}
-          />
-        )}
-        {step === 4 && (
-          <PreviewStep
-            presupuesto={presupuesto}
-            totals={calculateTotals()}
-          />
-        )}
-
-        <div className="flex flex-col sm:flex-row justify-between gap-3 mt-6 md:mt-8">
-          <Button
-            variant="outline"
-            onClick={() => step > 1 ? setStep(step - 1) : navigate("/presupuestos")}
-            disabled={loading}
-            className="w-full sm:w-auto"
-          >
-            <ArrowLeft className="w-4 h-4 mr-2" />
-            {step === 1 ? "Cancelar" : "Anterior"}
-          </Button>
-
-          {step < 4 ? (
-            <Button
-              onClick={() => setStep(step + 1)}
-              disabled={!canGoNext()}
-              variant="default"
-              className="w-full sm:w-auto"
-            >
-              Siguiente
-              <ArrowRight className="w-4 h-4 ml-2" />
-            </Button>
-          ) : (
-            <Button
-              onClick={handleSubmit}
-              disabled={loading}
-              variant="default"
-              className="w-full sm:w-auto"
-            >
-              <Check className="w-4 h-4 mr-2" />
-              {loading ? "Creando..." : "Crear Presupuesto"}
-            </Button>
-          )}
-        </div>
-      </Card>
-    </div>
+    </DashboardLayout>
   );
 }

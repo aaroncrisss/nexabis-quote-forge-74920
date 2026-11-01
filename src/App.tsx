@@ -6,6 +6,7 @@ import ErrorBoundary from "@/components/ErrorBoundary";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import ProtectedRoute from "./components/ProtectedRoute";
+import DashboardLayout from "./components/DashboardLayout";
 import { supabase } from "@/integrations/supabase/client";
 
 // Lazy-loaded pages for code splitting
@@ -33,6 +34,7 @@ const Tareas = lazy(() => import("./pages/Tareas"));
 const Facturas = lazy(() => import("./pages/Facturas"));
 const Contratos = lazy(() => import("./pages/Contratos"));
 const Reportes = lazy(() => import("./pages/Reportes"));
+const Instagram = lazy(() => import("./pages/Instagram"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 
 const queryClient = new QueryClient();
@@ -46,7 +48,6 @@ const PageLoader = () => (
   </div>
 );
 
-// Auto-redirect to /dashboard if user is already logged in
 function SmartLanding() {
   const [checking, setChecking] = useState(true);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -72,30 +73,46 @@ const App = () => (
         <BrowserRouter>
           <Suspense fallback={<PageLoader />}>
             <Routes>
+              {/* Public Routes */}
               <Route path="/" element={<SmartLanding />} />
               <Route path="/login" element={<Login />} />
               <Route path="/register" element={<Register />} />
-              <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-              <Route path="/presupuestos" element={<ProtectedRoute><Presupuestos /></ProtectedRoute>} />
-              <Route path="/clientes" element={<ProtectedRoute><Clientes /></ProtectedRoute>} />
-              <Route path="/clientes/:id" element={<ProtectedRoute><ClienteDetalle /></ProtectedRoute>} />
-              <Route path="/proyectos" element={<ProtectedRoute><Proyectos /></ProtectedRoute>} />
-              <Route path="/pipeline" element={<ProtectedRoute><Pipeline /></ProtectedRoute>} />
-              <Route path="/tareas" element={<ProtectedRoute><Tareas /></ProtectedRoute>} />
-              <Route path="/espacio" element={<ProtectedRoute><Espacio /></ProtectedRoute>} />
-              <Route path="/pagos" element={<ProtectedRoute><Pagos /></ProtectedRoute>} />
-              <Route path="/facturas" element={<ProtectedRoute><Facturas /></ProtectedRoute>} />
-              <Route path="/contratos" element={<ProtectedRoute><Contratos /></ProtectedRoute>} />
-              <Route path="/reportes" element={<ProtectedRoute><Reportes /></ProtectedRoute>} />
-              <Route path="/cotizador" element={<ProtectedRoute><Cotizador /></ProtectedRoute>} />
-              <Route path="/crear" element={<ProtectedRoute><CrearPresupuesto /></ProtectedRoute>} />
               <Route path="/presupuesto/:token" element={<PresupuestoPublico />} />
               <Route path="/comprobante/:token/:pagoNumero" element={<ComprobantePago />} />
-              <Route path="/configuracion" element={<ProtectedRoute><Configuracion /></ProtectedRoute>} />
-              <Route path="/proyectos/:id" element={<ProtectedRoute><ProyectoDetalle /></ProtectedRoute>} />
-              <Route path="/suscripcion" element={<ProtectedRoute><MiSuscripcion /></ProtectedRoute>} />
-              <Route path="/documentacion" element={<ProtectedRoute><Documentacion /></ProtectedRoute>} />
-              <Route path="/admin" element={<ProtectedRoute><AdminPanel /></ProtectedRoute>} />
+
+              {/* Protected App Routes wrapped in persistent DashboardLayout shell */}
+              <Route
+                element={
+                  <ProtectedRoute>
+                    <DashboardLayout />
+                  </ProtectedRoute>
+                }
+              >
+                <Route path="/dashboard" element={<Dashboard />} />
+                <Route path="/presupuestos" element={<Presupuestos />} />
+                <Route path="/clientes" element={<Clientes />} />
+                <Route path="/clientes/:id" element={<ClienteDetalle />} />
+                <Route path="/proyectos" element={<Proyectos />} />
+                <Route path="/pipeline" element={<Pipeline />} />
+                <Route path="/instagram" element={<Instagram />} />
+                <Route path="/tareas" element={<Tareas initialView="kanban" />} />
+                <Route path="/roadmap" element={<Tareas initialView="roadmap" />} />
+                <Route path="/rompelineas" element={<Tareas initialView="breakers" />} />
+                <Route path="/feedback" element={<Tareas initialView="fb" />} />
+                <Route path="/espacio" element={<Espacio />} />
+                <Route path="/pagos" element={<Pagos />} />
+                <Route path="/facturas" element={<Facturas />} />
+                <Route path="/contratos" element={<Contratos />} />
+                <Route path="/reportes" element={<Reportes />} />
+                <Route path="/cotizador" element={<Cotizador />} />
+                <Route path="/crear" element={<CrearPresupuesto />} />
+                <Route path="/configuracion" element={<Configuracion />} />
+                <Route path="/proyectos/:id" element={<ProyectoDetalle />} />
+                <Route path="/suscripcion" element={<MiSuscripcion />} />
+                <Route path="/documentacion" element={<Documentacion />} />
+                <Route path="/admin" element={<AdminPanel />} />
+              </Route>
+
               <Route path="*" element={<NotFound />} />
             </Routes>
           </Suspense>
@@ -106,4 +123,3 @@ const App = () => (
 );
 
 export default App;
-

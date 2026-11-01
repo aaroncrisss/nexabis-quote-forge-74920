@@ -13,6 +13,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useSubscription } from "@/hooks/useSubscription";
 import { INDUSTRY_FIELDS } from "@/config/industryFields";
+import { estimarProyecto } from "@/lib/cotizadorEngine";
 import {
   Calculator,
   Plus,
@@ -31,7 +32,10 @@ import {
   EyeOff,
   Save,
   BookOpen,
-  Info
+  Info,
+  Settings,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 
 interface Modulo {
@@ -107,10 +111,29 @@ const Cotizador = () => {
   // UI state
   const [mostrarAjuste, setMostrarAjuste] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [loadingStep, setLoadingStep] = useState(0);
   const [estimacion, setEstimacion] = useState<Estimacion | null>(null);
   const [costoPorHora, setCostoPorHora] = useState(25000); // CLP por defecto
   const [presupuestoCliente, setPresupuestoCliente] = useState<string>("");
   const [proyecto, setProyecto] = useState<any>(null); // Track saved project
+  const [showAdvancedSettings, setShowAdvancedSettings] = useState(false);
+
+  const LOADING_STEPS = [
+    "1/3 Analizando requerimientos del proyecto...",
+    "2/3 Calculando módulos, horas y costos fijos...",
+    "3/3 Evaluando matriz de riesgos y factibilidad...",
+  ];
+
+  useEffect(() => {
+    if (!isLoading) {
+      setLoadingStep(0);
+      return;
+    }
+    const interval = setInterval(() => {
+      setLoadingStep((prev) => (prev < LOADING_STEPS.length - 1 ? prev + 1 : prev));
+    }, 370);
+    return () => clearInterval(interval);
+  }, [isLoading]);
 
   useEffect(() => {
     loadClientes();
@@ -184,54 +207,24 @@ const Cotizador = () => {
     }
 
     try {
-      // Llamar al endpoint de tu Supabase Self-Hosted
-      const response = await fetch(
-        "https://supabase.nexabistech.com/functions/v1/cotizador",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            tipoProyecto,
-            descripcion,
-            funcionalidades,
-            urgencia: urgencia || "media",
-            horasMaximas,
-            rubro: rubro || "tecnologia",
-            parametrosExtra: extraInputs
-          }),
-        }
-      );
+      const { data, source } = await estimarProyecto({
+        tipoProyecto,
+        descripcion,
+        funcionalidades,
+        urgencia: urgencia || "media",
+        horasMaximas,
+        costoPorHora,
+        presupuestoCliente: presupuestoCliente ? Number(presupuestoCliente) : undefined,
+        rubro: rubro || "tecnologia",
+        parametrosExtra: extraInputs,
+      });
 
-      const data = await response.json();
-
-      if (!response.ok) {
-        console.error("Function error:", data);
-        toast.error(data.error || "Error al generar la estimación");
-        return;
-      }
-
-      if (data?.error) {
-        toast.error(data.error);
-        return;
-      }
-
-      // The Edge Function returns the estimation object directly, not wrapped in an "estimacion" key
-      if (data && data.modulos) {
-        setEstimacion(data);
-        toast.success("Estimación generada exitosamente");
-      } else if (data?.estimacion) {
-        // Fallback for backward compatibility if we change the backend structure
-        setEstimacion(data.estimacion);
-        toast.success("Estimación generada exitosamente");
-      } else {
-        console.error("Respuesta inesperada:", data);
-        toast.error("Formato de respuesta inválido");
-      }
+      setEstimacion(data as any);
+      setProyecto(null);
+      toast.success("✨ Estimación generada exitosamente");
     } catch (err) {
       console.error("Error:", err);
-      toast.error("Error de conexión");
+      toast.error("Error al generar la estimación");
     } finally {
       setIsLoading(false);
     }
@@ -286,8 +279,8 @@ const Cotizador = () => {
       // For this change, we'll use the existing 'tipoProyecto' and 'urgencia' for context if 'nombreProyecto' and 'urgency' are not defined.
       // If 'nombreProyecto' and 'urgency' are meant to be new variables, they should be declared.
       // As per instruction, I'm replacing with 'nombreProyecto' and 'urgency' directly.
-      const nombreProyecto = `Proyecto ${tipoProyecto} - ${new Date().toLocaleDateString()}`; // Placeholder, assuming it's derived or defined.
-      const urgency = urgencia; // Placeholder, assuming it's derived or defined.
+      const nombreProyecto = `Proyecto ${tipoProyecto} - ${new Date().toLocaleDateString("es-CL")}`;
+      const urgency = urgencia || "media";
 
       // 1. Crear el Proyecto
       const { data: proyecto, error: errorProyecto } = await supabase
@@ -313,6 +306,7 @@ const Cotizador = () => {
 
       // Usar la variable local actualizada para las siguientes operaciones
       const proy = proyecto;
+      const costoFijosTotal = estimacion.modulos.reduce((acc, m) => acc + (m.costoFijo || 0), 0);
 
       const { data: estCompleta, error: errorEstCompleta } = await supabase
         .from('estimaciones')
@@ -320,7 +314,7 @@ const Cotizador = () => {
           proyecto_id: proy.id,
           titulo: "Alcance Completo",
           total_horas: Math.ceil(estimacion.horasTotales), // Round up to match int column
-          costo_total: estimacion.horasTotales * costoPorHora,
+          costo_total: (estimacion.horasTotales * costoPorHora) + costoFijosTotal,
           costo_hora: costoPorHora, // Guardar el valor de la hora
           complejidad: estimacion.complejidad,
           nivel_confianza: estimacion.nivelConfianza,
@@ -370,6 +364,7 @@ const Cotizador = () => {
           estimacion.ajustePresupuesto?.modulosRecomendados.includes(m.nombre)
         );
         const horasMVP = modulosMVP.reduce((acc, m) => acc + m.horasEstimadas, 0);
+        const costoFijosMVP = modulosMVP.reduce((acc, m) => acc + (m.costoFijo || 0), 0);
 
         const { data: estMVP, error: errorEstMVP } = await supabase
           .from('estimaciones')
@@ -377,7 +372,7 @@ const Cotizador = () => {
             proyecto_id: proy.id,
             titulo: "MVP Sugerido (Ajustado a Presupuesto)",
             total_horas: Math.ceil(horasMVP), // Round up
-            costo_total: horasMVP * costoPorHora,
+            costo_total: (horasMVP * costoPorHora) + costoFijosMVP,
             costo_hora: costoPorHora, // Guardar costo hora también aquí
             complejidad: estimacion.complejidad,
             nivel_confianza: estimacion.nivelConfianza,
@@ -413,8 +408,7 @@ const Cotizador = () => {
         }
       }
 
-      toast.success("¡Proyecto guardado exitosamente!");
-      navigate(`/proyectos/${proy.id}`);
+      toast.success("¡Proyecto guardado! Ahora puedes crear el presupuesto vinculado o abrir el proyecto.");
 
     } catch (error: any) {
       console.error("Error al guardar proyecto:", error);
@@ -479,24 +473,24 @@ const Cotizador = () => {
     <DashboardLayout>
       <div className="space-y-4 md:space-y-6 max-w-6xl mx-auto">
         {/* Header */}
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
           <div>
-            <h1 className="text-2xl md:text-3xl lg:text-4xl font-bold gradient-text flex flex-wrap items-center gap-3">
-              <Sparkles className="w-7 h-7 md:w-8 md:h-8" />
+            <h1 className="text-lg md:text-xl font-heading font-bold gradient-text flex flex-wrap items-center gap-2.5">
+              <Sparkles className="w-5 h-5 text-primary" />
               Cotizador Inteligente AI
               {rubro && (
-                <Badge variant="outline" className="border-indigo-500 text-indigo-400 capitalize bg-indigo-500/10 px-3 py-1">
+                <Badge variant="outline" className="border-primary/40 text-primary capitalize bg-primary/10 px-2.5 py-0.5 text-xs">
                   Industria: {rubro}
                 </Badge>
               )}
             </h1>
-            <p className="text-sm md:text-base text-muted-foreground mt-1">
+            <p className="text-xs md:text-sm text-muted-foreground mt-0.5">
               Estima horas, complejidad y ajusta al presupuesto de tu cliente
             </p>
           </div>
           <div className="flex shrink-0">
             <Link to="/documentacion">
-              <Button variant="outline" className="gap-2 bg-background/50 backdrop-blur border-primary/20 hover:bg-primary/10 transition-colors">
+              <Button variant="outline" size="sm" className="gap-2 bg-background/50 backdrop-blur border-primary/20 hover:bg-primary/10 transition-colors">
                 <BookOpen className="w-4 h-4 text-primary" />
                 <span className="hidden sm:inline">Guía de Uso & Documentación</span>
                 <span className="sm:hidden">Guía</span>
@@ -506,10 +500,10 @@ const Cotizador = () => {
         </div>
 
         {/* AI Educational Alert */}
-        <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-3 flex gap-3 text-sm text-blue-200/90 items-start">
-          <Info className="w-5 h-5 text-blue-400 shrink-0 mt-0.5" />
+        <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-3 flex gap-2.5 text-xs md:text-sm text-blue-200/90 items-start">
+          <Info className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />
           <p>
-            <strong className="text-blue-300">Aviso Preliminar:</strong> Este cotizador utiliza Inteligencia Artificial (Gemini) para generar una estructura inicial y calcular tiempos basados en las mejores prácticas del mercado. Utilízalo para <strong>formar una base sólida</strong>, pero asegúrate de que un humano revise y edite los valores y el alcance antes de enviarlo oficialmente a producción o pactarlo con tu cliente.
+            <strong className="text-blue-300">Aviso Preliminar:</strong> Este cotizador analiza la estructura del requerimiento y calcula tiempos basados en las mejores prácticas de tu industria. Utilízalo para <strong>formar una base sólida</strong>, y revisa los valores y el alcance antes de enviarlo oficialmente a tu cliente.
           </p>
         </div>
 
@@ -517,13 +511,13 @@ const Cotizador = () => {
         {!subLoading && !canCreate && (
           <Card className="border-destructive/50 bg-destructive/10">
             <CardContent className="p-4 flex flex-col sm:flex-row items-center gap-4">
-              <AlertTriangle className="w-8 h-8 text-destructive shrink-0" />
+              <AlertTriangle className="w-6 h-6 text-destructive shrink-0" />
               <div className="flex-1 text-center sm:text-left">
-                <p className="font-heading font-semibold text-destructive">Cotizador no disponible</p>
-                <p className="text-sm text-muted-foreground mt-1">{getBlockMessage()}</p>
+                <p className="font-heading font-semibold text-sm text-destructive">Cotizador no disponible</p>
+                <p className="text-xs text-muted-foreground mt-1">{getBlockMessage()}</p>
               </div>
               <Link to="/suscripcion">
-                <Button className="bg-gradient-nexabis hover:opacity-90 gap-2 shrink-0">
+                <Button size="sm" className="bg-gradient-nexabis hover:opacity-90 gap-2 shrink-0">
                   <Sparkles className="w-4 h-4" />
                   Mejorar Plan
                 </Button>
@@ -532,19 +526,19 @@ const Cotizador = () => {
           </Card>
         )}
 
-        <div className="flex flex-col gap-6 max-w-4xl mx-auto">
+        <div className="flex flex-col gap-4 max-w-4xl mx-auto">
           {/* Form Section */}
           <Card className="glass-card border-primary/20">
-            <CardHeader className="p-4 md:p-6">
-              <CardTitle className="text-lg md:text-xl flex items-center gap-2">
-                <FileText className="w-5 h-5" />
+            <CardHeader className="p-4">
+              <CardTitle className="text-sm md:text-base font-heading font-semibold flex items-center gap-2">
+                <FileText className="w-4 h-4 text-primary" />
                 Datos del Proyecto
               </CardTitle>
-              <CardDescription className="text-xs md:text-sm">
+              <CardDescription className="text-xs">
                 Ingresa los requerimientos y el presupuesto disponible
               </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4 p-4 md:p-6 pt-0">
+            <CardContent className="space-y-4 p-4 pt-0">
               {/* Cliente */}
               <div>
                 <Label className="text-sm">Cliente (opcional)</Label>
@@ -646,31 +640,6 @@ const Cotizador = () => {
                 />
               </div>
 
-              {/* Presupuesto y Costo Hora */}
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label className="text-sm">
-                    {INDUSTRY_FIELDS[rubro || 'default']?.labels?.costoBase || "Costo Base Unitario (Por Hora, Día, etc.)"}
-                  </Label>
-                  <Input
-                    type="number"
-                    value={costoPorHora}
-                    onChange={(e) => setCostoPorHora(Number(e.target.value))}
-                    className="mt-1.5"
-                  />
-                </div>
-                <div>
-                  <Label className="text-sm">Presupuesto Cliente</Label>
-                  <Input
-                    type="number"
-                    value={presupuestoCliente}
-                    onChange={(e) => setPresupuestoCliente(e.target.value)}
-                    placeholder="Opcional"
-                    className="mt-1.5"
-                  />
-                </div>
-              </div>
-
               {/* Descripción */}
               <div>
                 <Label className="text-sm">
@@ -679,101 +648,145 @@ const Cotizador = () => {
                 <Textarea
                   value={descripcion}
                   onChange={(e) => setDescripcion(e.target.value)}
-                  placeholder="Describe lo que el cliente necesita, los objetivos del proyecto, funcionalidades principales, etc."
-                  className="mt-1.5 min-h-[120px]"
+                  placeholder="Describe lo que el cliente necesita, objetivos del proyecto, qué funcionalidades o alcance se espera..."
+                  className="mt-1.5 min-h-[100px]"
                 />
               </div>
 
-              {/* Campos Extra de la Industria */}
-              {rubro && INDUSTRY_FIELDS[rubro] && INDUSTRY_FIELDS[rubro].extraFields.length > 0 && (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-accent/5 p-4 rounded-lg border border-accent/20">
-                  <div className="col-span-full mb-1">
-                    <Label className="text-sm font-semibold text-primary flex items-center gap-2">
-                      <Sparkles className="w-4 h-4" />
-                      Parámetros Específicos: <span className="capitalize">{rubro}</span>
-                    </Label>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Estos datos ayudarán a la IA a calcular viáticos, materiales o estimaciones pre-fijadas con mayor precisión.
-                    </p>
+              {/* Collapsible Advanced Settings (Progressive Disclosure) */}
+              <div className="pt-2 border-t border-border/60">
+                <button
+                  type="button"
+                  onClick={() => setShowAdvancedSettings((v) => !v)}
+                  className="w-full flex items-center justify-between p-2.5 rounded-xl border border-border/70 bg-muted/30 hover:bg-muted/60 text-xs font-heading font-medium text-muted-foreground hover:text-foreground transition-all"
+                >
+                  <div className="flex items-center gap-2">
+                    <Settings className="w-3.5 h-3.5 text-primary" />
+                    <span>Ajustes Avanzados & Costos (Tarifa hora, Presupuesto límite, Urgencia)</span>
                   </div>
-                  {INDUSTRY_FIELDS[rubro].extraFields.map((field) => (
-                    <div key={field.id}>
-                      <Label className="text-sm">
-                        {field.label} {field.required ? "*" : ""}
-                      </Label>
-                      <Input
-                        type={field.type}
-                        placeholder={field.placeholder}
-                        required={field.required}
-                        value={extraInputs[field.id] || ""}
-                        onChange={(e) => setExtraInputs({ ...extraInputs, [field.id]: e.target.value })}
-                        className="mt-1.5"
-                      />
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* Funcionalidades */}
-              <div>
-                <Label className="text-sm">
-                  {INDUSTRY_FIELDS[rubro || 'default']?.labels?.funcionalidades || "Funcionalidades Específicas"}
-                </Label>
-                <div className="flex gap-2 mt-1.5">
-                  <Input
-                    value={nuevaFuncionalidad}
-                    onChange={(e) => setNuevaFuncionalidad(e.target.value)}
-                    placeholder="Ej: Sistema de login, carrito de compras..."
-                    onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addFuncionalidad())}
+                  <ChevronDown
+                    className={`w-3.5 h-3.5 transition-transform duration-200 ${
+                      showAdvancedSettings ? "rotate-180" : ""
+                    }`}
                   />
-                  <Button variant="outline" size="icon" onClick={addFuncionalidad}>
-                    <Plus className="w-4 h-4" />
-                  </Button>
-                </div>
-                {funcionalidades.length > 0 && (
-                  <div className="flex flex-wrap gap-2 mt-2">
-                    {funcionalidades.map((func, index) => (
-                      <Badge key={index} variant="secondary" className="gap-1 pr-1">
-                        {func}
-                        <button
-                          onClick={() => removeFuncionalidad(index)}
-                          className="ml-1 hover:bg-destructive/20 rounded-full p-0.5"
-                        >
-                          <X className="w-3 h-3" />
-                        </button>
-                      </Badge>
-                    ))}
+                </button>
+
+                {showAdvancedSettings && (
+                  <div className="space-y-4 pt-3.5 animate-fade-in">
+                    {/* Presupuesto y Costo Hora */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <Label className="text-sm">
+                          {INDUSTRY_FIELDS[rubro || 'default']?.labels?.costoBase || "Costo Base Unitario / Tarifa Hora"}
+                        </Label>
+                        <Input
+                          type="number"
+                          value={costoPorHora}
+                          onChange={(e) => setCostoPorHora(Number(e.target.value))}
+                          className="mt-1.5"
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-sm">Presupuesto Cliente (Tope máx opcional)</Label>
+                        <Input
+                          type="number"
+                          value={presupuestoCliente}
+                          onChange={(e) => setPresupuestoCliente(e.target.value)}
+                          placeholder="Ej: 1500000"
+                          className="mt-1.5"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Campos Extra de la Industria */}
+                    {rubro && INDUSTRY_FIELDS[rubro] && INDUSTRY_FIELDS[rubro].extraFields.length > 0 && (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-accent/5 p-3.5 rounded-xl border border-accent/20">
+                        <div className="col-span-full mb-1">
+                          <Label className="text-xs font-semibold text-primary flex items-center gap-1.5">
+                            <Sparkles className="w-3.5 h-3.5" />
+                            Parámetros Específicos: <span className="capitalize">{rubro}</span>
+                          </Label>
+                        </div>
+                        {INDUSTRY_FIELDS[rubro].extraFields.map((field) => (
+                          <div key={field.id}>
+                            <Label className="text-xs">
+                              {field.label} {field.required ? "*" : ""}
+                            </Label>
+                            <Input
+                              type={field.type}
+                              placeholder={field.placeholder}
+                              required={field.required}
+                              value={extraInputs[field.id] || ""}
+                              onChange={(e) => setExtraInputs({ ...extraInputs, [field.id]: e.target.value })}
+                              className="mt-1"
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Funcionalidades */}
+                    <div>
+                      <Label className="text-sm">
+                        {INDUSTRY_FIELDS[rubro || 'default']?.labels?.funcionalidades || "Funcionalidades Específicas"}
+                      </Label>
+                      <div className="flex gap-2 mt-1.5">
+                        <Input
+                          value={nuevaFuncionalidad}
+                          onChange={(e) => setNuevaFuncionalidad(e.target.value)}
+                          placeholder="Ej: Login con Google, Pasarela de pagos..."
+                          onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addFuncionalidad())}
+                        />
+                        <Button variant="outline" size="icon" onClick={addFuncionalidad}>
+                          <Plus className="w-4 h-4" />
+                        </Button>
+                      </div>
+                      {funcionalidades.length > 0 && (
+                        <div className="flex flex-wrap gap-2 mt-2">
+                          {funcionalidades.map((func, index) => (
+                            <Badge key={index} variant="secondary" className="gap-1 pr-1">
+                              {func}
+                              <button
+                                onClick={() => removeFuncionalidad(index)}
+                                className="ml-1 hover:bg-destructive/20 rounded-full p-0.5"
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+                            </Badge>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Urgencia */}
+                    <div>
+                      <Label className="text-sm">Nivel de Urgencia</Label>
+                      <Select value={urgencia} onValueChange={setUrgencia}>
+                        <SelectTrigger className="mt-1.5">
+                          <SelectValue placeholder="Seleccionar urgencia" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {NIVELES_URGENCIA.map((nivel) => (
+                            <SelectItem key={nivel.value} value={nivel.value}>
+                              {nivel.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
                   </div>
                 )}
-              </div>
-
-              {/* Urgencia */}
-              <div>
-                <Label className="text-sm">Nivel de Urgencia</Label>
-                <Select value={urgencia} onValueChange={setUrgencia}>
-                  <SelectTrigger className="mt-1.5">
-                    <SelectValue placeholder="Seleccionar urgencia" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {NIVELES_URGENCIA.map((nivel) => (
-                      <SelectItem key={nivel.value} value={nivel.value}>
-                        {nivel.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
               </div>
 
               <Button
                 onClick={handleEstimar}
                 disabled={isLoading || !tipoProyecto || !descripcion}
                 className="w-full gradient-button gap-2"
-                size="lg"
               >
                 {isLoading ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    Analizando con IA...
+                    {LOADING_STEPS[loadingStep]}
                   </>
                 ) : (
                   <>
@@ -789,12 +802,21 @@ const Cotizador = () => {
           <div className="space-y-4">
             {isLoading && (
               <Card className="glass-card border-primary/20">
-                <CardContent className="p-8 flex flex-col items-center justify-center text-center">
-                  <Loader2 className="w-12 h-12 animate-spin text-primary mb-4" />
-                  <p className="text-lg font-medium">Analizando requerimientos...</p>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    Gemini está procesando la información
+                <CardContent className="p-6 flex flex-col items-center justify-center text-center">
+                  <Loader2 className="w-8 h-8 animate-spin text-primary mb-3" />
+                  <p className="text-sm md:text-base font-heading font-semibold text-foreground transition-all">
+                    {LOADING_STEPS[loadingStep]}
                   </p>
+                  <div className="flex items-center gap-1.5 mt-3">
+                    {LOADING_STEPS.map((_, idx) => (
+                      <span
+                        key={idx}
+                        className={`h-1.5 rounded-full transition-all duration-300 ${
+                          idx <= loadingStep ? "w-8 bg-primary" : "w-3 bg-muted"
+                        }`}
+                      />
+                    ))}
+                  </div>
                 </CardContent>
               </Card>
             )}
@@ -803,10 +825,10 @@ const Cotizador = () => {
               <>
                 {/* Summary Card */}
                 <Card className="glass-card border-primary/20">
-                  <CardHeader className="p-4 md:p-6">
-                    <CardTitle className="text-lg md:text-xl flex items-center justify-between">
+                  <CardHeader className="p-4">
+                    <CardTitle className="text-sm md:text-base font-heading font-semibold flex items-center justify-between">
                       <span className="flex items-center gap-2">
-                        <Zap className="w-5 h-5" />
+                        <Zap className="w-4 h-4 text-primary" />
                         Resumen de Estimación
                       </span>
                       <Badge className={getComplejidadColor(estimacion.complejidad)}>
@@ -814,25 +836,25 @@ const Cotizador = () => {
                       </Badge>
                     </CardTitle>
                   </CardHeader>
-                  <CardContent className="p-4 md:p-6 pt-0 space-y-4">
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="text-center p-4 bg-primary/10 rounded-lg">
-                        <Clock className="w-6 h-6 mx-auto mb-2 text-primary" />
-                        <p className="text-2xl md:text-3xl font-bold">{estimacion.horasTotales}</p>
-                        <p className="text-xs md:text-sm text-muted-foreground">Horas totales</p>
+                  <CardContent className="p-4 pt-0 space-y-4">
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="text-center p-3.5 bg-primary/10 rounded-lg">
+                        <Clock className="w-5 h-5 mx-auto mb-1.5 text-primary" />
+                        <p className="text-xl md:text-2xl font-bold font-mono">{estimacion.horasTotales}</p>
+                        <p className="text-xs text-muted-foreground">Horas totales</p>
                       </div>
-                      <div className="text-center p-4 bg-secondary/50 rounded-lg">
-                        <div className="flex justify-center mb-2">
+                      <div className="text-center p-3.5 bg-secondary/50 rounded-lg">
+                        <div className="flex justify-center mb-1.5">
                           {getConfianzaIcon(estimacion.nivelConfianza)}
                         </div>
-                        <p className="text-lg md:text-xl font-bold capitalize">{estimacion.nivelConfianza}</p>
-                        <p className="text-xs md:text-sm text-muted-foreground">Nivel de confianza</p>
+                        <p className="text-base md:text-lg font-bold capitalize">{estimacion.nivelConfianza}</p>
+                        <p className="text-xs text-muted-foreground">Nivel de confianza</p>
                       </div>
                     </div>
 
-                    <div className="p-4 bg-accent/10 rounded-lg border border-accent/30 flex items-center justify-between">
-                      <span className="text-sm text-muted-foreground">Costo estimado:</span>
-                      <span className="text-xl font-bold text-primary">
+                    <div className="p-3.5 bg-accent/10 rounded-lg border border-accent/30 flex items-center justify-between">
+                      <span className="text-xs md:text-sm text-muted-foreground">Costo estimado:</span>
+                      <span className="text-xl md:text-2xl font-bold font-mono text-primary">
                         ${calcularCostoTotal().toLocaleString("es-CL")} CLP
                       </span>
                     </div>
@@ -913,34 +935,44 @@ const Cotizador = () => {
 
                       {/* 2. PRESUPUESTO - Solo visible después de guardar */}
                       {proyecto ? (
-                        estimacion.ajustePresupuesto?.excedePresupuesto && mostrarAjuste ? (
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                            <Button
-                              onClick={() => convertirAPresupuesto(true)}
-                              className="w-full bg-green-600 hover:bg-green-700 gap-2"
-                            >
-                              <DollarSign className="w-4 h-4" />
-                              Alternativa Ajustada
-                            </Button>
+                        <div className="space-y-2.5">
+                          {estimacion.ajustePresupuesto?.excedePresupuesto && mostrarAjuste ? (
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                              <Button
+                                onClick={() => convertirAPresupuesto(true)}
+                                className="w-full gradient-button gap-2"
+                              >
+                                <DollarSign className="w-4 h-4" />
+                                2. Alternativa Ajustada (MVP)
+                              </Button>
+                              <Button
+                                onClick={() => convertirAPresupuesto(false)}
+                                className="w-full bg-secondary text-secondary-foreground hover:bg-secondary/80 gap-2"
+                                variant="outline"
+                              >
+                                <FileText className="w-4 h-4" />
+                                Presupuesto Completo
+                              </Button>
+                            </div>
+                          ) : (
                             <Button
                               onClick={() => convertirAPresupuesto(false)}
-                              className="w-full bg-secondary text-secondary-foreground hover:bg-secondary/80 gap-2"
-                              variant="outline"
+                              className="w-full gradient-button gap-2"
+                              size="lg"
                             >
-                              <FileText className="w-4 h-4" />
-                              Presupuesto Completo
+                              <ArrowRight className="w-4 h-4" />
+                              2. Crear Presupuesto (Vinculado)
                             </Button>
-                          </div>
-                        ) : (
+                          )}
                           <Button
-                            onClick={() => convertirAPresupuesto(false)}
-                            className="w-full gradient-button gap-2"
-                            size="lg"
+                            variant="outline"
+                            onClick={() => navigate(`/proyectos/${proyecto.id}`)}
+                            className="w-full border-primary/30 text-primary hover:bg-primary/10 gap-2"
                           >
                             <ArrowRight className="w-4 h-4" />
-                            2. Crear Presupuesto (Vinculado)
+                            Ver Proyecto en Detalle y Tareas
                           </Button>
-                        )
+                        </div>
                       ) : (
                         <p className="text-xs text-center text-muted-foreground">
                           💡 Guarda el proyecto primero para generar un presupuesto vinculado
@@ -952,10 +984,10 @@ const Cotizador = () => {
 
                 {/* Modules */}
                 <Card className="glass-card border-primary/20">
-                  <CardHeader className="p-4 md:p-6">
-                    <CardTitle className="text-lg md:text-xl">Desglose por Módulo</CardTitle>
+                  <CardHeader className="p-4">
+                    <CardTitle className="text-sm md:text-base font-heading font-semibold">Desglose por Módulo</CardTitle>
                   </CardHeader>
-                  <CardContent className="p-4 md:p-6 pt-0 space-y-3">
+                  <CardContent className="p-4 pt-0 space-y-2.5">
                     {estimacion.modulos.map((modulo, index) => {
                       const isExcluded = mostrarAjuste && estimacion.ajustePresupuesto?.modulosExcluidos.includes(modulo.nombre);
                       return (
@@ -1056,13 +1088,13 @@ const Cotizador = () => {
 
             {!estimacion && !isLoading && (
               <Card className="glass-card border-dashed border-2 border-muted">
-                <CardContent className="p-8 flex flex-col items-center justify-center text-center">
-                  <Calculator className="w-12 h-12 text-muted-foreground/50 mb-4" />
-                  <p className="text-lg font-medium text-muted-foreground">
+                <CardContent className="p-6 flex flex-col items-center justify-center text-center">
+                  <Calculator className="w-10 h-10 text-muted-foreground/50 mb-3" />
+                  <p className="text-sm md:text-base font-heading font-medium text-muted-foreground">
                     Completa el formulario para generar una estimación
                   </p>
-                  <p className="text-sm text-muted-foreground/70 mt-1">
-                    El análisis con IA te dará horas estimadas, riesgos y ajustes de presupuesto
+                  <p className="text-xs text-muted-foreground/70 mt-1">
+                    Obtendrás desglose de módulos, horas, costos fijos, matriz de riesgos y fases sugeridas
                   </p>
                 </CardContent>
               </Card>

@@ -58,7 +58,7 @@ export function KanbanBoard({
                     const columnTotal = columnItems.reduce((sum, p) => sum + Number(p.total), 0);
 
                     return (
-                        <div key={column.id} className="min-w-[320px] max-w-[320px] bg-secondary/20 rounded-xl p-4 flex flex-col gap-3">
+                        <div key={column.id} className="min-w-[320px] max-w-[320px] bg-card/50 backdrop-blur-sm border border-border/40 rounded-xl p-4 flex flex-col gap-3">
                             <div className="flex justify-between items-center mb-2">
                                 <div className={`px-3 py-1 rounded-full text-xs font-semibold border ${column.color}`}>
                                     {column.title} ({columnItems.length})
