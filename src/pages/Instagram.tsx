@@ -219,6 +219,8 @@ type IgResult = {
   reply?: string;
   handoff?: boolean;
   ai_provider?: string | null;
+  motivo?: string;
+  solo_posts?: number;
 };
 
 async function invokeIg(body: Record<string, unknown>): Promise<IgResult> {
@@ -779,6 +781,11 @@ export default function Instagram() {
             {simResult.match ? (
               <>
                 <p><b>Campaña:</b> {simResult.match.nombre}</p>
+                {!!simResult.solo_posts && (
+                  <p className="text-amber-600 dark:text-amber-400">
+                    Ojo: esta campaña solo responde en {simResult.solo_posts} post(s) seleccionado(s). En otros posts no se activa.
+                  </p>
+                )}
                 <p><b>DM 1:</b> {simResult.private_reply}</p>
                 {simResult.boton && <p><b>Botón:</b> [{simResult.boton}]</p>}
                 {simResult.match.modo === "dos_pasos" && <p><b>Al tocar el botón:</b> {simResult.oferta}</p>}
@@ -790,7 +797,7 @@ export default function Instagram() {
                 )}
               </>
             ) : (
-              <p>Ninguna campaña activa responde a ese comentario.</p>
+              <p>{simResult.motivo ?? "Ninguna campaña activa responde a ese comentario."}</p>
             )}
           </div>
         )}

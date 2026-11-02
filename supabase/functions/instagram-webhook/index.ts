@@ -1954,14 +1954,28 @@ async function actionPollComments(db: SupabaseClient) {
 
 async function actionSimulate(db: SupabaseClient, body: any) {
   const campaigns = await loadActiveCampaigns(db);
-  const c = findCampaignForComment(campaigns, String(body.media_id ?? ""), String(body.text ?? ""));
-  if (!c) return json({ ok: true, match: null });
+  const mediaId = String(body.media_id ?? "");
+  const text = String(body.text ?? "");
+  // Sin post elegido, el simulador prueba solo las palabras clave (ignora la restricción de posts)
+  const c = mediaId
+    ? findCampaignForComment(campaigns, mediaId, text)
+    : campaigns.find((x) => keywordMatch(x, text));
+  if (!c) {
+    let motivo = campaigns.length
+      ? "Ninguna palabra clave de tus campañas activas aparece en ese comentario."
+      : "No hay campañas activas (revisa que esté encendida y dentro de sus fechas).";
+    if (mediaId && campaigns.some((x) => keywordMatch(x, text))) {
+      motivo = "La palabra clave coincide, pero la campaña no está asignada a ese post.";
+    }
+    return json({ ok: true, match: null, motivo });
+  }
   const username = body.username ?? "usuario_demo";
   // Sin db: no crea links rastreables, solo muestra el destino con UTM
   const link = await buildLink(null, c, { mediaId: body.media_id ?? null });
   return json({
     ok: true,
     match: { id: c.id, nombre: c.nombre, modo: c.modo },
+    solo_posts: c.media_ids?.length ?? 0,
     private_reply: c.requiere_seguir
       ? render(c.mensaje_seguir || c.mensaje_inicial, { username })
       : c.modo === "directo"
