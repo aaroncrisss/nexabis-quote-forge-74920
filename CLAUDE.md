@@ -280,6 +280,17 @@ Migraciones: `20261101_02_instagram_growth.sql` (esquema) y `20261101_03_instagr
 
 ---
 
+## 🗓️ 9.6. Versión 3 (2026-11-01): Seguir antes de recibir, contenido programado y archivos
+
+Migración: `20261101_04_instagram_content.sql`. Componentes: `src/components/instagram/ContentScheduler.tsx`, `ResourcesManager.tsx`; ruta pública `src/pages/LinkCorto.tsx` (`/r/:code`).
+
+* **Seguir antes de recibir** (`ig_campaigns.requiere_seguir`, `mensaje_seguir`, `mensaje_no_sigue`): fuerza el flujo de dos pasos. Primer DM con quick reply "Ya te sigo ✅"; al tocarlo se consulta `GET /{igsid}?fields=is_user_follow_business`. `false` → recordatorio + botón otra vez; `null` (Meta no responde) → se envía igual.
+* **Ventana de campaña** (`activa_desde`, `activa_hasta`): `loadActiveCampaigns` filtra por fecha.
+* **Contenido programado** (`ig_posts`, bucket público `ig-media`): reel / imagen JPG / historia. El polling (cada 2 min) llama `publishDuePosts()`: crea contenedor `POST /{ig}/media`, espera `status_code=FINISHED`, publica con `media_publish`, guarda `media_id`/`permalink` y, si tiene `campaign_id`, agrega el post a `media_ids` de la campaña y la activa. Acción `publish_now` para el botón "Ahora". Requiere el permiso `instagram_content_publish` en el token (acción `permissions` lo revisa vía `debug_token`). Límite Supabase free: 50 MB por archivo.
+* **Archivos / links enmascarados** (`ig_recursos`, bucket público `recursos`): `https://nexabistech.com/r/<slug>` → RPC pública `resolve_link()` (cuenta clic) → redirige al archivo. Los links rastreables por persona (`ig_links`) ahora también usan `nexabistech.com/r/<token>` (`IG_LINK_BASE`), en vez de la URL de la función.
+
+---
+
 ## 🚀 10. Ideas de Mejora y Futuras Extensiones
 
 Cuando Claude o el equipo retome este sistema, estas son las extensiones recomendadas de mayor impacto:

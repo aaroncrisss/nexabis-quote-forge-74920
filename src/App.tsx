@@ -17,6 +17,7 @@ const Dashboard = lazy(() => import("./pages/Dashboard"));
 const Presupuestos = lazy(() => import("./pages/Presupuestos"));
 const CrearPresupuesto = lazy(() => import("./pages/CrearPresupuesto"));
 const PresupuestoPublico = lazy(() => import("./pages/PresupuestoPublico"));
+const LinkCorto = lazy(() => import("./pages/LinkCorto"));
 const Configuracion = lazy(() => import("./pages/Configuracion"));
 const Clientes = lazy(() => import("./pages/Clientes"));
 const ClienteDetalle = lazy(() => import("./pages/ClienteDetalle"));
@@ -78,6 +79,7 @@ const App = () => (
               <Route path="/login" element={<Login />} />
               <Route path="/register" element={<Register />} />
               <Route path="/presupuesto/:token" element={<PresupuestoPublico />} />
+              <Route path="/r/:code" element={<LinkCorto />} />
               <Route path="/comprobante/:token/:pagoNumero" element={<ComprobantePago />} />
 
               {/* Protected App Routes wrapped in persistent DashboardLayout shell */}

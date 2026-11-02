@@ -33,6 +33,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { supabaseCRM } from "@/integrations/supabase/crm-client";
 import { toast } from "sonner";
 import { EmptyState } from "@/components/ui/empty-state";
+import { ContentScheduler } from "@/components/instagram/ContentScheduler";
+import { ResourcesManager, LINK_BASE, type Recurso } from "@/components/instagram/ResourcesManager";
 
 // -----------------------------------------------------------------------------
 // Tipos
@@ -57,6 +59,11 @@ type Campaign = {
   una_vez_por_usuario: boolean;
   utm_activo: boolean;
   rastrear_clics: boolean;
+  requiere_seguir?: boolean;
+  mensaje_seguir?: string;
+  mensaje_no_sigue?: string;
+  activa_desde?: string | null;
+  activa_hasta?: string | null;
 };
 
 type IgSettings = {
@@ -155,7 +162,23 @@ const EMPTY_CAMPAIGN: Campaign = {
   una_vez_por_usuario: true,
   utm_activo: true,
   rastrear_clics: false,
+  requiere_seguir: false,
+  mensaje_seguir: "¡Hola {username}! 🙌 Para enviarte el contenido, primero sígueme y luego toca el botón 👇",
+  mensaje_no_sigue: "Aún no me sigues 👀 Sígueme y vuelve a tocar el botón para recibirlo.",
+  activa_desde: null,
+  activa_hasta: null,
 };
+
+// datetime-local <-> ISO
+const isoToLocal = (iso?: string | null) => {
+  if (!iso) return "";
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+};
+const localToIso = (v: string) => (v ? new Date(v).toISOString() : null);
+
+const V4_FIELDS = ["requiere_seguir", "mensaje_seguir", "mensaje_no_sigue", "activa_desde", "activa_hasta"] as const;
 
 const pct = (a: number, b: number) => (b ? `${Math.round((a / b) * 100)}%` : "—");
 const clp = (n: number) =>
@@ -228,6 +251,8 @@ export default function Instagram() {
 
   const [funnel, setFunnel] = useState<Funnel | null>(null);
   const [contacts, setContacts] = useState<IgContact[]>([]);
+  const [recursos, setRecursos] = useState<Pick<Recurso, "slug" | "titulo">[]>([]);
+  const [v4, setV4] = useState(false);
   const [settings, setSettings] = useState<IgSettings | null>(null);
   const [savingSettings, setSavingSettings] = useState(false);
 
@@ -251,6 +276,10 @@ export default function Instagram() {
     setContacts(ct.error ? [] : ((ct.data as IgContact[]) ?? []));
     setSettings(se.error ? null : ((se.data as IgSettings | null) ?? null));
     setLoading(false);
+    // Migración 20261101_04 (seguir, fechas, contenido, archivos)
+    const rs = await supabaseCRM.from("ig_recursos").select("slug, titulo").order("created_at", { ascending: false });
+    setV4(!rs.error);
+    setRecursos((rs.data as Pick<Recurso, "slug" | "titulo">[]) ?? []);
   }, []);
 
   useEffect(() => {
@@ -380,9 +409,20 @@ export default function Instagram() {
     const { id, ...rest } = editing;
     // Si la migración 20261101_02 aún no está aplicada, no enviar columnas que no existen
     const { utm_activo, rastrear_clics, ...base } = rest;
-    const payload = settings ? { ...base, utm_activo, rastrear_clics } : base;
+    const withV2: Record<string, unknown> = settings ? { ...base, utm_activo, rastrear_clics } : { ...base };
+    if (v4) {
+      withV2.activa_desde = editing.activa_desde || null;
+      withV2.activa_hasta = editing.activa_hasta || null;
+    } else {
+      for (const f of V4_FIELDS) delete withV2[f];
+    }
+    if (editing.activa_desde && editing.activa_hasta && editing.activa_hasta <= editing.activa_desde) {
+      setSaving(false);
+      return toast.error("La fecha de término debe ser posterior al inicio");
+    }
+    const payload = withV2 as typeof base;
     const row = {
-      ...payload,
+      ...withV2,
       link_url: payload.link_url?.trim() || null,
       keywords: payload.keywords.map((k) => k.trim()).filter(Boolean),
       respuestas_publicas: payload.respuestas_publicas.map((r) => r.trim()).filter(Boolean),
@@ -544,6 +584,8 @@ export default function Instagram() {
       <Tabs defaultValue="campanias" className="space-y-3">
         <TabsList>
           <TabsTrigger value="campanias" className="text-xs">Campañas</TabsTrigger>
+          <TabsTrigger value="contenido" className="text-xs">Contenido</TabsTrigger>
+          <TabsTrigger value="archivos" className="text-xs">Archivos</TabsTrigger>
           <TabsTrigger value="leads" className="text-xs">Leads ({contacts.length})</TabsTrigger>
           <TabsTrigger value="actividad" className="text-xs">Actividad</TabsTrigger>
         </TabsList>
@@ -709,6 +751,14 @@ export default function Instagram() {
         </Card>
       </TabsContent>
 
+      <TabsContent value="contenido">
+        <ContentScheduler campaigns={campaigns} connected={!!status?.connected} invoke={invokeIg} onPublished={load} />
+      </TabsContent>
+
+      <TabsContent value="archivos">
+        <ResourcesManager onChange={load} />
+      </TabsContent>
+
       <TabsContent value="actividad">
       {/* Actividad */}
       <Card className="p-4 space-y-2">
@@ -851,6 +901,30 @@ export default function Instagram() {
                   <Label className="text-xs">También responder si escriben la palabra clave por DM</Label>
                   <Switch checked={editing.responder_dm} onCheckedChange={(v) => setEditing({ ...editing, responder_dm: v })} />
                 </div>
+
+                {v4 && (
+                  <div className="grid sm:grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <Label className="text-xs">Activa desde (opcional)</Label>
+                      <Input
+                        type="datetime-local"
+                        value={isoToLocal(editing.activa_desde)}
+                        onChange={(e) => setEditing({ ...editing, activa_desde: localToIso(e.target.value) })}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Activa hasta (opcional)</Label>
+                      <Input
+                        type="datetime-local"
+                        value={isoToLocal(editing.activa_hasta)}
+                        onChange={(e) => setEditing({ ...editing, activa_hasta: localToIso(e.target.value) })}
+                      />
+                    </div>
+                    <p className="sm:col-span-2 text-[10px] text-muted-foreground -mt-1">
+                      Fuera de estas fechas la campaña no responde, aunque esté activa. Ideal para promos con plazo.
+                    </p>
+                  </div>
+                )}
               </div>
 
               {/* Mensajes */}
@@ -872,7 +946,33 @@ export default function Instagram() {
                     : "El link va en el primer DM. Más simple, pero los links en solicitudes de mensaje se ven menos."}
                 </p>
 
-                {editing.modo === "dos_pasos" && (
+                {v4 && (
+                  <div className="rounded-md border border-border/60 p-3 space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <div>
+                        <Label className="text-xs">Pedir que me sigan antes de enviar</Label>
+                        <p className="text-[10px] text-muted-foreground">
+                          Primer DM pide seguirte con un botón “Ya te sigo ✅”. Al tocarlo se verifica en Instagram: si te sigue recibe la oferta; si no, se le recuerda.
+                        </p>
+                      </div>
+                      <Switch checked={!!editing.requiere_seguir} onCheckedChange={(v) => setEditing({ ...editing, requiere_seguir: v })} />
+                    </div>
+                    {editing.requiere_seguir && (
+                      <div className="grid sm:grid-cols-2 gap-3">
+                        <div className="space-y-1">
+                          <Label className="text-xs">Mensaje pidiendo seguir</Label>
+                          <Textarea rows={3} value={editing.mensaje_seguir ?? ""} onChange={(e) => setEditing({ ...editing, mensaje_seguir: e.target.value })} />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-xs">Si aún no te sigue</Label>
+                          <Textarea rows={3} value={editing.mensaje_no_sigue ?? ""} onChange={(e) => setEditing({ ...editing, mensaje_no_sigue: e.target.value })} />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {editing.modo === "dos_pasos" && !editing.requiere_seguir && (
                   <div className="grid grid-cols-3 gap-3">
                     <div className="col-span-2 space-y-1">
                       <Label className="text-xs">Primer DM</Label>
@@ -893,6 +993,16 @@ export default function Instagram() {
                   <div className="col-span-2 space-y-1">
                     <Label className="text-xs">Link (landing, WhatsApp, checkout...)</Label>
                     <Input value={editing.link_url ?? ""} onChange={(e) => setEditing({ ...editing, link_url: e.target.value })} placeholder="https://..." />
+                    {recursos.length > 0 && (
+                      <Select value="" onValueChange={(v) => setEditing({ ...editing, link_url: `${LINK_BASE}${v}` })}>
+                        <SelectTrigger className="h-8 text-xs mt-1"><SelectValue placeholder="…o usar un archivo subido (PDF)" /></SelectTrigger>
+                        <SelectContent>
+                          {recursos.map((r) => (
+                            <SelectItem key={r.slug} value={r.slug}>{r.titulo} · /r/{r.slug}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
                   </div>
                   <div className="space-y-1">
                     <Label className="text-xs">Texto botón link (máx 20)</Label>
@@ -941,12 +1051,20 @@ export default function Instagram() {
               <div className="rounded-lg bg-muted/40 p-3 text-xs space-y-2">
                 <p className="font-semibold">Vista previa del DM</p>
                 <div className="rounded-2xl bg-background px-3 py-2 w-fit max-w-[85%] whitespace-pre-wrap">
-                  {preview(editing.modo === "dos_pasos" ? editing.mensaje_inicial : editing.mensaje_oferta)}
-                  {editing.modo === "directo" && editing.link_url ? `\n\n👉 ${editing.link_url}` : ""}
+                  {preview(
+                    editing.requiere_seguir
+                      ? editing.mensaje_seguir ?? ""
+                      : editing.modo === "dos_pasos"
+                      ? editing.mensaje_inicial
+                      : editing.mensaje_oferta,
+                  )}
+                  {editing.modo === "directo" && !editing.requiere_seguir && editing.link_url ? `\n\n👉 ${editing.link_url}` : ""}
                 </div>
-                {editing.modo === "dos_pasos" && (
+                {(editing.modo === "dos_pasos" || editing.requiere_seguir) && (
                   <>
-                    <span className="inline-block rounded-full border border-primary/50 px-3 py-1 text-primary">{editing.boton_texto}</span>
+                    <span className="inline-block rounded-full border border-primary/50 px-3 py-1 text-primary">
+                      {editing.requiere_seguir ? "Ya te sigo ✅" : editing.boton_texto}
+                    </span>
                     <div className="rounded-2xl bg-background px-3 py-2 w-fit max-w-[85%] whitespace-pre-wrap">
                       {preview(editing.mensaje_oferta)}
                       {editing.link_url && (

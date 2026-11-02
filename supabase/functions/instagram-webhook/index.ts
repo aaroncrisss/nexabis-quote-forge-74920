@@ -51,6 +51,9 @@ const FALLBACK_URL =Deno.env.get("IG_FALLBACK_URL") ?? "https://nexabistech.com"
 const GRAPH = "https://graph.facebook.com";
 const IG_GRAPH = "https://graph.instagram.com";
 const FUNCTION_URL = `${SUPABASE_URL}/functions/v1/instagram-webhook`;
+// Links enmascarados: https://nexabistech.com/r/<código> (ruta pública del frontend)
+const LINK_BASE = (Deno.env.get("IG_LINK_BASE") ?? "https://nexabistech.com").replace(/\/+$/, "");
+const FOLLOW_BUTTON = "Ya te sigo ✅";
 
 const OFFER_PAYLOAD_PREFIX = "IGOFFER:";
 const PENDING_DAYS = 7;
@@ -99,6 +102,11 @@ type Campaign = {
   una_vez_por_usuario: boolean;
   utm_activo: boolean;
   rastrear_clics: boolean;
+  requiere_seguir?: boolean;
+  mensaje_seguir?: string;
+  mensaje_no_sigue?: string;
+  activa_desde?: string | null;
+  activa_hasta?: string | null;
 };
 
 type GraphResult = { ok: boolean; status: number; data: any };
@@ -263,7 +271,13 @@ async function loadActiveCampaigns(db: SupabaseClient): Promise<Campaign[]> {
     .order("prioridad", { ascending: false })
     .order("created_at", { ascending: true });
   if (error) console.error("loadActiveCampaigns", error);
-  return (data ?? []) as Campaign[];
+  // Ventana de fechas opcional (campañas programadas)
+  const now = Date.now();
+  return ((data ?? []) as Campaign[]).filter(
+    (c) =>
+      (!c.activa_desde || new Date(c.activa_desde).getTime() <= now) &&
+      (!c.activa_hasta || new Date(c.activa_hasta).getTime() > now),
+  );
 }
 
 function keywordMatch(c: Campaign, text: string): boolean {
@@ -372,7 +386,7 @@ async function buildLink(
     console.error("ig_links insert", error);
     return dest;
   }
-  return `${FUNCTION_URL}?go=${token}`;
+  return `${LINK_BASE}/r/${token}`;
 }
 
 async function handleRedirect(db: SupabaseClient, token: string): Promise<Response> {
@@ -416,6 +430,122 @@ async function sendOffer(
     return { res: await sendMessage(acc, { id: recipientId }, { text: plain }), text: plain };
   }
   return { res: await sendMessage(acc, { id: recipientId }, { text }), text };
+}
+
+/** ¿La persona sigue a la cuenta? true/false, o null si Meta no lo informa. */
+async function isFollower(acc: Account, igsid: string): Promise<boolean | null> {
+  const r = await graph(igsid, { token: acc.access_token, params: { fields: "is_user_follow_business" } });
+  if (!r.ok || typeof r.data?.is_user_follow_business !== "boolean") return null;
+  return r.data.is_user_follow_business;
+}
+
+// -----------------------------------------------------------------------------
+// Publicaciones programadas (Content Publishing API)
+//   1) POST /{ig}/media         -> contenedor (Meta descarga media_url)
+//   2) GET  /{container}        -> status_code IN_PROGRESS | FINISHED | ERROR | EXPIRED
+//   3) POST /{ig}/media_publish -> media_id
+// Los reels tardan en procesarse: el cron (cada 2 min) avanza el estado en cada pasada.
+// -----------------------------------------------------------------------------
+type IgPost = {
+  id: string;
+  tipo: "reel" | "imagen" | "historia";
+  media_url: string;
+  es_video: boolean;
+  caption: string;
+  compartir_feed: boolean;
+  publicar_en: string;
+  estado: string;
+  campaign_id: string | null;
+  container_id: string | null;
+  intentos: number;
+};
+
+async function advancePost(db: SupabaseClient, acc: Account, p: IgPost): Promise<string> {
+  const upd = (patch: Record<string, unknown>) => db.from("ig_posts").update(patch).eq("id", p.id);
+  const fail = async (msg: string) => {
+    await upd({ estado: "error", error: msg.slice(0, 500), intentos: p.intentos + 1 });
+    return `error: ${msg}`;
+  };
+
+  let containerId = p.container_id;
+  if (!containerId) {
+    const params: Record<string, string> = {};
+    if (p.tipo === "reel") {
+      params.media_type = "REELS";
+      params.video_url = p.media_url;
+      params.share_to_feed = String(p.compartir_feed);
+    } else if (p.tipo === "historia") {
+      params.media_type = "STORIES";
+      params[p.es_video ? "video_url" : "image_url"] = p.media_url;
+    } else {
+      params.image_url = p.media_url;
+    }
+    if (p.tipo !== "historia" && p.caption) params.caption = p.caption.slice(0, 2200);
+    const c = await graph(`${acc.ig_user_id}/media`, { method: "POST", token: acc.access_token, params });
+    if (!c.ok || !c.data?.id) return await fail(graphError(c));
+    containerId = String(c.data.id);
+    await upd({ estado: "procesando", container_id: containerId, error: null });
+  }
+
+  const st = await graph(containerId, { token: acc.access_token, params: { fields: "status_code,status" } });
+  const code = st.data?.status_code;
+  if (code === "ERROR" || code === "EXPIRED") return await fail(`Meta: ${st.data?.status ?? code}`);
+  if ((code && code !== "FINISHED") || (!st.ok && !code)) {
+    // Reintenta en la próxima pasada; tras ~1h (30 pasadas) se marca como error
+    if (p.intentos >= 30) return await fail(`Meta no terminó de procesar: ${st.data?.status ?? graphError(st)}`);
+    await upd({ intentos: p.intentos + 1 });
+    return "procesando";
+  }
+
+  const pub = await graph(`${acc.ig_user_id}/media_publish`, {
+    method: "POST",
+    token: acc.access_token,
+    params: { creation_id: containerId },
+  });
+  if (!pub.ok || !pub.data?.id) {
+    if (pub.data?.error?.code === 9007) return "procesando"; // contenedor aún no listo
+    return await fail(graphError(pub));
+  }
+  const mediaId = String(pub.data.id);
+  const info = await graph(mediaId, { token: acc.access_token, params: { fields: "permalink" } });
+  await upd({
+    estado: "publicado",
+    media_id: mediaId,
+    permalink: info.data?.permalink ?? null,
+    publicado_at: new Date().toISOString(),
+    error: null,
+  });
+
+  // Activar la campaña asociada sobre el post recién publicado
+  if (p.campaign_id) {
+    const { data: camp } = await db.from("ig_campaigns").select("media_ids").eq("id", p.campaign_id).maybeSingle();
+    if (camp) {
+      const ids = Array.from(new Set([...(camp.media_ids ?? []), mediaId]));
+      await db.from("ig_campaigns").update({ media_ids: ids, activa: true }).eq("id", p.campaign_id);
+    }
+  }
+  return "publicado";
+}
+
+async function publishDuePosts(db: SupabaseClient, acc: Account, onlyId?: string) {
+  let q = db.from("ig_posts").select("*").in("estado", ["programado", "procesando"]);
+  q = onlyId ? q.eq("id", onlyId) : q.lte("publicar_en", new Date().toISOString());
+  const { data, error } = await q.order("publicar_en").limit(5);
+  if (error) {
+    // Tabla inexistente (migración 04 sin aplicar) u otro error: no frena el polling
+    console.error("publishDuePosts", error.message);
+    return [];
+  }
+  const results: { id: string; result: string }[] = [];
+  for (const p of (data ?? []) as IgPost[]) {
+    try {
+      results.push({ id: p.id, result: await advancePost(db, acc, p) });
+    } catch (e) {
+      console.error("advancePost", e);
+      results.push({ id: p.id, result: `error: ${String(e)}` });
+    }
+  }
+  return results;
 }
 
 // -----------------------------------------------------------------------------
@@ -487,21 +617,26 @@ async function handleComment(
   // ---- Private reply ----
   let pr: GraphResult;
   let sentText: string;
-  if (campaign.modo === "directo") {
+  // "Seguir antes de recibir" obliga al flujo de dos pasos: Meta solo deja consultar si la
+  // persona nos sigue después de que ella responde (toca el botón) en el DM.
+  const gate = Boolean(campaign.requiere_seguir);
+  if (campaign.modo === "directo" && !gate) {
     const link = await buildLink(db, campaign, { igUserId: fromId, mediaId: mediaId || null });
     let msg = render(campaign.mensaje_oferta, { username: fromUsername, link });
     if (link && !msg.includes(link)) msg = `${msg}\n\n👉 ${link}`;
     sentText = msg.slice(0, MAX_TEXT);
     pr = await sendMessage(acc, { comment_id: commentId }, { text: sentText });
   } else {
-    const initial = render(campaign.mensaje_inicial, { username: fromUsername, link: campaign.link_url });
+    const initial = gate
+      ? render(campaign.mensaje_seguir || campaign.mensaje_inicial, { username: fromUsername })
+      : render(campaign.mensaje_inicial, { username: fromUsername, link: campaign.link_url });
     sentText = initial;
     pr = await sendMessage(acc, { comment_id: commentId }, {
       text: initial,
       quick_replies: [
         {
           content_type: "text",
-          title: (campaign.boton_texto || "Sí, envíamela").slice(0, 20),
+          title: (gate ? FOLLOW_BUTTON : campaign.boton_texto || "Sí, envíamela").slice(0, 20),
           payload: `${OFFER_PAYLOAD_PREFIX}${campaign.id}`,
         },
       ],
@@ -538,7 +673,7 @@ async function handleComment(
     publicOk = r.ok;
   }
 
-  const offerAt = pr.ok && campaign.modo === "directo" ? new Date().toISOString() : null;
+  const offerAt = pr.ok && campaign.modo === "directo" && !gate ? new Date().toISOString() : null;
   await finish({
     campaign_id: campaign.id,
     estado: pr.ok ? "enviado" : "error",
@@ -751,6 +886,36 @@ async function handleMessaging(
     // Conversación libre -> agente IA (si está activo); si no, la atiende un humano
     await aiReply(db, acc, campaigns, senderId, contact);
     return;
+  }
+
+  // ---- Seguir antes de recibir ----
+  if (campaign.requiere_seguir) {
+    const follows = await isFollower(acc, senderId);
+    if (follows === false) {
+      const reminder = render(campaign.mensaje_no_sigue || "Aún no me sigues 👀 Sígueme y vuelve a tocar el botón.", {
+        username: contact?.username ?? null,
+      });
+      const r = await sendMessage(acc, { id: senderId }, {
+        text: reminder.slice(0, MAX_TEXT),
+        quick_replies: [{ content_type: "text", title: FOLLOW_BUTTON, payload: `${OFFER_PAYLOAD_PREFIX}${campaign.id}` }],
+      });
+      if (r.ok) {
+        await logMessage(db, {
+          ig_user_id: senderId,
+          mid: r.data?.message_id ?? null,
+          direccion: "out",
+          origen: "campaña",
+          texto: reminder,
+          campaign_id: campaign.id,
+        });
+        await upsertContact(db, senderId, {
+          pending_campaign_id: campaign.id,
+          pending_until: new Date(Date.now() + PENDING_DAYS * 86400_000).toISOString(),
+        });
+      }
+      return;
+    }
+    // follows === null (Meta no respondió): no castigamos a la persona, se envía igual
   }
 
   // Último comentario de esa persona para esa campaña (para UTM y para marcar la oferta)
@@ -1007,9 +1172,13 @@ async function actionPollComments(db: SupabaseClient) {
 
   const acc = await loadAccount(db);
   if (!acc) return json({ ok: false, error: "no_account" });
+  // Publicaciones programadas primero (no depende de campañas)
+  const published = await publishDuePosts(db, acc);
   const campaigns = await loadActiveCampaigns(db);
   const settings = await loadSettings(db);
-  if (!campaigns.length && !settings.ai_enabled) return json({ ok: true, skipped: "no_active_campaigns" });
+  if (!campaigns.length && !settings.ai_enabled) {
+    return json({ ok: true, skipped: "no_active_campaigns", published });
+  }
 
   // ---- 1. Comentarios ----
   let mediaCount = 0;
@@ -1160,6 +1329,7 @@ async function actionPollComments(db: SupabaseClient) {
     processed: processedCount,
     skipped_older_than_7d: skippedOld,
     processed_messages: processedMessagesCount,
+    published,
     elapsed_ms: Date.now() - started,
   });
 }
@@ -1174,10 +1344,13 @@ async function actionSimulate(db: SupabaseClient, body: any) {
   return json({
     ok: true,
     match: { id: c.id, nombre: c.nombre, modo: c.modo },
-    private_reply: c.modo === "directo"
+    private_reply: c.requiere_seguir
+      ? render(c.mensaje_seguir || c.mensaje_inicial, { username })
+      : c.modo === "directo"
       ? render(c.mensaje_oferta, { username, link })
       : render(c.mensaje_inicial, { username, link }),
-    boton: c.modo === "dos_pasos" ? c.boton_texto : null,
+    boton: c.requiere_seguir ? FOLLOW_BUTTON : c.modo === "dos_pasos" ? c.boton_texto : null,
+    requiere_seguir: Boolean(c.requiere_seguir),
     oferta: render(c.mensaje_oferta, { username, link }),
     link,
     rastreo: c.rastrear_clics,
@@ -1309,6 +1482,31 @@ Deno.serve(async (req) => {
         return await actionSimulate(db, body);
       case "simulate_ai":
         return await actionSimulateAi(db, body);
+      case "publish_now": {
+        const acc = await loadAccount(db);
+        if (!acc) return json({ ok: false, error: "Conecta la cuenta primero" }, 400);
+        const id = String(body.id ?? "");
+        if (!id) return json({ ok: false, error: "Falta id" }, 400);
+        // Mover la fecha a ahora (y reintentar si estaba en borrador/error) y avanzar
+        await db
+          .from("ig_posts")
+          .update({ publicar_en: new Date().toISOString(), estado: "programado", error: null, container_id: null, intentos: 0 })
+          .eq("id", id)
+          .in("estado", ["programado", "borrador", "error"]);
+        const results = await publishDuePosts(db, acc, id);
+        return json({ ok: true, result: results[0]?.result ?? "sin_cambios" });
+      }
+      case "permissions": {
+        const acc = await loadAccount(db);
+        if (!acc) return json({ ok: false, error: "Conecta la cuenta primero" });
+        if (!IG_APP_SECRET) return json({ ok: false, error: "Falta IG_APP_SECRET" });
+        const r = await graph("debug_token", {
+          host: GRAPH,
+          params: { input_token: acc.access_token, access_token: `${IG_APP_ID}|${IG_APP_SECRET}` },
+        });
+        const scopes: string[] = r.data?.data?.scopes ?? [];
+        return json({ ok: r.ok, scopes, error: r.ok ? null : graphError(r) });
+      }
       default:
         return json({ error: "unknown_action" }, 400);
     }
