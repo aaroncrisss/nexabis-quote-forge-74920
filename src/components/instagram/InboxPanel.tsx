@@ -51,19 +51,41 @@ export function InboxPanel({ invoke, connected, quickReplies = [] }: { invoke: I
   const [sending, setSending] = useState(false);
   const bottom = useRef<HTMLDivElement>(null);
 
+  const [next, setNext] = useState<string | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+
   const loadInbox = useCallback(async () => {
     if (!connected) return;
     setLoading(true);
     try {
-      const r = await invoke({ action: "inbox", limit: 40 });
+      const r = await invoke({ action: "inbox", limit: 15 });
       if (r.ok === false) throw new Error(String(r.error));
-      setConvs((r.conversations as Conversation[]) ?? []);
+      const fresh = (r.conversations as Conversation[]) ?? [];
+      // Conserva las páginas ya cargadas con "Cargar más"
+      setConvs((prev) => [...fresh, ...prev.filter((p) => !fresh.some((f) => f.id === p.id))]);
+      setNext((cur) => cur ?? ((r.next as string | null) ?? null));
     } catch (e) {
       toast.error(`Bandeja: ${(e as Error).message}`);
     } finally {
       setLoading(false);
     }
   }, [invoke, connected]);
+
+  const loadMore = async () => {
+    if (!next) return;
+    setLoadingMore(true);
+    try {
+      const r = await invoke({ action: "inbox", limit: 15, after: next });
+      if (r.ok === false) throw new Error(String(r.error));
+      const more = (r.conversations as Conversation[]) ?? [];
+      setConvs((prev) => [...prev, ...more.filter((m) => !prev.some((p) => p.id === m.id))]);
+      setNext((r.next as string | null) ?? null);
+    } catch (e) {
+      toast.error(`Bandeja: ${(e as Error).message}`);
+    } finally {
+      setLoadingMore(false);
+    }
+  };
 
   const loadThread = useCallback(
     async (c: Conversation, silent = false) => {
@@ -158,6 +180,11 @@ export function InboxPanel({ invoke, connected, quickReplies = [] }: { invoke: I
                 </div>
               </button>
             ))}
+            {next && !filter && (
+              <button type="button" onClick={loadMore} disabled={loadingMore} className="w-full py-2 text-xs text-primary hover:bg-muted/40">
+                {loadingMore ? "Cargando…" : "Cargar más"}
+              </button>
+            )}
           </div>
         </div>
 

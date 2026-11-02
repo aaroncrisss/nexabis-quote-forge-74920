@@ -1644,15 +1644,23 @@ Deno.serve(async (req) => {
       case "inbox": {
         const acc = await loadAccount(db);
         if (!acc) return json({ ok: false, error: "Conecta la cuenta primero" }, 400);
-        const r = await graph(`${acc.ig_user_id}/conversations`, {
-          token: acc.access_token,
-          params: {
+        // Meta responde "(1) Please reduce the amount of data" con lotes grandes:
+        // se pide de a pocas y, si igual falla, se reintenta con la mitad.
+        let limit = Math.min(15, Math.max(1, Number(body.limit) || 15));
+        let r: GraphResult;
+        for (;;) {
+          const params: Record<string, string> = {
             platform: "instagram",
             fields: "id,updated_time,participants,messages.limit(1){id,message,from,created_time}",
-            limit: String(Math.min(50, Number(body.limit) || 30)),
-          },
-        });
+            limit: String(limit),
+          };
+          if (body.after) params.after = String(body.after);
+          r = await graph(`${acc.ig_user_id}/conversations`, { token: acc.access_token, params });
+          if (r.ok || r.data?.error?.code !== 1 || limit <= 3) break;
+          limit = Math.floor(limit / 2);
+        }
         if (!r.ok) return json({ ok: false, error: graphError(r) });
+        const nextCursor: string | null = r.data?.paging?.next ? r.data?.paging?.cursors?.after ?? null : null;
         const convs = (r.data?.data ?? []).map((c: any) => {
           const other = (c.participants?.data ?? []).find((x: any) => String(x.id) !== acc.ig_user_id) ?? {};
           const last = c.messages?.data?.[0] ?? null;
@@ -1670,16 +1678,26 @@ Deno.serve(async (req) => {
           ? await db.from("ig_contacts").select("ig_user_id, cliente_id, no_contactar, oferta_enviada_at, ultima_campaign_id").in("ig_user_id", ids)
           : { data: [] as any[] };
         const byId = new Map((contacts ?? []).map((c: any) => [c.ig_user_id, c]));
-        return json({ ok: true, conversations: convs.map((c: any) => ({ ...c, contact: byId.get(c.user_id) ?? null })) });
+        return json({
+          ok: true,
+          conversations: convs.map((c: any) => ({ ...c, contact: byId.get(c.user_id) ?? null })),
+          next: nextCursor,
+        });
       }
       case "thread": {
         const acc = await loadAccount(db);
         if (!acc) return json({ ok: false, error: "Conecta la cuenta primero" }, 400);
         if (!body.conversation_id) return json({ ok: false, error: "Falta conversation_id" }, 400);
-        const r = await graph(String(body.conversation_id), {
-          token: acc.access_token,
-          params: { fields: "messages.limit(50){id,message,from,created_time,attachments{image_data,video_data,file_url},story}" },
-        });
+        let n = 30;
+        let r: GraphResult;
+        for (;;) {
+          r = await graph(String(body.conversation_id), {
+            token: acc.access_token,
+            params: { fields: `messages.limit(${n}){id,message,from,created_time,attachments{image_data,video_data,file_url},story}` },
+          });
+          if (r.ok || r.data?.error?.code !== 1 || n <= 5) break;
+          n = Math.floor(n / 2);
+        }
         if (!r.ok) return json({ ok: false, error: graphError(r) });
         const messages = (r.data?.messages?.data ?? [])
           .map((m: any) => ({
