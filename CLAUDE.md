@@ -322,6 +322,17 @@ Migración `20261102_02_instagram_replies_mentions.sql`.
 
 ---
 
+## 📈 9.10. Versión 7 (2026-11-02): Analítica, mejor hora, ranking, resumen semanal y WhatsApp
+
+Migración `20261102_03_instagram_analytics.sql`. Componentes `AnalyticsPanel.tsx` + `analytics.ts` (pestaña **Analítica**, `?tab=analitica`).
+* **`ig_media_stats`**: métricas por post (alcance, reproducciones, guardados, compartidos, interacciones, seguidores, visitas, tiempo de visualización). `syncMediaStats()` corre desde el cron cada 6 h (`maintenance()`) o con la acción `sync_stats`. También guarda `followers_count` y `online_followers` (Meta, hora del Pacífico → convertida a Chile) en `ig_settings.audiencia_horas/dias`.
+* **RPCs** (miembros o service_role vía `private.ig_can_read()`): `ig_period_stats(desde, hasta)` (KPIs para comparar períodos), `ig_activity_heatmap(dias)` (comentarios por día×hora Chile), `ig_content_ranking()` (métricas Meta + DMs/ofertas/leads/clics del bot por post).
+* **Mejor hora**: `computeBestTimes()` mezcla 40% seguidores conectados, 35% horas de comentarios, 25% alcance según hora de publicación; top 3 en días distintos. Chips en Contenido y botón en Analítica que pre-llena la fecha.
+* **Resumen semanal**: lunes ≥ 9:00 Chile (`weeklyDue`), guarda en `ig_resumenes`, correo HTML por SMTP Hostinger (`SMTP_*`, mismo que pagos) y texto por WhatsApp. Acción `weekly_summary` = enviar ahora.
+* **WhatsApp (Evolution API, instancia `NexabisTech`)**: secret `EVOLUTION_API_KEY` (+ opcional `EVOLUTION_API_URL`, `EVOLUTION_INSTANCE`). `notifyOwner()` alerta de: lead nuevo (oferta entregada), DM sin campaña (1/h por persona, `ig_contacts.alerta_at`) y menciones. Config en `ig_settings.whatsapp_numero`, `alertas_whatsapp`, `resumen_por_whatsapp`. Acción `test_whatsapp`.
+
+---
+
 ## 🚀 10. Ideas de Mejora y Futuras Extensiones
 
 Cuando Claude o el equipo retome este sistema, estas son las extensiones recomendadas de mayor impacto:

@@ -30,6 +30,7 @@
 //   IG_POLL_REQUIRE_KEY (opcional) "true" = poll_comments exige x-ig-admin-key
 // =============================================================================
 import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import nodemailer from "npm:nodemailer@6";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -54,6 +55,11 @@ const FUNCTION_URL = `${SUPABASE_URL}/functions/v1/instagram-webhook`;
 // Links enmascarados: https://ecosistema.nexabistech.com/r/<código> (ruta pública del frontend)
 const LINK_BASE = (Deno.env.get("IG_LINK_BASE") ?? "https://ecosistema.nexabistech.com").replace(/\/+$/, "");
 const FOLLOW_BUTTON = "Ya te sigo ✅";
+// WhatsApp (Evolution API, misma instancia que el resto del ecosistema)
+const EVO_URL = (Deno.env.get("EVOLUTION_API_URL") ?? "https://evoapi.nexabistech.com").replace(/\/+$/, "");
+const EVO_KEY = Deno.env.get("EVOLUTION_API_KEY") ?? "";
+const EVO_INSTANCE = Deno.env.get("EVOLUTION_INSTANCE") ?? "NexabisTech";
+const DM_ALERT_COOLDOWN_MS = 3600_000;
 
 const OFFER_PAYLOAD_PREFIX = "IGOFFER:";
 const PENDING_DAYS = 7;
@@ -555,6 +561,360 @@ async function fetchMetrics(
   return { values, missingPermission, errors };
 }
 
+// -----------------------------------------------------------------------------
+// Analítica: sincronización de estadísticas por post + horas de audiencia
+// -----------------------------------------------------------------------------
+const STATS_EVERY_MS = 6 * 3600_000;
+const TZ = "America/Santiago";
+
+const METRICS_BY_TYPE: Record<string, string[]> = {
+  REELS: ["reach", "views", "saved", "shares", "total_interactions", "ig_reels_avg_watch_time"],
+  FEED: ["reach", "views", "saved", "shares", "total_interactions", "profile_visits", "follows"],
+};
+
+/** Hora y día (0 = domingo) en Chile para una fecha. */
+function chileParts(d: Date): { dow: number; hour: number } {
+  const f = new Intl.DateTimeFormat("en-US", { timeZone: TZ, weekday: "short", hour: "numeric", hour12: false });
+  const parts = Object.fromEntries(f.formatToParts(d).map((x) => [x.type, x.value]));
+  const dow = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(parts.weekday);
+  return { dow, hour: Number(parts.hour) % 24 };
+}
+
+async function insightsFor(acc: Account, mediaId: string, type: string): Promise<Record<string, number>> {
+  const metrics = METRICS_BY_TYPE[type] ?? METRICS_BY_TYPE.FEED;
+  // 1 sola llamada; si Meta rechaza alguna métrica, se piden de a una
+  const r = await graph(`${mediaId}/insights`, { token: acc.access_token, params: { metric: metrics.join(",") } });
+  if (r.ok) {
+    const out: Record<string, number> = {};
+    for (const d of r.data?.data ?? []) {
+      const v = d?.total_value?.value ?? d?.values?.[0]?.value;
+      if (typeof v === "number") out[d.name] = v;
+    }
+    return out;
+  }
+  return (await fetchMetrics(acc, `${mediaId}/insights`, metrics)).values;
+}
+
+async function syncMediaStats(db: SupabaseClient, acc: Account): Promise<{ posts: number; audiencia: boolean }> {
+  const list = await graph(`${acc.ig_user_id}/media`, {
+    token: acc.access_token,
+    params: {
+      fields: "id,caption,media_type,media_product_type,thumbnail_url,media_url,permalink,timestamp,comments_count,like_count",
+      limit: "50",
+    },
+  });
+  const media: any[] = list.ok ? list.data?.data ?? [] : [];
+  const rows: Record<string, unknown>[] = [];
+  for (let i = 0; i < media.length; i += 5) {
+    const batch = media.slice(i, i + 5);
+    const res = await Promise.all(
+      batch.map((m) => insightsFor(acc, m.id, m.media_product_type === "REELS" ? "REELS" : "FEED")),
+    );
+    batch.forEach((m, k) => {
+      const v = res[k];
+      rows.push({
+        media_id: m.id,
+        media_product_type: m.media_product_type ?? null,
+        media_type: m.media_type ?? null,
+        caption: (m.caption ?? "").slice(0, 500),
+        permalink: m.permalink ?? null,
+        thumbnail_url: m.thumbnail_url || m.media_url || null,
+        publicado_at: m.timestamp ?? null,
+        likes: m.like_count ?? null,
+        comments: m.comments_count ?? null,
+        reach: v.reach ?? null,
+        views: v.views ?? null,
+        saved: v.saved ?? null,
+        shares: v.shares ?? null,
+        interactions: v.total_interactions ?? null,
+        follows: v.follows ?? null,
+        profile_visits: v.profile_visits ?? null,
+        avg_watch_ms: v.ig_reels_avg_watch_time != null ? Math.round(v.ig_reels_avg_watch_time) : null,
+        updated_at: new Date().toISOString(),
+      });
+    });
+  }
+  if (rows.length) {
+    const { error } = await db.from("ig_media_stats").upsert(rows, { onConflict: "media_id" });
+    if (error) console.error("ig_media_stats upsert", error.message);
+  }
+
+  // Seguidores conectados por hora (Meta: online_followers, últimos ~30 días; requiere 100+ seguidores).
+  // Meta entrega las horas en hora del Pacífico (como el resto de sus insights diarios): se convierten a Chile.
+  const patch: Record<string, unknown> = { stats_synced_at: new Date().toISOString() };
+  const prof = await graph(acc.ig_user_id, { token: acc.access_token, params: { fields: "followers_count" } });
+  if (typeof prof.data?.followers_count === "number") patch.followers_count = prof.data.followers_count;
+  const until = Math.floor(Date.now() / 1000);
+  const of = await graph(`${acc.ig_user_id}/insights`, {
+    token: acc.access_token,
+    params: { metric: "online_followers", period: "lifetime", since: String(until - 29 * 86400), until: String(until) },
+  });
+  let audiencia = false;
+  const values: any[] = of.ok ? of.data?.data?.[0]?.values ?? [] : [];
+  if (values.length) {
+    const hours = Array(24).fill(0);
+    const hoursN = Array(24).fill(0);
+    const days = Array(7).fill(0);
+    const daysN = Array(7).fill(0);
+    for (const day of values) {
+      const end = new Date(day.end_time); // fin del día en hora del Pacífico
+      let total = 0;
+      for (const [h, n] of Object.entries(day.value ?? {})) {
+        if (typeof n !== "number") continue;
+        // hora h del día (Pacífico) -> instante -> hora Chile
+        const ptStart = new Date(end.getTime() - 86400_000 + Number(h) * 3600_000);
+        const { hour } = chileParts(ptStart);
+        hours[hour] += n;
+        hoursN[hour] += 1;
+        total += n;
+      }
+      const { dow } = chileParts(new Date(end.getTime() - 12 * 3600_000));
+      days[dow] += total;
+      daysN[dow] += 1;
+    }
+    if (hoursN.some((x) => x > 0)) {
+      patch.audiencia_horas = hours.map((v, i) => (hoursN[i] ? Math.round(v / hoursN[i]) : 0));
+      patch.audiencia_dias = days.map((v, i) => (daysN[i] ? Math.round(v / daysN[i]) : 0));
+      audiencia = true;
+    }
+  }
+  const { error } = await db.from("ig_settings").update(patch).eq("id", 1);
+  if (error) console.error("ig_settings stats patch", error.message);
+  return { posts: rows.length, audiencia };
+}
+
+// -----------------------------------------------------------------------------
+// Resumen semanal (lunes desde las 9:00 hora Chile): se guarda en ig_resumenes y se envía por correo
+// -----------------------------------------------------------------------------
+const pctDelta = (a: number, b: number) => (b ? Math.round(((a - b) / b) * 100) : a ? 100 : 0);
+
+async function buildWeeklySummary(db: SupabaseClient, acc: Account | null) {
+  const hasta = new Date();
+  const desde = new Date(hasta.getTime() - 7 * 86400_000);
+  const antes = new Date(desde.getTime() - 7 * 86400_000);
+  const [cur, prev, rank, settingsRow] = await Promise.all([
+    db.rpc("ig_period_stats", { p_desde: desde.toISOString(), p_hasta: hasta.toISOString() }),
+    db.rpc("ig_period_stats", { p_desde: antes.toISOString(), p_hasta: desde.toISOString() }),
+    db.rpc("ig_content_ranking"),
+    db.from("ig_settings").select("followers_count").eq("id", 1).maybeSingle(),
+  ]);
+  if (cur.error) throw new Error(`ig_period_stats: ${cur.error.message}`);
+  const c = cur.data as Record<string, number>;
+  const p = (prev.data ?? {}) as Record<string, number>;
+  const posts = ((rank.data ?? []) as any[]).filter((r) => r.publicado_at && new Date(r.publicado_at) >= desde);
+  const all = (rank.data ?? []) as any[];
+  const top = [...(posts.length ? posts : all)].sort((a, b) => (b.reach ?? 0) - (a.reach ?? 0))[0] ?? null;
+  const topLeads = [...all].sort((a, b) => b.leads - a.leads || b.ofertas - a.ofertas)[0] ?? null;
+
+  let pendientes: number | null = null;
+  if (acc) {
+    const inbox = await graph(`${acc.ig_user_id}/conversations`, {
+      token: acc.access_token,
+      params: { platform: "instagram", fields: "messages.limit(1){from}", limit: "15" },
+    });
+    if (inbox.ok) {
+      pendientes = (inbox.data?.data ?? []).filter(
+        (cv: any) => String(cv.messages?.data?.[0]?.from?.id ?? acc.ig_user_id) !== acc.ig_user_id,
+      ).length;
+    }
+  }
+
+  const keys = ["comentarios", "dms_enviados", "ofertas", "leads_crm", "clics", "mensajes_in", "menciones", "presupuestos", "aprobados", "ingresos"];
+  const kpis = Object.fromEntries(keys.map((k) => [k, { valor: Number(c[k] ?? 0), anterior: Number(p[k] ?? 0), delta: pctDelta(Number(c[k] ?? 0), Number(p[k] ?? 0)) }]));
+  return {
+    desde: desde.toISOString(),
+    hasta: hasta.toISOString(),
+    seguidores: settingsRow.data?.followers_count ?? null,
+    publicaciones: posts.length,
+    kpis,
+    top_post: top && { media_id: top.media_id, caption: (top.caption ?? "").slice(0, 120), permalink: top.permalink, thumbnail_url: top.thumbnail_url, reach: top.reach, views: top.views, saved: top.saved, leads: top.leads },
+    top_leads: topLeads && topLeads.leads > 0 ? { caption: (topLeads.caption ?? "").slice(0, 120), permalink: topLeads.permalink, leads: topLeads.leads, ofertas: topLeads.ofertas } : null,
+    pendientes,
+  };
+}
+
+function summaryHtml(d: any): string {
+  const row = (label: string, k: string, money = false) => {
+    const x = d.kpis[k];
+    const val = money ? new Intl.NumberFormat("es-CL", { style: "currency", currency: "CLP" }).format(x.valor) : x.valor.toLocaleString("es-CL");
+    const color = x.delta > 0 ? "#059669" : x.delta < 0 ? "#dc2626" : "#71717a";
+    const arrow = x.delta > 0 ? "▲" : x.delta < 0 ? "▼" : "•";
+    return `<tr><td style="padding:8px 0;color:#3f3f46">${label}</td><td style="padding:8px 0;text-align:right;font-weight:600">${val}</td><td style="padding:8px 0 8px 12px;text-align:right;color:${color};font-size:12px">${arrow} ${Math.abs(x.delta)}%</td></tr>`;
+  };
+  const fmt = (s: string) => new Date(s).toLocaleDateString("es-CL", { timeZone: TZ, day: "numeric", month: "short" });
+  const top = d.top_post
+    ? `<div style="margin-top:20px;padding:14px;border:1px solid #e4e4e7;border-radius:12px">
+         <p style="margin:0 0 6px;font-size:12px;color:#71717a">Publicación con más alcance</p>
+         <p style="margin:0 0 8px;color:#18181b">${(d.top_post.caption || "Sin texto").replace(/</g, "&lt;")}</p>
+         <p style="margin:0;font-size:13px;color:#3f3f46">Alcance <b>${d.top_post.reach ?? "—"}</b> · Reproducciones <b>${d.top_post.views ?? "—"}</b> · Guardados <b>${d.top_post.saved ?? "—"}</b> · Leads <b>${d.top_post.leads}</b></p>
+         ${d.top_post.permalink ? `<a href="${d.top_post.permalink}" style="font-size:13px;color:#7c3aed">Ver en Instagram →</a>` : ""}
+       </div>`
+    : "";
+  const pend = d.pendientes
+    ? `<p style="margin:16px 0 0;padding:10px 14px;background:#fef3c7;border-radius:10px;color:#92400e;font-size:13px">Tienes <b>${d.pendientes}</b> conversación(es) esperando respuesta.</p>`
+    : "";
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"></head>
+<body style="margin:0;background:#f4f4f5;font-family:'Segoe UI',Arial,sans-serif">
+<div style="max-width:560px;margin:0 auto;padding:20px">
+  <div style="background:linear-gradient(135deg,#7c3aed,#db2777);border-radius:16px 16px 0 0;padding:28px;color:#fff">
+    <p style="margin:0;font-size:13px;opacity:.85">Resumen semanal · @${d.username ?? "instagram"}</p>
+    <h1 style="margin:6px 0 0;font-size:22px">${fmt(d.desde)} – ${fmt(d.hasta)}</h1>
+    ${d.seguidores != null ? `<p style="margin:8px 0 0;font-size:14px">${d.seguidores.toLocaleString("es-CL")} seguidores · ${d.publicaciones} publicaciones nuevas</p>` : ""}
+  </div>
+  <div style="background:#fff;border-radius:0 0 16px 16px;padding:24px">
+    <table style="width:100%;border-collapse:collapse;font-size:14px">
+      ${row("Comentarios recibidos", "comentarios")}
+      ${row("DMs automáticos enviados", "dms_enviados")}
+      ${row("Ofertas entregadas", "ofertas")}
+      ${row("Clics en tus links", "clics")}
+      ${row("Mensajes recibidos", "mensajes_in")}
+      ${row("Leads nuevos en el CRM", "leads_crm")}
+      ${row("Menciones en historias", "menciones")}
+      ${row("Presupuestos", "presupuestos")}
+      ${row("Ventas aprobadas", "aprobados")}
+      ${row("Ingresos", "ingresos", true)}
+    </table>
+    ${top}${pend}
+    <a href="${LINK_BASE}/instagram?tab=analitica" style="display:inline-block;margin-top:20px;padding:10px 18px;background:#7c3aed;color:#fff;border-radius:10px;text-decoration:none;font-size:14px">Abrir panel</a>
+    <p style="margin:18px 0 0;font-size:11px;color:#a1a1aa">Comparado con los 7 días anteriores. Puedes desactivar este correo en el panel de Instagram → Analítica.</p>
+  </div>
+</div></body></html>`;
+}
+
+async function sendSummaryEmail(to: string, html: string, subject: string): Promise<string | null> {
+  const pass = Deno.env.get("SMTP_PASS") ?? "";
+  if (!pass) return "SMTP_PASS no configurado";
+  const user = Deno.env.get("SMTP_USER") ?? "";
+  try {
+    const transporter = nodemailer.createTransport({
+      host: Deno.env.get("SMTP_HOST") || "smtp.hostinger.com",
+      port: Number(Deno.env.get("SMTP_PORT") || 465),
+      secure: true,
+      auth: { user, pass },
+    });
+    await transporter.sendMail({ from: `"Nexabis Instagram" <${user}>`, to, subject, html });
+    return null;
+  } catch (e) {
+    return String((e as Error)?.message ?? e).slice(0, 300);
+  }
+}
+
+async function resolveSummaryEmail(db: SupabaseClient, settings: any): Promise<string | null> {
+  if (settings?.resumen_email) return settings.resumen_email;
+  if (!settings?.crm_owner_id) return null;
+  const { data } = await db.auth.admin.getUserById(settings.crm_owner_id);
+  return data?.user?.email ?? null;
+}
+
+async function runWeeklySummary(db: SupabaseClient, acc: Account | null, opts: { force?: boolean; email?: boolean } = {}) {
+  const { data: st } = await db.from("ig_settings").select("*").eq("id", 1).maybeSingle();
+  const datos: any = await buildWeeklySummary(db, acc);
+  datos.username = acc?.username ?? null;
+  let emailError: string | null = null;
+  let sent = false;
+  if (opts.email !== false) {
+    const to = await resolveSummaryEmail(db, st);
+    if (!to) emailError = "Sin correo de destino";
+    else {
+      emailError = await sendSummaryEmail(to, summaryHtml(datos), `📊 Instagram: tu semana (${datos.kpis.comentarios.valor} comentarios, ${datos.kpis.leads_crm.valor} leads)`);
+      sent = !emailError;
+    }
+  }
+  let waError: string | null = null;
+  if (opts.email !== false && st?.resumen_por_whatsapp && st?.whatsapp_numero) {
+    waError = await sendWhatsApp(st.whatsapp_numero, summaryText(datos));
+  }
+  datos.whatsapp = st?.resumen_por_whatsapp && st?.whatsapp_numero ? (waError ? `error: ${waError}` : "enviado") : "desactivado";
+  await db.from("ig_resumenes").insert({ semana_desde: datos.desde, semana_hasta: datos.hasta, datos, email_enviado: sent, email_error: emailError });
+  await db.from("ig_settings").update({ resumen_enviado_at: new Date().toISOString() }).eq("id", 1);
+  return { datos, sent, email_error: emailError, whatsapp_error: waError };
+}
+
+/** ¿Toca el resumen? Lunes desde las 9:00 (Chile) y no enviado desde el último lunes 9:00. */
+function weeklyDue(lastSent: string | null): boolean {
+  const now = new Date();
+  const { dow, hour } = chileParts(now);
+  const daysSinceMonday = (dow + 6) % 7;
+  if (daysSinceMonday === 0 && hour < 9) return false;
+  // Aproximación del último lunes 9:00 Chile (margen de 1 h por el horario de verano)
+  const lastMonday9 = now.getTime() - daysSinceMonday * 86400_000 - (hour - 9) * 3600_000 - 3600_000;
+  return !lastSent || new Date(lastSent).getTime() < lastMonday9;
+}
+
+// -----------------------------------------------------------------------------
+// WhatsApp: alertas en tiempo real y resumen semanal
+// -----------------------------------------------------------------------------
+function normalizePhone(raw?: string | null): string {
+  const d = String(raw ?? "").replace(/\D/g, "");
+  if (d.length === 9 && d.startsWith("9")) return `56${d}`;
+  if (d.length === 8) return `569${d}`;
+  return d.length >= 10 ? d : "";
+}
+
+async function sendWhatsApp(phone: string, text: string): Promise<string | null> {
+  if (!EVO_KEY) return "EVOLUTION_API_KEY no configurada";
+  const number = normalizePhone(phone);
+  if (!number) return "Número de WhatsApp inválido";
+  try {
+    const res = await fetch(`${EVO_URL}/message/sendText/${encodeURIComponent(EVO_INSTANCE)}`, {
+      method: "POST",
+      headers: { apikey: EVO_KEY, "Content-Type": "application/json" },
+      body: JSON.stringify({ number, text }),
+    });
+    if (!res.ok) return `Evolution API ${res.status}: ${(await res.text()).slice(0, 200)}`;
+    return null;
+  } catch (e) {
+    return `Evolution API: ${String(e)}`;
+  }
+}
+
+/**
+ * Alerta por WhatsApp al dueño (si está activado). Con `contactId` aplica anti-spam de 1 por hora por persona.
+ * Nunca lanza: una alerta fallida no debe frenar el flujo de Instagram.
+ */
+async function notifyOwner(db: SupabaseClient, text: string, contactId?: string) {
+  try {
+    const { data: st } = await db.from("ig_settings").select("alertas_whatsapp, whatsapp_numero").eq("id", 1).maybeSingle();
+    if (!st?.alertas_whatsapp || !st.whatsapp_numero) return;
+    if (contactId) {
+      const { data: c } = await db.from("ig_contacts").select("alerta_at").eq("ig_user_id", contactId).maybeSingle();
+      if (c?.alerta_at && Date.now() - new Date(c.alerta_at).getTime() < DM_ALERT_COOLDOWN_MS) return;
+      await db.from("ig_contacts").update({ alerta_at: new Date().toISOString() }).eq("ig_user_id", contactId);
+    }
+    const err = await sendWhatsApp(st.whatsapp_numero, text);
+    if (err) console.error("notifyOwner", err);
+  } catch (e) {
+    console.error("notifyOwner", e);
+  }
+}
+
+function summaryText(d: any): string {
+  const k = d.kpis;
+  const line = (label: string, key: string) => {
+    const x = k[key];
+    const arrow = x.delta > 0 ? "↑" : x.delta < 0 ? "↓" : "=";
+    return `• ${label}: *${x.valor.toLocaleString("es-CL")}* (${arrow}${Math.abs(x.delta)}%)`;
+  };
+  const money = new Intl.NumberFormat("es-CL", { style: "currency", currency: "CLP" }).format(k.ingresos.valor);
+  return [
+    `📊 *Instagram · tu semana*${d.username ? ` (@${d.username})` : ""}`,
+    d.seguidores != null ? `👥 ${d.seguidores} seguidores · ${d.publicaciones} publicaciones nuevas` : "",
+    "",
+    line("Comentarios", "comentarios"),
+    line("DMs automáticos", "dms_enviados"),
+    line("Ofertas entregadas", "ofertas"),
+    line("Clics en links", "clics"),
+    line("Leads nuevos", "leads_crm"),
+    line("Menciones", "menciones"),
+    `• Ventas: *${k.aprobados.valor}* · ${money}`,
+    d.top_post ? `\n🏆 Top post: "${(d.top_post.caption || "sin texto").slice(0, 60)}" · alcance ${d.top_post.reach ?? "—"} · ${d.top_post.leads} leads` : "",
+    d.pendientes ? `\n⚠️ ${d.pendientes} conversación(es) esperando respuesta` : "",
+    `\n${LINK_BASE}/instagram?tab=analitica`,
+  ]
+    .filter((x) => x !== "")
+    .join("\n");
+}
+
 /** ¿La persona sigue a la cuenta? true/false, o null si Meta no lo informa. */
 async function isFollower(acc: Account, igsid: string): Promise<boolean | null> {
   const r = await graph(igsid, { token: acc.access_token, params: { fields: "is_user_follow_business" } });
@@ -856,7 +1216,10 @@ async function handleComment(
   });
 
   // Oferta entregada en modo directo -> el trigger SQL lo sincroniza con el CRM
-  if (offerAt) await upsertContact(db, fromId, { oferta_enviada_at: offerAt, ultima_campaign_id: campaign.id });
+  if (offerAt) {
+    await upsertContact(db, fromId, { oferta_enviada_at: offerAt, ultima_campaign_id: campaign.id });
+    await notifyOwner(db, `🎯 Nuevo lead en Instagram: @${fromUsername ?? fromId} recibió la oferta de «${campaign.nombre}».\nComentó: "${text.slice(0, 120)}"`);
+  }
 }
 
 // -----------------------------------------------------------------------------
@@ -1061,6 +1424,7 @@ async function handleMessaging(
   const isMention = (m?.message?.attachments ?? []).some((a: any) => a?.type === "story_mention");
   if (isMention) {
     await handleStoryMention(db, acc, senderId, contact);
+    await notifyOwner(db, `📣 @${contact?.username ?? senderId} te mencionó en su historia de Instagram.`, senderId);
     return;
   }
 
@@ -1098,8 +1462,15 @@ async function handleMessaging(
   }
 
   if (!campaign) {
-    // Conversación libre -> agente IA (si está activo); si no, la atiende un humano
+    // Conversación libre -> agente IA (si está activo); si no, la atiende un humano: avisar por WhatsApp
     await aiReply(db, acc, campaigns, senderId, contact);
+    if (text && !payload) {
+      await notifyOwner(
+        db,
+        `💬 Nuevo DM de @${contact?.username ?? m?.sender?.username ?? senderId}: "${text.slice(0, 200)}"\nResponder: ${LINK_BASE}/instagram?tab=bandeja`,
+        senderId,
+      );
+    }
     return;
   }
 
@@ -1174,6 +1545,7 @@ async function handleMessaging(
   });
 
   if (lastEvent) await db.from("ig_comment_events").update({ oferta_enviada_at: now }).eq("id", lastEvent.id);
+  await notifyOwner(db, `🎯 Nuevo lead en Instagram: @${contact?.username ?? senderId} recibió la oferta de «${campaign.nombre}».`);
 }
 
 async function processWebhook(db: SupabaseClient, body: any) {
@@ -1381,6 +1753,30 @@ async function actionListMedia(db: SupabaseClient) {
 // Polling: comentarios + conversaciones (cron cada 2 min). Cubre el período en que
 // Meta no entrega webhooks en tiempo real (app en desarrollo / sin Advanced Access).
 // -----------------------------------------------------------------------------
+/** Tareas periódicas del cron: estadísticas cada 6 h y resumen semanal. Nunca rompe el polling. */
+async function maintenance(db: SupabaseClient, acc: Account, outOfTime: () => boolean) {
+  const out: Record<string, unknown> = {};
+  try {
+    const { data: st, error } = await db
+      .from("ig_settings")
+      .select("stats_synced_at, resumen_semanal, resumen_enviado_at")
+      .eq("id", 1)
+      .maybeSingle();
+    if (error || !st) return { skipped: "sin_migracion" };
+    if (!outOfTime() && (!st.stats_synced_at || Date.now() - new Date(st.stats_synced_at).getTime() > STATS_EVERY_MS)) {
+      out.stats = await syncMediaStats(db, acc);
+    }
+    if (!outOfTime() && st.resumen_semanal && weeklyDue(st.resumen_enviado_at)) {
+      const r = await runWeeklySummary(db, acc);
+      out.resumen = { enviado: r.sent, error: r.email_error, whatsapp_error: r.whatsapp_error };
+    }
+  } catch (e) {
+    console.error("maintenance", e);
+    out.error = String(e);
+  }
+  return out;
+}
+
 async function actionPollComments(db: SupabaseClient) {
   const started = Date.now();
   const outOfTime = () => Date.now() - started > POLL_BUDGET_MS;
@@ -1392,7 +1788,7 @@ async function actionPollComments(db: SupabaseClient) {
   const campaigns = await loadActiveCampaigns(db);
   const settings = await loadSettings(db);
   if (!campaigns.length && !settings.ai_enabled) {
-    return json({ ok: true, skipped: "no_active_campaigns", published });
+    return json({ ok: true, skipped: "no_active_campaigns", published, analytics: await maintenance(db, acc, outOfTime) });
   }
 
   // ---- 1. Comentarios ----
@@ -1551,6 +1947,7 @@ async function actionPollComments(db: SupabaseClient) {
     skipped_older_than_7d: skippedOld,
     processed_messages: processedMessagesCount,
     published,
+    analytics: await maintenance(db, acc, outOfTime),
     elapsed_ms: Date.now() - started,
   });
 }
@@ -1873,6 +2270,23 @@ Deno.serve(async (req) => {
         if (!body.comment_id) return json({ ok: false, error: "Falta comment_id" }, 400);
         const r = await graph(String(body.comment_id), { method: "DELETE", token: acc.access_token });
         return json({ ok: r.ok, error: r.ok ? null : graphError(r) });
+      }
+
+      case "test_whatsapp": {
+        const { data: st } = await db.from("ig_settings").select("whatsapp_numero").eq("id", 1).maybeSingle();
+        const to = String(body.numero ?? st?.whatsapp_numero ?? "");
+        const err = await sendWhatsApp(to, "✅ Prueba de alertas de Instagram desde tu ecosistema Nexabis.");
+        return json({ ok: !err, error: err });
+      }
+      case "sync_stats": {
+        const acc = await loadAccount(db);
+        if (!acc) return json({ ok: false, error: "Conecta la cuenta primero" }, 400);
+        return json({ ok: true, ...(await syncMediaStats(db, acc)) });
+      }
+      case "weekly_summary": {
+        const acc = await loadAccount(db);
+        const r = await runWeeklySummary(db, acc, { email: body.email !== false });
+        return json({ ok: true, enviado: r.sent, email_error: r.email_error, whatsapp_error: r.whatsapp_error, datos: r.datos });
       }
 
       // ---------------- Estadísticas ----------------

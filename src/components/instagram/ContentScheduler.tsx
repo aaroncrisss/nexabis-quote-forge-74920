@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { CalendarClock, ExternalLink, Pencil, Rocket, Trash2, Upload, Film, Image as ImageIcon, CircleDot, Layers, Copy } from "lucide-react";
 import { supabaseCRM } from "@/integrations/supabase/crm-client";
 import { toast } from "sonner";
+import { nextOccurrence, slotLabel, type Slot } from "./analytics";
 
 type Tipo = "reel" | "imagen" | "historia" | "carrusel";
 type Item = { url: string; es_video: boolean; path: string };
@@ -82,15 +83,24 @@ export function ContentScheduler({
   connected,
   invoke,
   onPublished,
+  bestSlots = [],
+  presetDate,
 }: {
   campaigns: { id?: string; nombre: string }[];
   connected: boolean;
   invoke: (body: Record<string, unknown>) => Promise<{ ok?: boolean; result?: string; error?: string; scopes?: string[] }>;
   onPublished?: () => void;
+  bestSlots?: Slot[];
+  /** Fecha sugerida desde Analítica ("programar en este horario") */
+  presetDate?: Date | null;
 }) {
   const [posts, setPosts] = useState<IgPost[]>([]);
   const [ready, setReady] = useState(true);
   const [draft, setDraft] = useState<Draft>(newDraft);
+
+  useEffect(() => {
+    if (presetDate) setDraft((d) => ({ ...d, fecha: toLocalInput(presetDate) }));
+  }, [presetDate]);
   const [file, setFile] = useState<File | null>(null);
   const [files, setFiles] = useState<File[]>([]);
   const [preview, setPreview] = useState<string | null>(null);
@@ -335,6 +345,21 @@ export function ContentScheduler({
               <div className="space-y-1 sm:col-span-2">
                 <Label className="text-xs">Fecha y hora de publicación</Label>
                 <Input type="datetime-local" value={draft.fecha} onChange={(e) => setDraft({ ...draft, fecha: e.target.value })} />
+                {bestSlots.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-1 pt-1">
+                    <span className="text-[10px] text-muted-foreground">Mejores horarios:</span>
+                    {bestSlots.map((s, i) => (
+                      <button
+                        key={`${s.dow}-${s.hour}`}
+                        type="button"
+                        onClick={() => setDraft({ ...draft, fecha: toLocalInput(nextOccurrence(s)) })}
+                        className={`rounded-full border px-2 py-0.5 text-[10px] hover:bg-primary/10 ${i === 0 ? "border-primary text-primary" : "border-border"}`}
+                      >
+                        {i === 0 ? "🏆 " : ""}{slotLabel(s)}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
 

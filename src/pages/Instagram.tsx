@@ -35,6 +35,8 @@ import { toast } from "sonner";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ContentScheduler } from "@/components/instagram/ContentScheduler";
 import { InboxPanel } from "@/components/instagram/InboxPanel";
+import { AnalyticsPanel } from "@/components/instagram/AnalyticsPanel";
+import { useBestTimes } from "@/components/instagram/analytics";
 import { PostsPanel } from "@/components/instagram/PostsPanel";
 import { ResourcesManager, LINK_BASE, type Recurso } from "@/components/instagram/ResourcesManager";
 
@@ -238,7 +240,7 @@ async function invokeIg(body: Record<string, unknown>): Promise<IgResult> {
 // -----------------------------------------------------------------------------
 // Página
 // -----------------------------------------------------------------------------
-const TABS = ["campanias", "bandeja", "publicaciones", "contenido", "archivos", "leads", "actividad"] as const;
+const TABS = ["campanias", "analitica", "bandeja", "publicaciones", "contenido", "archivos", "leads", "actividad"] as const;
 
 export default function Instagram() {
   // Pestaña activa en la URL (?tab=bandeja): sobrevive a recargas y se puede compartir
@@ -247,6 +249,8 @@ export default function Instagram() {
   const tab = (TABS as readonly string[]).includes(tabParam) ? tabParam : "campanias";
   const tabsRef = useRef<HTMLDivElement>(null);
   const [unread, setUnread] = useState(0);
+  const { best, reload: reloadBest } = useBestTimes();
+  const [presetDate, setPresetDate] = useState<Date | null>(null);
   const changeTab = (v: string) => {
     setParams((p) => {
       const n = new URLSearchParams(p);
@@ -626,6 +630,7 @@ export default function Instagram() {
       <Tabs ref={tabsRef} value={tab} onValueChange={changeTab} className="space-y-3 scroll-mt-4">
         <TabsList className="flex flex-wrap h-auto justify-start">
           <TabsTrigger value="campanias" className="text-xs">Campañas</TabsTrigger>
+          <TabsTrigger value="analitica" className="text-xs">Analítica</TabsTrigger>
           <TabsTrigger value="bandeja" className="text-xs gap-1">
             Bandeja
             {unread > 0 && <span className="rounded-full bg-primary text-primary-foreground px-1.5 text-[10px] leading-4">{unread}</span>}
@@ -858,6 +863,20 @@ export default function Instagram() {
         </Card>
       </TabsContent>
 
+      <TabsContent value="analitica">
+        <AnalyticsPanel
+          invoke={invokeIg as (b: Record<string, unknown>) => Promise<Record<string, unknown>>}
+          connected={!!status?.connected}
+          best={best}
+          onReloadBest={reloadBest}
+          onSchedule={(d) => {
+            setPresetDate(d);
+            changeTab("contenido");
+            toast.success(`Fecha sugerida: ${d.toLocaleString("es-CL", { weekday: "long", hour: "2-digit", minute: "2-digit" })}. Sube tu contenido y programa.`);
+          }}
+        />
+      </TabsContent>
+
       {/* Montada siempre: mantiene el contador de "sin responder" aunque estés en otra pestaña */}
       <TabsContent value="bandeja" forceMount className="data-[state=inactive]:hidden">
         <InboxPanel
@@ -878,7 +897,14 @@ export default function Instagram() {
       </TabsContent>
 
       <TabsContent value="contenido">
-        <ContentScheduler campaigns={campaigns} connected={!!status?.connected} invoke={invokeIg} onPublished={load} />
+        <ContentScheduler
+          campaigns={campaigns}
+          connected={!!status?.connected}
+          invoke={invokeIg}
+          onPublished={load}
+          bestSlots={best?.top ?? []}
+          presetDate={presetDate}
+        />
       </TabsContent>
 
       <TabsContent value="archivos">
