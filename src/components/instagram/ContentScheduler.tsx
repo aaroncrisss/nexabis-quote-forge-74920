@@ -116,7 +116,10 @@ export function ContentScheduler({
 
   useEffect(() => {
     load();
-    const t = setInterval(load, 30_000); // refleja el avance del cron
+    // Refleja el avance del cron; nunca con la pestaña del navegador oculta
+    const t = setInterval(() => {
+      if (document.visibilityState === "visible") load();
+    }, 30_000);
     return () => clearInterval(t);
   }, [load]);
 

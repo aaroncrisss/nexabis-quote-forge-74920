@@ -125,14 +125,19 @@ export function InboxPanel({
 
   useEffect(() => {
     loadInbox();
-    const t = setInterval(loadInbox, 60_000);
+    // Solo refresca con la pestaña del navegador visible (ahorra llamadas a Meta y a la base)
+    const t = setInterval(() => {
+      if (document.visibilityState === "visible") loadInbox();
+    }, 60_000);
     return () => clearInterval(t);
   }, [loadInbox]);
 
   useEffect(() => {
     if (!active) return;
     loadThread(active);
-    const t = setInterval(() => loadThread(active, true), 20_000);
+    const t = setInterval(() => {
+      if (document.visibilityState === "visible") loadThread(active, true);
+    }, 20_000);
     return () => clearInterval(t);
   }, [active, loadThread]);
 
