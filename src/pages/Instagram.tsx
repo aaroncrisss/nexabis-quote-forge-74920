@@ -34,6 +34,8 @@ import { supabaseCRM } from "@/integrations/supabase/crm-client";
 import { toast } from "sonner";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ContentScheduler } from "@/components/instagram/ContentScheduler";
+import { InboxPanel } from "@/components/instagram/InboxPanel";
+import { PostsPanel } from "@/components/instagram/PostsPanel";
 import { ResourcesManager, LINK_BASE, type Recurso } from "@/components/instagram/ResourcesManager";
 
 // -----------------------------------------------------------------------------
@@ -583,8 +585,10 @@ export default function Instagram() {
       </div>
 
       <Tabs defaultValue="campanias" className="space-y-3">
-        <TabsList>
+        <TabsList className="flex flex-wrap h-auto justify-start">
           <TabsTrigger value="campanias" className="text-xs">Campañas</TabsTrigger>
+          <TabsTrigger value="bandeja" className="text-xs">Bandeja</TabsTrigger>
+          <TabsTrigger value="publicaciones" className="text-xs">Publicaciones</TabsTrigger>
           <TabsTrigger value="contenido" className="text-xs">Contenido</TabsTrigger>
           <TabsTrigger value="archivos" className="text-xs">Archivos</TabsTrigger>
           <TabsTrigger value="leads" className="text-xs">Leads ({contacts.length})</TabsTrigger>
@@ -636,8 +640,20 @@ export default function Instagram() {
                       {sent} DMs{cs ? ` · ${cs.ofertas} ofertas · ${cs.clics} clics · ${cs.leads} leads` : " enviados"}
                     </span>
                     <div className="flex gap-1">
-                      <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => setEditing({ ...c })}>
+                      <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => setEditing({ ...c })} title="Editar">
                         <Pencil className="w-3.5 h-3.5" />
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 w-7 p-0"
+                        title="Duplicar"
+                        onClick={() => {
+                          const { id, ...rest } = c;
+                          setEditing({ ...rest, nombre: `${c.nombre} (copia)`, activa: false });
+                        }}
+                      >
+                        <Copy className="w-3.5 h-3.5" />
                       </Button>
                       <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-red-400" onClick={() => deleteCampaign(c)}>
                         <Trash2 className="w-3.5 h-3.5" />
@@ -750,6 +766,23 @@ export default function Instagram() {
             </div>
           )}
         </Card>
+      </TabsContent>
+
+      <TabsContent value="bandeja">
+        <InboxPanel
+          invoke={invokeIg as (b: Record<string, unknown>) => Promise<Record<string, unknown>>}
+          connected={!!status?.connected}
+          quickReplies={recursos.map((r) => `Aquí tienes ${r.titulo} 👉 ${LINK_BASE}${r.slug}`)}
+        />
+      </TabsContent>
+
+      <TabsContent value="publicaciones">
+        <PostsPanel
+          invoke={invokeIg as (b: Record<string, unknown>) => Promise<Record<string, unknown>>}
+          connected={!!status?.connected}
+          campaigns={campaigns}
+          onNewCampaign={(mediaId) => setEditing({ ...EMPTY_CAMPAIGN, media_ids: [mediaId] })}
+        />
       </TabsContent>
 
       <TabsContent value="contenido">

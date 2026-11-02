@@ -176,7 +176,7 @@ async function verifySignature(rawBody: string, header: string | null): Promise<
 async function graph(
   path: string,
   opts: {
-    method?: "GET" | "POST";
+    method?: "GET" | "POST" | "DELETE";
     token?: string;
     params?: Record<string, string>;
     body?: unknown;
@@ -522,6 +522,8 @@ type IgPost = {
   campaign_id: string | null;
   container_id: string | null;
   intentos: number;
+  media_items?: { url: string; es_video: boolean }[] | null;
+  children_ids?: string[] | null;
 };
 
 async function advancePost(db: SupabaseClient, acc: Account, p: IgPost): Promise<string> {
@@ -532,6 +534,43 @@ async function advancePost(db: SupabaseClient, acc: Account, p: IgPost): Promise
   };
 
   let containerId = p.container_id;
+
+  // ---- Carrusel: primero los hijos, luego el contenedor padre ----
+  if (!containerId && p.tipo === "carrusel") {
+    const items = (p.media_items ?? []).slice(0, 10);
+    if (items.length < 2) return await fail("Un carrusel necesita entre 2 y 10 archivos");
+    let children = p.children_ids ?? [];
+    if (!children.length) {
+      for (const it of items) {
+        const params: Record<string, string> = { is_carousel_item: "true" };
+        if (it.es_video) {
+          params.media_type = "VIDEO";
+          params.video_url = it.url;
+        } else params.image_url = it.url;
+        const c = await graph(`${acc.ig_user_id}/media`, { method: "POST", token: acc.access_token, params });
+        if (!c.ok || !c.data?.id) return await fail(`Archivo ${children.length + 1}: ${graphError(c)}`);
+        children.push(String(c.data.id));
+      }
+      await upd({ estado: "procesando", children_ids: children, error: null });
+    }
+    for (const id of children) {
+      const st = await graph(id, { token: acc.access_token, params: { fields: "status_code,status" } });
+      const code = st.data?.status_code;
+      if (code === "ERROR" || code === "EXPIRED") return await fail(`Meta (carrusel): ${st.data?.status ?? code}`);
+      if (code !== "FINISHED") {
+        if (p.intentos >= 30) return await fail("Meta no terminó de procesar el carrusel");
+        await upd({ intentos: p.intentos + 1 });
+        return "procesando";
+      }
+    }
+    const params: Record<string, string> = { media_type: "CAROUSEL", children: children.join(",") };
+    if (p.caption) params.caption = p.caption.slice(0, 2200);
+    const parent = await graph(`${acc.ig_user_id}/media`, { method: "POST", token: acc.access_token, params });
+    if (!parent.ok || !parent.data?.id) return await fail(graphError(parent));
+    containerId = String(parent.data.id);
+    await upd({ estado: "procesando", container_id: containerId, error: null });
+  }
+
   if (!containerId) {
     const params: Record<string, string> = {};
     if (p.tipo === "reel") {
@@ -1264,7 +1303,7 @@ async function actionListMedia(db: SupabaseClient) {
   const r = await graph(`${acc.ig_user_id}/media`, {
     token: acc.access_token,
     params: {
-      fields: "id,caption,media_type,media_product_type,thumbnail_url,media_url,permalink,timestamp,comments_count",
+      fields: "id,caption,media_type,media_product_type,thumbnail_url,media_url,permalink,timestamp,comments_count,like_count",
       limit: "30",
     },
   });
@@ -1601,6 +1640,150 @@ Deno.serve(async (req) => {
         return await actionSimulate(db, body);
       case "simulate_ai":
         return await actionSimulateAi(db, body);
+      // ---------------- Bandeja de DMs ----------------
+      case "inbox": {
+        const acc = await loadAccount(db);
+        if (!acc) return json({ ok: false, error: "Conecta la cuenta primero" }, 400);
+        const r = await graph(`${acc.ig_user_id}/conversations`, {
+          token: acc.access_token,
+          params: {
+            platform: "instagram",
+            fields: "id,updated_time,participants,messages.limit(1){id,message,from,created_time}",
+            limit: String(Math.min(50, Number(body.limit) || 30)),
+          },
+        });
+        if (!r.ok) return json({ ok: false, error: graphError(r) });
+        const convs = (r.data?.data ?? []).map((c: any) => {
+          const other = (c.participants?.data ?? []).find((x: any) => String(x.id) !== acc.ig_user_id) ?? {};
+          const last = c.messages?.data?.[0] ?? null;
+          return {
+            id: c.id,
+            updated_time: c.updated_time,
+            user_id: other.id ? String(other.id) : null,
+            username: other.username ?? null,
+            last_text: last?.message ?? "",
+            last_from_me: last ? String(last.from?.id) === acc.ig_user_id : false,
+          };
+        });
+        const ids = convs.map((c: any) => c.user_id).filter(Boolean);
+        const { data: contacts } = ids.length
+          ? await db.from("ig_contacts").select("ig_user_id, cliente_id, no_contactar, oferta_enviada_at, ultima_campaign_id").in("ig_user_id", ids)
+          : { data: [] as any[] };
+        const byId = new Map((contacts ?? []).map((c: any) => [c.ig_user_id, c]));
+        return json({ ok: true, conversations: convs.map((c: any) => ({ ...c, contact: byId.get(c.user_id) ?? null })) });
+      }
+      case "thread": {
+        const acc = await loadAccount(db);
+        if (!acc) return json({ ok: false, error: "Conecta la cuenta primero" }, 400);
+        if (!body.conversation_id) return json({ ok: false, error: "Falta conversation_id" }, 400);
+        const r = await graph(String(body.conversation_id), {
+          token: acc.access_token,
+          params: { fields: "messages.limit(50){id,message,from,created_time,attachments{image_data,video_data,file_url},story}" },
+        });
+        if (!r.ok) return json({ ok: false, error: graphError(r) });
+        const messages = (r.data?.messages?.data ?? [])
+          .map((m: any) => ({
+            id: m.id,
+            text: m.message ?? "",
+            from_me: String(m.from?.id) === acc.ig_user_id,
+            created_time: m.created_time,
+            image: m.attachments?.data?.[0]?.image_data?.url ?? null,
+            video: m.attachments?.data?.[0]?.video_data?.url ?? null,
+            file: m.attachments?.data?.[0]?.file_url ?? null,
+            story: Boolean(m.story),
+          }))
+          .reverse();
+        const lastIn = [...messages].reverse().find((m: any) => !m.from_me);
+        const windowOpen = lastIn ? Date.now() - new Date(lastIn.created_time).getTime() < 24 * 3600_000 : false;
+        return json({ ok: true, messages, window_open: windowOpen, last_inbound_at: lastIn?.created_time ?? null });
+      }
+      case "send_dm": {
+        const acc = await loadAccount(db);
+        if (!acc) return json({ ok: false, error: "Conecta la cuenta primero" }, 400);
+        const to = String(body.recipient_id ?? "");
+        const text = String(body.text ?? "").trim();
+        if (!to || !text) return json({ ok: false, error: "Falta destinatario o texto" }, 400);
+        const r = await sendMessage(acc, { id: to }, { text: text.slice(0, MAX_TEXT) });
+        if (!r.ok) {
+          const code = r.data?.error?.code;
+          const sub = r.data?.error?.error_subcode;
+          const outside = code === 10 || sub === 2534022 || /window|ventana|24/i.test(r.data?.error?.message ?? "");
+          return json({
+            ok: false,
+            error: outside ? "Pasaron más de 24 h desde su último mensaje: Instagram no deja escribirle hasta que vuelva a escribirte." : graphError(r),
+          });
+        }
+        await logMessage(db, { ig_user_id: to, mid: r.data?.message_id ?? null, direccion: "out", origen: "humano", texto: text });
+        return json({ ok: true, message_id: r.data?.message_id ?? null });
+      }
+
+      // ---------------- Comentarios ----------------
+      case "list_comments": {
+        const acc = await loadAccount(db);
+        if (!acc) return json({ ok: false, error: "Conecta la cuenta primero" }, 400);
+        if (!body.media_id) return json({ ok: false, error: "Falta media_id" }, 400);
+        const r = await graph(`${String(body.media_id)}/comments`, {
+          token: acc.access_token,
+          params: {
+            fields: "id,text,username,timestamp,like_count,hidden,from{id,username},replies.limit(20){id,text,username,timestamp,from{id}}",
+            limit: "50",
+          },
+        });
+        if (!r.ok) return json({ ok: false, error: graphError(r) });
+        const comments = r.data?.data ?? [];
+        const ids = comments.map((c: any) => c.id);
+        const { data: evs } = ids.length
+          ? await db.from("ig_comment_events").select("comment_id, estado, motivo, campaign_id").in("comment_id", ids)
+          : { data: [] as any[] };
+        const byId = new Map((evs ?? []).map((e: any) => [e.comment_id, e]));
+        return json({
+          ok: true,
+          comments: comments.map((c: any) => ({
+            ...c,
+            mine: String(c.from?.id ?? "") === acc.ig_user_id,
+            bot: byId.get(c.id) ?? null,
+            can_private_reply: Date.now() - new Date(c.timestamp).getTime() < PRIVATE_REPLY_WINDOW_MS,
+          })),
+        });
+      }
+      case "reply_comment": {
+        const acc = await loadAccount(db);
+        if (!acc) return json({ ok: false, error: "Conecta la cuenta primero" }, 400);
+        const text = String(body.text ?? "").trim();
+        if (!body.comment_id || !text) return json({ ok: false, error: "Falta comentario o texto" }, 400);
+        const r = await replyPublic(acc, String(body.comment_id), text.slice(0, 2200));
+        return json({ ok: r.ok, error: r.ok ? null : graphError(r) });
+      }
+      case "private_reply": {
+        const acc = await loadAccount(db);
+        if (!acc) return json({ ok: false, error: "Conecta la cuenta primero" }, 400);
+        const text = String(body.text ?? "").trim();
+        if (!body.comment_id || !text) return json({ ok: false, error: "Falta comentario o texto" }, 400);
+        const r = await sendMessage(acc, { comment_id: String(body.comment_id) }, { text: text.slice(0, MAX_TEXT) });
+        if (r.ok && body.from_id) {
+          await logMessage(db, { ig_user_id: String(body.from_id), mid: r.data?.message_id ?? null, direccion: "out", origen: "humano", texto: text });
+        }
+        return json({ ok: r.ok, error: r.ok ? null : graphError(r) });
+      }
+      case "hide_comment": {
+        const acc = await loadAccount(db);
+        if (!acc) return json({ ok: false, error: "Conecta la cuenta primero" }, 400);
+        if (!body.comment_id) return json({ ok: false, error: "Falta comment_id" }, 400);
+        const r = await graph(String(body.comment_id), {
+          method: "POST",
+          token: acc.access_token,
+          params: { hide: String(body.hide !== false) },
+        });
+        return json({ ok: r.ok, error: r.ok ? null : graphError(r) });
+      }
+      case "delete_comment": {
+        const acc = await loadAccount(db);
+        if (!acc) return json({ ok: false, error: "Conecta la cuenta primero" }, 400);
+        if (!body.comment_id) return json({ ok: false, error: "Falta comment_id" }, 400);
+        const r = await graph(String(body.comment_id), { method: "DELETE", token: acc.access_token });
+        return json({ ok: r.ok, error: r.ok ? null : graphError(r) });
+      }
+
       case "publish_now": {
         const acc = await loadAccount(db);
         if (!acc) return json({ ok: false, error: "Conecta la cuenta primero" }, 400);
@@ -1609,7 +1792,7 @@ Deno.serve(async (req) => {
         // Mover la fecha a ahora (y reintentar si estaba en borrador/error) y avanzar
         await db
           .from("ig_posts")
-          .update({ publicar_en: new Date().toISOString(), estado: "programado", error: null, container_id: null, intentos: 0 })
+          .update({ publicar_en: new Date().toISOString(), estado: "programado", error: null, container_id: null, children_ids: null, intentos: 0 })
           .eq("id", id)
           .in("estado", ["programado", "borrador", "error"]);
         const results = await publishDuePosts(db, acc, id);

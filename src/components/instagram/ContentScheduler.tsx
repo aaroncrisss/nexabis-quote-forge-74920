@@ -7,11 +7,12 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { CalendarClock, ExternalLink, Pencil, Rocket, Trash2, Upload, Film, Image as ImageIcon, CircleDot } from "lucide-react";
+import { CalendarClock, ExternalLink, Pencil, Rocket, Trash2, Upload, Film, Image as ImageIcon, CircleDot, Layers, Copy } from "lucide-react";
 import { supabaseCRM } from "@/integrations/supabase/crm-client";
 import { toast } from "sonner";
 
-type Tipo = "reel" | "imagen" | "historia";
+type Tipo = "reel" | "imagen" | "historia" | "carrusel";
+type Item = { url: string; es_video: boolean; path: string };
 type Estado = "borrador" | "programado" | "procesando" | "publicado" | "error";
 
 export type IgPost = {
@@ -29,6 +30,7 @@ export type IgPost = {
   permalink: string | null;
   error: string | null;
   publicado_at: string | null;
+  media_items?: Item[] | null;
 };
 
 type Draft = {
@@ -41,6 +43,7 @@ type Draft = {
   media_url: string;
   storage_path: string | null;
   es_video: boolean;
+  media_items: Item[];
 };
 
 const BUCKET = "ig-media";
@@ -61,6 +64,7 @@ const newDraft = (): Draft => ({
   media_url: "",
   storage_path: null,
   es_video: true,
+  media_items: [],
 });
 
 const ESTADO: Record<Estado, { label: string; cls: string }> = {
@@ -71,7 +75,7 @@ const ESTADO: Record<Estado, { label: string; cls: string }> = {
   error: { label: "Error", cls: "text-red-400 border-red-500/40" },
 };
 
-const TIPO_ICON: Record<Tipo, typeof Film> = { reel: Film, imagen: ImageIcon, historia: CircleDot };
+const TIPO_ICON: Record<Tipo, typeof Film> = { reel: Film, imagen: ImageIcon, historia: CircleDot, carrusel: Layers };
 
 export function ContentScheduler({
   campaigns,
@@ -88,6 +92,7 @@ export function ContentScheduler({
   const [ready, setReady] = useState(true);
   const [draft, setDraft] = useState<Draft>(newDraft);
   const [file, setFile] = useState<File | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
   const [preview, setPreview] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [publishing, setPublishing] = useState<string | null>(null);
@@ -134,8 +139,22 @@ export function ContentScheduler({
     return [...m.entries()];
   }, [pending]);
 
+  const uploadOne = async (f: File) => {
+    const ext = f.name.split(".").pop()?.toLowerCase() || (f.type.startsWith("video/") ? "mp4" : "jpg");
+    const path = `${new Date().toISOString().slice(0, 10)}/${crypto.randomUUID()}.${ext}`;
+    const up = await supabaseCRM.storage.from(BUCKET).upload(path, f, { contentType: f.type, upsert: false });
+    if (up.error) throw new Error(up.error.message);
+    return { path, url: supabaseCRM.storage.from(BUCKET).getPublicUrl(path).data.publicUrl, es_video: f.type.startsWith("video/") };
+  };
+
   const save = async (estado: "programado" | "borrador") => {
-    if (!file && !draft.media_url) return toast.error(draft.tipo === "reel" ? "Sube el video del reel" : "Sube la imagen o video");
+    const isCarousel = draft.tipo === "carrusel";
+    if (isCarousel) {
+      const n = files.length || draft.media_items.length;
+      if (n < 2 || n > 10) return toast.error("Un carrusel lleva entre 2 y 10 archivos");
+      if (files.some((f) => f.size > MAX_BYTES)) return toast.error("Máximo 50 MB por archivo");
+      if (files.some((f) => !f.type.startsWith("video/") && !/jpe?g$/i.test(f.type))) return toast.error("Imágenes del carrusel: solo JPG");
+    } else if (!file && !draft.media_url) return toast.error(draft.tipo === "reel" ? "Sube el video del reel" : "Sube la imagen o video");
     if (file && file.size > MAX_BYTES) return toast.error("Máximo 50 MB por archivo (límite de Supabase)");
     const when = new Date(draft.fecha);
     if (Number.isNaN(when.getTime())) return toast.error("Fecha inválida");
@@ -145,7 +164,19 @@ export function ContentScheduler({
     setBusy(true);
     try {
       let { media_url, storage_path, es_video } = draft;
-      if (file) {
+      let media_items = draft.media_items;
+      if (isCarousel && files.length) {
+        const uploaded: Item[] = [];
+        for (const f of files) uploaded.push(await uploadOne(f));
+        const old = draft.media_items.map((i) => i.path).filter(Boolean);
+        if (old.length) await supabaseCRM.storage.from(BUCKET).remove(old);
+        media_items = uploaded;
+      }
+      if (isCarousel) {
+        media_url = media_items[0].url;
+        es_video = media_items[0].es_video;
+        storage_path = null;
+      } else if (file) {
         es_video = file.type.startsWith("video/");
         if (draft.tipo === "reel" && !es_video) throw new Error("Un reel necesita un video (MP4/MOV)");
         if (draft.tipo === "imagen" && es_video) throw new Error("Para video elige Reel o Historia");
@@ -167,6 +198,8 @@ export function ContentScheduler({
         media_url,
         storage_path,
         es_video,
+        media_items: isCarousel ? media_items : [],
+        children_ids: null,
         estado,
         error: null,
         container_id: null,
@@ -179,6 +212,7 @@ export function ContentScheduler({
       toast.success(estado === "programado" ? `Programado para ${when.toLocaleString("es-CL")}` : "Borrador guardado");
       setDraft(newDraft());
       setFile(null);
+      setFiles([]);
       load();
     } catch (e) {
       toast.error((e as Error).message);
@@ -198,16 +232,40 @@ export function ContentScheduler({
       media_url: p.media_url,
       storage_path: p.storage_path,
       es_video: p.es_video,
+      media_items: p.media_items ?? [],
     });
     setFile(null);
+    setFiles([]);
     window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  /** Reutilizar: copia el contenido (mismo archivo y texto) como nueva publicación en 1 día. */
+  const duplicate = (p: IgPost) => {
+    setDraft({
+      tipo: p.tipo,
+      caption: p.caption,
+      compartir_feed: p.compartir_feed,
+      fecha: toLocalInput(new Date(Date.now() + 86400_000)),
+      campaign_id: p.campaign_id ?? NONE,
+      media_url: p.media_url,
+      storage_path: null, // no compartir la ruta: borrar uno no debe borrar el archivo del otro
+      es_video: p.es_video,
+      media_items: (p.media_items ?? []).map((i) => ({ ...i, path: "" })),
+    });
+    setFile(null);
+    setFiles([]);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+    toast.info("Copiado al formulario: ajusta la fecha y programa");
   };
 
   const remove = async (p: IgPost) => {
     if (!window.confirm("¿Eliminar esta publicación programada? (Si ya se publicó en Instagram, allá no se borra)")) return;
     const { error } = await supabaseCRM.from("ig_posts").delete().eq("id", p.id);
     if (error) return toast.error(error.message);
-    if (p.storage_path && p.estado !== "publicado") await supabaseCRM.storage.from(BUCKET).remove([p.storage_path]);
+    if (p.estado !== "publicado") {
+      const paths = [p.storage_path, ...(p.media_items ?? []).map((i) => i.path)].filter(Boolean) as string[];
+      if (paths.length) await supabaseCRM.storage.from(BUCKET).remove(paths);
+    }
     load();
   };
 
@@ -269,6 +327,7 @@ export function ContentScheduler({
                   <SelectContent>
                     <SelectItem value="reel">Reel (video)</SelectItem>
                     <SelectItem value="imagen">Post (imagen JPG)</SelectItem>
+                    <SelectItem value="carrusel">Carrusel (2 a 10)</SelectItem>
                     <SelectItem value="historia">Historia</SelectItem>
                   </SelectContent>
                 </Select>
@@ -279,6 +338,19 @@ export function ContentScheduler({
               </div>
             </div>
 
+            {draft.tipo === "carrusel" ? (
+              <div className="space-y-1">
+                <Label className="text-xs">
+                  Archivos del carrusel (2 a 10, JPG o MP4, en orden) · {files.length || draft.media_items.length} elegidos
+                </Label>
+                <Input
+                  type="file"
+                  multiple
+                  accept="image/jpeg,video/mp4,video/quicktime"
+                  onChange={(e) => setFiles(Array.from(e.target.files ?? []).slice(0, 10))}
+                />
+              </div>
+            ) : (
             <div className="space-y-1">
               <Label className="text-xs">
                 Archivo {draft.tipo === "reel" ? "(MP4 vertical 9:16, 3 s a 15 min)" : draft.tipo === "imagen" ? "(JPG)" : "(JPG o MP4 vertical)"} · máx 50 MB
@@ -289,6 +361,7 @@ export function ContentScheduler({
                 onChange={(e) => setFile(e.target.files?.[0] ?? null)}
               />
             </div>
+            )}
 
             {draft.tipo !== "historia" && (
               <div className="space-y-1">
@@ -326,7 +399,9 @@ export function ContentScheduler({
           </div>
 
           <div className="rounded-lg bg-muted/40 aspect-[9/16] overflow-hidden flex items-center justify-center text-xs text-muted-foreground">
-            {showPreview ? (
+            {draft.tipo === "carrusel" ? (
+              <CarouselPreview files={files} items={draft.media_items} />
+            ) : showPreview ? (
               previewIsVideo ? (
                 <video src={showPreview} className="w-full h-full object-cover" controls muted />
               ) : (
@@ -360,6 +435,7 @@ export function ContentScheduler({
                 onEdit={() => edit(p)}
                 onDelete={() => remove(p)}
                 onPublish={() => publishNow(p)}
+                onDuplicate={() => duplicate(p)}
                 publishing={publishing === p.id}
                 connected={connected}
               />
@@ -377,6 +453,7 @@ export function ContentScheduler({
               p={p}
               campaign={p.campaign_id ? campaignName.get(p.campaign_id) : undefined}
               onDelete={() => remove(p)}
+              onDuplicate={() => duplicate(p)}
               connected={connected}
             />
           ))}
@@ -392,6 +469,7 @@ function PostRow({
   onEdit,
   onDelete,
   onPublish,
+  onDuplicate,
   publishing,
   connected,
 }: {
@@ -400,6 +478,7 @@ function PostRow({
   onEdit?: () => void;
   onDelete: () => void;
   onPublish?: () => void;
+  onDuplicate?: () => void;
   publishing?: boolean;
   connected: boolean;
 }) {
@@ -421,6 +500,7 @@ function PostRow({
           <span className="font-medium">{when.toLocaleTimeString("es-CL", { hour: "2-digit", minute: "2-digit" })}</span>
           {p.estado === "publicado" && <span className="text-muted-foreground">{when.toLocaleDateString("es-CL")}</span>}
           <Badge variant="outline" className={`text-[10px] ${st.cls}`}>{st.label}</Badge>
+          {p.tipo === "carrusel" && <Badge variant="outline" className="text-[10px]">{p.media_items?.length ?? 0} archivos</Badge>}
           {campaign && <Badge variant="outline" className="text-[10px]">Campaña: {campaign}</Badge>}
         </div>
         <p className="text-muted-foreground line-clamp-2 whitespace-pre-wrap">{p.caption || (p.tipo === "historia" ? "Historia" : "Sin texto")}</p>
@@ -437,6 +517,11 @@ function PostRow({
             <Rocket className="w-3.5 h-3.5" /> {publishing ? "…" : p.estado === "error" ? "Reintentar" : "Ahora"}
           </Button>
         )}
+        {onDuplicate && (
+          <Button size="sm" variant="ghost" className="h-7 px-2" onClick={onDuplicate} title="Reutilizar (copiar)">
+            <Copy className="w-3.5 h-3.5" />
+          </Button>
+        )}
         {onEdit && p.estado !== "procesando" && (
           <Button size="sm" variant="ghost" className="h-7 px-2" onClick={onEdit} title="Editar">
             <Pencil className="w-3.5 h-3.5" />
@@ -446,6 +531,32 @@ function PostRow({
           <Trash2 className="w-3.5 h-3.5" />
         </Button>
       </div>
+    </div>
+  );
+}
+
+function CarouselPreview({ files, items }: { files: File[]; items: Item[] }) {
+  const [urls, setUrls] = useState<{ url: string; video: boolean }[]>([]);
+  useEffect(() => {
+    if (!files.length) {
+      setUrls(items.map((i) => ({ url: i.url, video: i.es_video })));
+      return;
+    }
+    const u = files.map((f) => ({ url: URL.createObjectURL(f), video: f.type.startsWith("video/") }));
+    setUrls(u);
+    return () => u.forEach((x) => URL.revokeObjectURL(x.url));
+  }, [files, items]);
+  if (!urls.length) {
+    return <span className="flex flex-col items-center gap-1"><Layers className="w-5 h-5" /> 2 a 10 archivos</span>;
+  }
+  return (
+    <div className="grid grid-cols-2 gap-1 p-1 w-full h-full content-start overflow-y-auto">
+      {urls.map((x, i) => (
+        <div key={x.url} className="relative aspect-square rounded overflow-hidden bg-muted">
+          {x.video ? <video src={x.url} className="w-full h-full object-cover" muted /> : <img src={x.url} alt="" className="w-full h-full object-cover" />}
+          <span className="absolute top-0.5 left-0.5 rounded bg-black/70 px-1 text-[9px] text-white">{i + 1}</span>
+        </div>
+      ))}
     </div>
   );
 }

@@ -304,6 +304,15 @@ Migración: `20261101_04_instagram_content.sql`. Componentes: `src/components/in
 
 ---
 
+## 📥 9.8. Versión 5 (2026-11-02): Bandeja, moderación, carruseles
+
+* **Bandeja** (`InboxPanel.tsx`): acciones `inbox` (GET `/{ig}/conversations`), `thread` (mensajes + `window_open` 24 h) y `send_dm` (texto, registra `origen='humano'`). Fuera de la ventana de 24 h Meta rechaza el envío; la UI deshabilita el input. Respuestas rápidas = links de Archivos.
+* **Publicaciones** (`PostsPanel.tsx`): `list_media` (+`like_count`), `list_comments` (cruza con `ig_comment_events` para mostrar qué hizo el bot), `reply_comment`, `private_reply` (1 por comentario, < 7 días), `hide_comment`, `delete_comment` (`graph()` soporta DELETE). Botón "Campaña" crea campaña para ese post.
+* **Carrusel** (migración `20261102_01_instagram_carousel.sql`): `ig_posts.tipo='carrusel'`, `media_items` jsonb, `children_ids`. `advancePost` crea hijos (`is_carousel_item`), espera FINISHED, crea padre `CAROUSEL` y publica.
+* Duplicar campañas y reutilizar publicaciones desde el panel.
+
+---
+
 ## 🚀 10. Ideas de Mejora y Futuras Extensiones
 
 Cuando Claude o el equipo retome este sistema, estas son las extensiones recomendadas de mayor impacto:
