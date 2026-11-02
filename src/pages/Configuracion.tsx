@@ -381,10 +381,10 @@ const Configuracion = () => {
             </div>
             <div className="sm:col-span-3 pt-1 border-t border-border/50">
               <span className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium block">
-                Webhook n8n Activo
+                Envío seguro
               </span>
-              <span className="font-mono text-foreground break-all">
-                {EVOLUTION_API_CONFIG.n8nWebhookUrl}
+              <span className="text-foreground">
+                Los mensajes salen desde la función del servidor <span className="font-mono">whatsapp-send</span> (n8n con respaldo directo). La apikey ya no está en el navegador.
               </span>
             </div>
           </div>

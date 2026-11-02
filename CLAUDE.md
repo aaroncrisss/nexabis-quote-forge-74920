@@ -331,6 +331,8 @@ Migración `20261102_03_instagram_analytics.sql`. Componentes `AnalyticsPanel.ts
 * **Resumen semanal**: lunes ≥ 9:00 Chile (`weeklyDue`), guarda en `ig_resumenes`, correo HTML por SMTP Hostinger (`SMTP_*`, mismo que pagos) y texto por WhatsApp. Acción `weekly_summary` = enviar ahora.
 * **WhatsApp (Evolution API, instancia `NexabisTech`)**: secret `EVOLUTION_API_KEY` (+ opcional `EVOLUTION_API_URL`, `EVOLUTION_INSTANCE`). `notifyOwner()` alerta de: lead nuevo (oferta entregada), DM sin campaña (1/h por persona, `ig_contacts.alerta_at`) y menciones. Config en `ig_settings.whatsapp_numero`, `alertas_whatsapp`, `resumen_por_whatsapp`. Acción `test_whatsapp`.
 
+* **Seguridad WhatsApp (2026-11-02):** la apikey de Evolution ya NO está en el frontend. `src/lib/whatsapp.ts` llama a la Edge Function `whatsapp-send` (`status` / `send` / `event` → n8n con respaldo directo), que exige sesión de admin o integrante del equipo. Secret único `EVOLUTION_API_KEY` (lo usan `whatsapp-send`, `whatsapp-assistant` e `instagram-webhook`; ninguno tiene la clave escrita en el código).
+
 ---
 
 ## 🚀 10. Ideas de Mejora y Futuras Extensiones

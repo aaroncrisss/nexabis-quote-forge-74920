@@ -6,7 +6,7 @@ const corsHeaders = {
 };
 
 const EVO_URL = Deno.env.get("EVOLUTION_API_URL") || "https://evoapi.nexabistech.com";
-const EVO_KEY = Deno.env.get("EVOLUTION_API_KEY") || "B9D3EBDA4DA5-488E-BF7D-F9CA4D2C1585";
+const EVO_KEY = Deno.env.get("EVOLUTION_API_KEY") ?? "";
 const EVO_INSTANCE = Deno.env.get("EVOLUTION_INSTANCE") || "NexabisTech";
 const TARGET_PHONE = "56986343217";
 
