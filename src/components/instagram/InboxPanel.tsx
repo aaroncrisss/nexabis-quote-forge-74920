@@ -4,8 +4,10 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { RefreshCw, Send, Search, MessageCircle, ExternalLink, ArrowLeft } from "lucide-react";
+import { RefreshCw, Send, Search, MessageCircle, ExternalLink, ArrowLeft, Settings2 } from "lucide-react";
 import { toast } from "sonner";
+import { useSavedReplies, fillReply } from "./savedReplies";
+import { SavedRepliesDialog } from "./SavedRepliesDialog";
 
 type Conversation = {
   id: string;
@@ -60,6 +62,8 @@ export function InboxPanel({
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const scroller = useRef<HTMLDivElement>(null);
+  const saved = useSavedReplies();
+  const [manageOpen, setManageOpen] = useState(false);
   const lastCount = useRef(0);
 
   const [next, setNext] = useState<string | null>(null);
@@ -163,6 +167,7 @@ export function InboxPanel({
 
   return (
     <Card className="p-0 overflow-hidden">
+      <SavedRepliesDialog open={manageOpen} onOpenChange={setManageOpen} items={saved.items} onChanged={saved.reload} />
       <div className="grid md:grid-cols-[300px_1fr] h-[calc(100dvh-200px)] min-h-[420px] max-h-[820px]">
         {/* Lista (en celular se oculta al abrir un chat) */}
         <div className={`border-r border-border/60 flex-col min-h-0 ${active ? "hidden md:flex" : "flex"}`}>
@@ -264,13 +269,29 @@ export function InboxPanel({
               </div>
 
               <div className="border-t border-border/60 p-2 space-y-1.5">
-                {quickReplies.length > 0 && windowOpen && (
-                  <div className="flex gap-1 overflow-x-auto">
-                    {quickReplies.map((q) => (
-                      <button key={q} type="button" onClick={() => setText(q)} className="shrink-0 rounded-full border border-border px-2 py-0.5 text-[10px] hover:bg-muted">
-                        {q.length > 40 ? `${q.slice(0, 40)}…` : q}
+                {windowOpen && (
+                  <div className="flex gap-1 overflow-x-auto pb-0.5">
+                    {saved.items.map((r) => (
+                      <button
+                        key={r.id}
+                        type="button"
+                        title={r.texto}
+                        onClick={() => setText(fillReply(r.texto, active.username))}
+                        className="shrink-0 rounded-full border border-primary/40 px-2 py-0.5 text-[10px] text-primary hover:bg-primary/10"
+                      >
+                        {r.titulo}
                       </button>
                     ))}
+                    {quickReplies.map((q) => (
+                      <button key={q} type="button" title={q} onClick={() => setText(q)} className="shrink-0 rounded-full border border-border px-2 py-0.5 text-[10px] hover:bg-muted">
+                        📎 {q.length > 30 ? `${q.slice(0, 30)}…` : q}
+                      </button>
+                    ))}
+                    {saved.ready && (
+                      <button type="button" onClick={() => setManageOpen(true)} className="shrink-0 rounded-full border border-dashed border-border px-2 py-0.5 text-[10px] text-muted-foreground hover:bg-muted flex items-center gap-1">
+                        <Settings2 className="w-3 h-3" /> Respuestas
+                      </button>
+                    )}
                   </div>
                 )}
                 <div className="flex gap-2">

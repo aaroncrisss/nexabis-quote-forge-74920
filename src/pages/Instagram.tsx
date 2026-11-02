@@ -75,6 +75,9 @@ type IgSettings = {
   ai_prompt: string;
   ai_link: string | null;
   ai_max_turnos_dia: number;
+  story_mention_activo?: boolean;
+  story_mention_mensaje?: string;
+  story_mention_link?: string | null;
 };
 
 type IgContact = {
@@ -90,6 +93,7 @@ type IgContact = {
   ai_pausado_hasta: string | null;
   notas: string | null;
   no_contactar?: boolean;
+  menciones?: number;
 };
 
 type Funnel = {
@@ -459,6 +463,22 @@ export default function Instagram() {
     load();
   };
 
+  const saveMention = async (patch: Partial<IgSettings>) => {
+    if (!settings) return;
+    const next = { ...settings, ...patch };
+    const { error } = await supabaseCRM
+      .from("ig_settings")
+      .update({
+        story_mention_activo: !!next.story_mention_activo,
+        story_mention_mensaje: next.story_mention_mensaje ?? "",
+        story_mention_link: next.story_mention_link?.trim() || null,
+      })
+      .eq("id", 1);
+    if (error) return toast.error(error.message);
+    setSettings(next);
+    toast.success("Menciones en historias guardado");
+  };
+
   const saveSettings = async (patch?: Partial<IgSettings>) => {
     if (!settings) return;
     const next = { ...settings, ...patch };
@@ -618,6 +638,52 @@ export default function Instagram() {
         </TabsList>
 
       <TabsContent value="campanias" className="space-y-4">
+      {settings && settings.story_mention_activo !== undefined && (
+        <Card className="p-4 space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-semibold">Menciones en historias</h2>
+              <p className="text-xs text-muted-foreground">
+                Cuando alguien te menciona en su historia, le agradeces por DM automáticamente (máx. 1 vez cada 12 h por persona).
+                Las menciones se cuentan en Leads.
+              </p>
+            </div>
+            <Switch
+              checked={!!settings.story_mention_activo}
+              onCheckedChange={(v) => saveMention({ story_mention_activo: v })}
+            />
+          </div>
+          {settings.story_mention_activo && (
+            <div className="grid sm:grid-cols-[1fr_260px] gap-3">
+              <Textarea
+                rows={2}
+                value={settings.story_mention_mensaje ?? ""}
+                onChange={(e) => setSettings({ ...settings, story_mention_mensaje: e.target.value })}
+                onBlur={() => saveMention({})}
+                placeholder="¡Gracias por mencionarme, {username}! 🙌"
+                className="text-xs"
+              />
+              <div className="space-y-1">
+                <Input
+                  value={settings.story_mention_link ?? ""}
+                  onChange={(e) => setSettings({ ...settings, story_mention_link: e.target.value })}
+                  onBlur={() => saveMention({})}
+                  placeholder="Link opcional (cupón, PDF…)"
+                  className="h-8 text-xs"
+                />
+                {recursos.length > 0 && (
+                  <Select value="" onValueChange={(v) => saveMention({ story_mention_link: `${LINK_BASE}${v}` })}>
+                    <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="…o un archivo subido" /></SelectTrigger>
+                    <SelectContent>
+                      {recursos.map((r) => <SelectItem key={r.slug} value={r.slug}>{r.titulo}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                )}
+              </div>
+            </div>
+          )}
+        </Card>
+      )}
       {/* Campañas */}
       <div className="space-y-2">
         <h2 className="text-sm font-semibold">Campañas</h2>
@@ -752,6 +818,7 @@ export default function Instagram() {
                     <th className="py-1.5 pr-3">Campaña</th>
                     <th className="py-1.5 pr-3">Oferta</th>
                     <th className="py-1.5 pr-3">Clics</th>
+                    <th className="py-1.5 pr-3" title="Menciones en historias">Menc.</th>
                     <th className="py-1.5">CRM</th>
                   </tr>
                 </thead>
@@ -775,6 +842,7 @@ export default function Instagram() {
                         <td className="py-1.5 pr-3">{c.ultima_campaign_id ? campaignName.get(c.ultima_campaign_id) ?? "—" : "—"}</td>
                         <td className="py-1.5 pr-3">{c.no_contactar ? <span className="text-red-400" title="Pidió no ser contactado (STOP)">STOP</span> : c.oferta_enviada_at ? "✅" : ""}</td>
                         <td className="py-1.5 pr-3">{c.clics || ""}</td>
+                        <td className="py-1.5 pr-3">{c.menciones || ""}</td>
                         <td className="py-1.5 pr-3">
                           {c.cliente_id ? (
                             <Link to={`/clientes/${c.cliente_id}`} className="text-primary hover:underline">Ver cliente</Link>

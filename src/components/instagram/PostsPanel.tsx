@@ -5,6 +5,32 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { RefreshCw, Heart, MessageCircle, ExternalLink, Eye, EyeOff, Trash2, Reply, Send, Zap, Plus } from "lucide-react";
 import { toast } from "sonner";
+import { useSavedReplies, fillReply } from "./savedReplies";
+
+type Insights = { metrics: Record<string, number>; missing_permission?: boolean; error?: string | null };
+type AccountInsights = {
+  followers_count: number | null;
+  media_count: number | null;
+  metrics: Record<string, number>;
+  missing_permission?: boolean;
+};
+
+const METRIC_LABEL: Record<string, string> = {
+  reach: "Alcance",
+  views: "Reproducciones",
+  likes: "Me gusta",
+  comments: "Comentarios",
+  shares: "Compartidos",
+  saved: "Guardados",
+  total_interactions: "Interacciones",
+  profile_visits: "Visitas al perfil",
+  follows: "Seguidores nuevos",
+  ig_reels_avg_watch_time: "Visualización promedio",
+  replies: "Respuestas",
+};
+
+const fmtMetric = (k: string, v: number) =>
+  k === "ig_reels_avg_watch_time" ? `${(v / 1000).toFixed(1)} s` : v.toLocaleString("es-CL");
 
 type Media = {
   id: string;
@@ -61,6 +87,10 @@ export function PostsPanel({
   const [replyText, setReplyText] = useState("");
   const [busy, setBusy] = useState(false);
   const [onlyPending, setOnlyPending] = useState(false);
+  const [insights, setInsights] = useState<Insights | null>(null);
+  const [loadingIns, setLoadingIns] = useState(false);
+  const [account, setAccount] = useState<AccountInsights | null>(null);
+  const saved = useSavedReplies();
 
   const loadMedia = useCallback(async () => {
     if (!connected) return;
@@ -97,8 +127,29 @@ export function PostsPanel({
   }, [loadMedia]);
 
   useEffect(() => {
-    if (active) loadComments(active);
-  }, [active, loadComments]);
+    if (!active) return;
+    loadComments(active);
+    setInsights(null);
+    setLoadingIns(true);
+    invoke({ action: "media_insights", media_id: active.id, media_product_type: active.media_product_type })
+      .then((r) => setInsights(r as unknown as Insights))
+      .catch(() => setInsights(null))
+      .finally(() => setLoadingIns(false));
+  }, [active, loadComments, invoke]);
+
+  useEffect(() => {
+    if (!connected) return;
+    invoke({ action: "account_insights", days: 28 })
+      .then((r) => setAccount(r.ok === false ? null : (r as unknown as AccountInsights)))
+      .catch(() => setAccount(null));
+  }, [connected, invoke]);
+
+  const engagement = useMemo(() => {
+    // Promedio de interacciones visibles por post (likes + comentarios) de lo cargado
+    if (!media.length) return null;
+    const total = media.reduce((a, m) => a + (m.like_count ?? 0) + (m.comments_count ?? 0), 0);
+    return Math.round(total / media.length);
+  }, [media]);
 
   const campaignsFor = useMemo(() => {
     const allPosts = campaigns.filter((c) => c.activa && c.media_ids.length === 0);
@@ -138,6 +189,18 @@ export function PostsPanel({
   return (
     <div className="grid lg:grid-cols-[1fr_1.2fr] gap-3">
       <Card className="p-3 space-y-2">
+        {account && (
+          <div className="grid grid-cols-3 gap-2 text-center">
+            <Stat label="Seguidores" value={account.followers_count} />
+            <Stat label="Alcance 28 d" value={account.metrics.reach} />
+            <Stat label={account.metrics.profile_views !== undefined ? "Visitas perfil 28 d" : "Interacc. prom/post"} value={account.metrics.profile_views ?? engagement} />
+            {account.missing_permission && (
+              <p className="col-span-3 text-[10px] text-orange-400">
+                Para alcance y estadísticas agrega el permiso <code>instagram_manage_insights</code> al token.
+              </p>
+            )}
+          </div>
+        )}
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-semibold">Mis publicaciones</h2>
           <Button size="sm" variant="ghost" className="h-7 px-2" onClick={loadMedia} disabled={loading}>
@@ -197,6 +260,27 @@ export function PostsPanel({
                   <Plus className="w-3 h-3" /> Campaña
                 </Button>
               </div>
+            </div>
+
+            <div className="rounded-md bg-muted/40 p-2">
+              {loadingIns ? (
+                <p className="text-[11px] text-muted-foreground">Cargando estadísticas…</p>
+              ) : insights && Object.keys(insights.metrics ?? {}).length > 0 ? (
+                <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 text-center">
+                  {Object.entries(insights.metrics).map(([k, v]) => (
+                    <div key={k}>
+                      <p className="text-sm font-semibold">{fmtMetric(k, v)}</p>
+                      <p className="text-[10px] text-muted-foreground">{METRIC_LABEL[k] ?? k}</p>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-[11px] text-muted-foreground">
+                  {insights?.missing_permission
+                    ? "Estadísticas no disponibles: falta el permiso instagram_manage_insights en el token."
+                    : "Sin estadísticas para esta publicación."}
+                </p>
+              )}
             </div>
 
             <div className="flex items-center justify-between">
@@ -280,6 +364,21 @@ export function PostsPanel({
                       ))}
                     </div>
                   )}
+                  {replyTo?.id === c.id && saved.items.length > 0 && (
+                    <div className="flex gap-1 overflow-x-auto pt-1">
+                      {saved.items.map((r) => (
+                        <button
+                          key={r.id}
+                          type="button"
+                          title={r.texto}
+                          onClick={() => setReplyText(fillReply(r.texto, c.username))}
+                          className="shrink-0 rounded-full border border-primary/40 px-2 py-0.5 text-[10px] text-primary hover:bg-primary/10"
+                        >
+                          {r.titulo}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                   {replyTo?.id === c.id && (
                     <div className="flex gap-1 pt-1">
                       <Input
@@ -300,6 +399,15 @@ export function PostsPanel({
           </>
         )}
       </Card>
+    </div>
+  );
+}
+
+function Stat({ label, value }: { label: string; value: number | null | undefined }) {
+  return (
+    <div className="rounded-md bg-muted/40 py-1.5">
+      <p className="text-sm font-semibold">{typeof value === "number" ? value.toLocaleString("es-CL") : "—"}</p>
+      <p className="text-[10px] text-muted-foreground">{label}</p>
     </div>
   );
 }

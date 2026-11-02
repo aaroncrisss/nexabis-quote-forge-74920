@@ -80,6 +80,9 @@ type Settings = {
   ai_prompt: string;
   ai_link: string | null;
   ai_max_turnos_dia: number;
+  story_mention_activo: boolean;
+  story_mention_mensaje: string;
+  story_mention_link: string | null;
 };
 
 type Campaign = {
@@ -260,6 +263,9 @@ async function loadSettings(db: SupabaseClient): Promise<Settings> {
     ai_prompt: data?.ai_prompt ?? "",
     ai_link: data?.ai_link ?? null,
     ai_max_turnos_dia: data?.ai_max_turnos_dia ?? 15,
+    story_mention_activo: data?.story_mention_activo ?? false,
+    story_mention_mensaje: data?.story_mention_mensaje ?? "",
+    story_mention_link: data?.story_mention_link ?? null,
   };
 }
 
@@ -494,6 +500,59 @@ async function handleDataDeletionCallback(db: SupabaseClient, form: URLSearchPar
   const userId = String(payload?.user_id ?? "");
   const codigo = userId ? await deleteUserData(db, userId, "meta_callback") : "SIN-USUARIO";
   return json({ url: `${PRIVACY_URL}?codigo=${codigo}`, confirmation_code: codigo });
+}
+
+const MENTION_COOLDOWN_MS = 12 * 3600_000;
+
+/** Alguien nos mencionó en su historia: contar y (si está activo) agradecer por DM, máx 1 vez cada 12 h. */
+async function handleStoryMention(db: SupabaseClient, acc: Account, senderId: string, contact: any) {
+  const now = new Date();
+  const last = contact?.ultima_mencion_at ? new Date(contact.ultima_mencion_at).getTime() : 0;
+  await upsertContact(db, senderId, {
+    menciones: (contact?.menciones ?? 0) + 1,
+    ultima_mencion_at: now.toISOString(),
+  });
+  const settings = await loadSettings(db);
+  if (!settings.story_mention_activo || !settings.story_mention_mensaje.trim()) return;
+  if (now.getTime() - last < MENTION_COOLDOWN_MS) return;
+
+  const link = settings.story_mention_link?.trim() || null;
+  let text = render(settings.story_mention_mensaje, { username: contact?.username ?? null, link });
+  if (link && !text.includes(link)) text = `${text}\n\n👉 ${link}`;
+  const r = await sendMessage(acc, { id: senderId }, { text: text.slice(0, MAX_TEXT) });
+  if (r.ok) {
+    await logMessage(db, { ig_user_id: senderId, mid: r.data?.message_id ?? null, direccion: "out", origen: "campaña", texto: text });
+  } else console.error("story mention reply", graphError(r));
+}
+
+// -----------------------------------------------------------------------------
+// Estadísticas (requiere instagram_manage_insights). Cada métrica se pide por separado:
+// Meta rechaza la consulta completa si una sola métrica no aplica al tipo de post.
+// -----------------------------------------------------------------------------
+async function fetchMetrics(
+  acc: Account,
+  path: string,
+  metrics: string[],
+  extra: Record<string, string> = {},
+): Promise<{ values: Record<string, number>; missingPermission: boolean; errors: string[] }> {
+  const values: Record<string, number> = {};
+  const errors: string[] = [];
+  let missingPermission = false;
+  await Promise.all(
+    metrics.map(async (metric) => {
+      const r = await graph(path, { token: acc.access_token, params: { metric, ...extra } });
+      if (!r.ok) {
+        const code = r.data?.error?.code;
+        if (code === 10 || code === 200 || /permission/i.test(r.data?.error?.message ?? "")) missingPermission = true;
+        errors.push(`${metric}: ${graphError(r)}`);
+        return;
+      }
+      const d = r.data?.data?.[0];
+      const v = d?.total_value?.value ?? d?.values?.[d.values.length - 1]?.value;
+      if (typeof v === "number") values[metric] = v;
+    }),
+  );
+  return { values, missingPermission, errors };
 }
 
 /** ¿La persona sigue a la cuenta? true/false, o null si Meta no lo informa. */
@@ -998,6 +1057,13 @@ async function handleMessaging(
     await upsertContact(db, senderId, { no_contactar: false, baja_at: null });
   }
 
+  // ---- Mención en historia ----
+  const isMention = (m?.message?.attachments ?? []).some((a: any) => a?.type === "story_mention");
+  if (isMention) {
+    await handleStoryMention(db, acc, senderId, contact);
+    return;
+  }
+
   let campaign: Campaign | undefined;
   let viaDmKeyword = false;
 
@@ -1400,7 +1466,7 @@ async function actionPollComments(db: SupabaseClient) {
         token: acc.access_token,
         params: {
           platform: "instagram",
-          fields: "id,updated_time,messages.limit(5){id,created_time,from,to,message}",
+          fields: "id,updated_time,messages.limit(5){id,created_time,from,to,message,story}",
           limit: "20",
         },
       });
@@ -1458,7 +1524,13 @@ async function actionPollComments(db: SupabaseClient) {
               campaigns,
               {
                 sender: { id: String(latestNewInbound.from.id), username: latestNewInbound.from?.username ?? null },
-                message: { text: latestNewInbound.message ?? "", mid: latestNewInbound.id },
+                message: {
+                  text: latestNewInbound.message ?? "",
+                  mid: latestNewInbound.id,
+                  ...(latestNewInbound.story?.mention
+                    ? { attachments: [{ type: "story_mention", payload: { url: latestNewInbound.story.mention.link ?? null } }] }
+                    : {}),
+                },
               },
               { alreadyLogged: true },
             );
@@ -1801,6 +1873,51 @@ Deno.serve(async (req) => {
         if (!body.comment_id) return json({ ok: false, error: "Falta comment_id" }, 400);
         const r = await graph(String(body.comment_id), { method: "DELETE", token: acc.access_token });
         return json({ ok: r.ok, error: r.ok ? null : graphError(r) });
+      }
+
+      // ---------------- Estadísticas ----------------
+      case "media_insights": {
+        const acc = await loadAccount(db);
+        if (!acc) return json({ ok: false, error: "Conecta la cuenta primero" }, 400);
+        if (!body.media_id) return json({ ok: false, error: "Falta media_id" }, 400);
+        const type = String(body.media_product_type ?? "FEED").toUpperCase();
+        const metrics =
+          type === "REELS"
+            ? ["reach", "views", "likes", "comments", "shares", "saved", "total_interactions", "ig_reels_avg_watch_time"]
+            : type === "STORY"
+            ? ["reach", "views", "replies", "shares", "total_interactions"]
+            : ["reach", "views", "likes", "comments", "shares", "saved", "total_interactions", "profile_visits", "follows"];
+        const res = await fetchMetrics(acc, `${String(body.media_id)}/insights`, metrics);
+        const ok = Object.keys(res.values).length > 0;
+        return json({
+          ok,
+          metrics: res.values,
+          missing_permission: !ok && res.missingPermission,
+          error: ok ? null : res.errors[0] ?? "sin_datos",
+        });
+      }
+      case "account_insights": {
+        const acc = await loadAccount(db);
+        if (!acc) return json({ ok: false, error: "Conecta la cuenta primero" }, 400);
+        const days = Math.min(30, Math.max(1, Number(body.days) || 28));
+        const until = Math.floor(Date.now() / 1000);
+        const since = until - days * 86400;
+        const profile = await graph(acc.ig_user_id, { token: acc.access_token, params: { fields: "followers_count,follows_count,media_count" } });
+        const res = await fetchMetrics(
+          acc,
+          `${acc.ig_user_id}/insights`,
+          ["reach", "views", "accounts_engaged", "total_interactions", "profile_views", "website_clicks", "follows_and_unfollows"],
+          { period: "day", metric_type: "total_value", since: String(since), until: String(until) },
+        );
+        return json({
+          ok: true,
+          days,
+          followers_count: profile.data?.followers_count ?? null,
+          follows_count: profile.data?.follows_count ?? null,
+          media_count: profile.data?.media_count ?? null,
+          metrics: res.values,
+          missing_permission: Object.keys(res.values).length === 0 && res.missingPermission,
+        });
       }
 
       case "publish_now": {
