@@ -49,6 +49,8 @@ type Campaign = {
   activa: boolean;
   prioridad: number;
   media_ids: string[];
+  /** general = todos los posts · posts = solo sus videos (publicados o programados) */
+  alcance?: "general" | "posts";
   keywords: string[];
   match_mode: "contiene" | "exacta" | "cualquiera";
   responder_dm: boolean;
@@ -69,6 +71,20 @@ type Campaign = {
   activa_desde?: string | null;
   activa_hasta?: string | null;
 };
+
+type ScheduledPost = {
+  id: string;
+  tipo: string;
+  caption: string;
+  publicar_en: string;
+  estado: string;
+  campaign_id: string | null;
+  media_url: string;
+  es_video: boolean;
+};
+
+const scopeOf = (c: Pick<Campaign, "alcance" | "media_ids">): "general" | "posts" =>
+  c.alcance ?? (c.media_ids.length ? "posts" : "general");
 
 type IgSettings = {
   crm_sync: boolean;
@@ -157,6 +173,7 @@ const EMPTY_CAMPAIGN: Campaign = {
   activa: false,
   prioridad: 0,
   media_ids: [],
+  alcance: "general",
   keywords: [],
   match_mode: "contiene",
   responder_dm: false,
@@ -221,6 +238,8 @@ type IgResult = {
   ai_provider?: string | null;
   motivo?: string;
   solo_posts?: number;
+  alcance?: "general" | "posts";
+  tambien?: string[];
 };
 
 async function invokeIg(body: Record<string, unknown>): Promise<IgResult> {
@@ -274,6 +293,10 @@ export default function Instagram() {
 
   const [editing, setEditing] = useState<Campaign | null>(null);
   const [saving, setSaving] = useState(false);
+  // Videos programados (aún no publicados) y los vinculados a la campaña en edición
+  const [scheduled, setScheduled] = useState<ScheduledPost[]>([]);
+  const [linkedPosts, setLinkedPosts] = useState<string[]>([]);
+  const [v5, setV5] = useState(false);
 
   const [media, setMedia] = useState<Media[]>([]);
   const [loadingMedia, setLoadingMedia] = useState(false);
@@ -312,6 +335,17 @@ export default function Instagram() {
     const rs = await supabaseCRM.from("ig_recursos").select("slug, titulo").order("created_at", { ascending: false });
     setV4(!rs.error);
     setRecursos((rs.data as Pick<Recurso, "slug" | "titulo">[]) ?? []);
+    // Migración 20261102_05 (campañas generales vs. de video) y videos programados
+    const [al, sp] = await Promise.all([
+      supabaseCRM.from("ig_campaigns").select("alcance").limit(1),
+      supabaseCRM
+        .from("ig_posts")
+        .select("id, tipo, caption, publicar_en, estado, campaign_id, media_url, es_video")
+        .in("estado", ["programado", "procesando", "error"])
+        .order("publicar_en"),
+    ]);
+    setV5(!al.error);
+    setScheduled(sp.error ? [] : ((sp.data as ScheduledPost[]) ?? []));
   }, []);
 
   useEffect(() => {
@@ -432,6 +466,11 @@ export default function Instagram() {
     load();
   };
 
+  const openEditor = (c: Campaign) => {
+    setEditing({ ...c, alcance: scopeOf(c) });
+    setLinkedPosts(c.id ? scheduled.filter((p) => p.campaign_id === c.id).map((p) => p.id) : []);
+  };
+
   const saveCampaign = async () => {
     if (!editing) return;
     if (!editing.nombre.trim()) return toast.error("Ponle un nombre a la campaña");
@@ -452,6 +491,14 @@ export default function Instagram() {
       setSaving(false);
       return toast.error("La fecha de término debe ser posterior al inicio");
     }
+    const scope = scopeOf(editing);
+    if (scope === "posts" && !editing.media_ids.length && !linkedPosts.length) {
+      setSaving(false);
+      return toast.error("Campaña de video: elige al menos un reel publicado o un video programado");
+    }
+    if (scope === "general") withV2.media_ids = [];
+    if (v5) withV2.alcance = scope;
+    else delete withV2.alcance;
     const payload = withV2 as typeof base;
     const row = {
       ...withV2,
@@ -459,11 +506,27 @@ export default function Instagram() {
       keywords: payload.keywords.map((k) => k.trim()).filter(Boolean),
       respuestas_publicas: payload.respuestas_publicas.map((r) => r.trim()).filter(Boolean),
     };
-    const { error } = id
-      ? await supabaseCRM.from("ig_campaigns").update(row).eq("id", id)
-      : await supabaseCRM.from("ig_campaigns").insert(row);
+    const { data: saved, error } = id
+      ? await supabaseCRM.from("ig_campaigns").update(row).eq("id", id).select("id").single()
+      : await supabaseCRM.from("ig_campaigns").insert(row).select("id").single();
+    if (error) {
+      setSaving(false);
+      return toast.error(error.message);
+    }
+    // Vincular / desvincular videos programados (al publicarse se suman a la campaña)
+    const campId = (saved as { id: string } | null)?.id ?? id;
+    if (campId && scope === "posts") {
+      const before = scheduled.filter((p) => p.campaign_id === campId).map((p) => p.id);
+      const add = linkedPosts.filter((x) => !before.includes(x));
+      const remove = before.filter((x) => !linkedPosts.includes(x));
+      const results = await Promise.all([
+        add.length ? supabaseCRM.from("ig_posts").update({ campaign_id: campId }).in("id", add) : null,
+        remove.length ? supabaseCRM.from("ig_posts").update({ campaign_id: null }).in("id", remove) : null,
+      ]);
+      const linkErr = results.find((r) => r?.error)?.error;
+      if (linkErr) toast.error(`Videos programados: ${linkErr.message}`);
+    }
     setSaving(false);
-    if (error) return toast.error(error.message);
     toast.success("Campaña guardada");
     setEditing(null);
     load();
@@ -533,7 +596,7 @@ export default function Instagram() {
           </Button>
           <Button
             size="sm"
-            onClick={() => setEditing({ ...EMPTY_CAMPAIGN })}
+            onClick={() => openEditor({ ...EMPTY_CAMPAIGN })}
             className="h-8 text-xs px-3 gradient-button font-heading font-semibold gap-1.5"
           >
             <Plus className="w-3.5 h-3.5" /> Nueva campaña
@@ -700,7 +763,7 @@ export default function Instagram() {
             title="Sin campañas"
             description="Crea una campaña: elige la palabra clave, el reel y el mensaje que quieres enviar."
             actionLabel="Nueva campaña"
-            onAction={() => setEditing({ ...EMPTY_CAMPAIGN })}
+            onAction={() => openEditor({ ...EMPTY_CAMPAIGN })}
           />
         ) : (
           <div className="grid md:grid-cols-2 gap-3">
@@ -714,7 +777,16 @@ export default function Instagram() {
                       <p className="font-semibold text-sm">{c.nombre}</p>
                       <p className="text-xs text-muted-foreground">
                         {c.modo === "dos_pasos" ? "Dos pasos (botón → link)" : "Directo (link en el 1er DM)"} ·{" "}
-                        {c.media_ids.length ? `${c.media_ids.length} publicación(es)` : "Todas las publicaciones"} ·
+                        {(() => {
+                          if (scopeOf(c) === "general") return "General · todos los posts";
+                          const prog = scheduled.filter((p) => p.campaign_id === c.id).length;
+                          const parts = [
+                            c.media_ids.length ? `${c.media_ids.length} publicado(s)` : "",
+                            prog ? `${prog} programado(s)` : "",
+                          ].filter(Boolean);
+                          return `🎬 De video · ${parts.join(" + ") || "sin videos"}`;
+                        })()}{" "}
+                        ·
                         prioridad {c.prioridad}
                       </p>
                     </div>
@@ -735,7 +807,7 @@ export default function Instagram() {
                       {sent} DMs{cs ? ` · ${cs.ofertas} ofertas · ${cs.clics} clics · ${cs.leads} leads` : " enviados"}
                     </span>
                     <div className="flex gap-1">
-                      <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => setEditing({ ...c })} title="Editar">
+                      <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => openEditor(c)} title="Editar">
                         <Pencil className="w-3.5 h-3.5" />
                       </Button>
                       <Button
@@ -745,7 +817,7 @@ export default function Instagram() {
                         title="Duplicar"
                         onClick={() => {
                           const { id, ...rest } = c;
-                          setEditing({ ...rest, nombre: `${c.nombre} (copia)`, activa: false });
+                          openEditor({ ...rest, nombre: `${c.nombre} (copia)`, activa: false });
                         }}
                       >
                         <Copy className="w-3.5 h-3.5" />
@@ -781,10 +853,13 @@ export default function Instagram() {
             {simResult.match ? (
               <>
                 <p><b>Campaña:</b> {simResult.match.nombre}</p>
-                {!!simResult.solo_posts && (
+                {simResult.alcance === "posts" && (
                   <p className="text-amber-600 dark:text-amber-400">
-                    Ojo: esta campaña solo responde en {simResult.solo_posts} post(s) seleccionado(s). En otros posts no se activa.
+                    🎬 Campaña de video: solo responde en {simResult.solo_posts ? `${simResult.solo_posts} post(s)` : "sus videos (aún sin publicar)"}. En otros posts no se activa.
                   </p>
+                )}
+                {!!simResult.tambien?.length && (
+                  <p className="text-muted-foreground">También calzan (en sus videos): {simResult.tambien.join(", ")}</p>
                 )}
                 <p><b>DM 1:</b> {simResult.private_reply}</p>
                 {simResult.boton && <p><b>Botón:</b> [{simResult.boton}]</p>}
@@ -899,13 +974,13 @@ export default function Instagram() {
           invoke={invokeIg as (b: Record<string, unknown>) => Promise<Record<string, unknown>>}
           connected={!!status?.connected}
           campaigns={campaigns}
-          onNewCampaign={(mediaId) => setEditing({ ...EMPTY_CAMPAIGN, media_ids: [mediaId] })}
+          onNewCampaign={(mediaId) => openEditor({ ...EMPTY_CAMPAIGN, alcance: "posts", media_ids: [mediaId] })}
         />
       </TabsContent>
 
       <TabsContent value="contenido">
         <ContentScheduler
-          campaigns={campaigns}
+          campaigns={campaigns.map((c) => ({ id: c.id, nombre: c.nombre, alcance: scopeOf(c) }))}
           connected={!!status?.connected}
           invoke={invokeIg}
           onPublished={load}
@@ -1014,17 +1089,35 @@ export default function Instagram() {
                   </div>
                 </div>
 
+                <div className="space-y-1">
+                  <Label className="text-xs">¿Dónde responde?</Label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {(
+                      [
+                        ["general", "🌐 General", "Todos los posts, salvo que una campaña de video calce primero"],
+                        ["posts", "🎬 De video", "Solo en los videos que elijas (publicados o programados)"],
+                      ] as const
+                    ).map(([val, title, desc]) => (
+                      <button
+                        key={val}
+                        type="button"
+                        onClick={() => setEditing({ ...editing, alcance: val })}
+                        className={`text-left rounded-md border-2 px-3 py-2 ${scopeOf(editing) === val ? "border-primary bg-primary/5" : "border-border/60 opacity-80 hover:opacity-100"}`}
+                      >
+                        <p className="text-sm font-medium">{title}</p>
+                        <p className="text-[10px] text-muted-foreground leading-tight">{desc}</p>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {scopeOf(editing) === "posts" && (
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <Label className="text-xs">
-                      Publicaciones: {editing.media_ids.length ? `${editing.media_ids.length} seleccionada(s)` : "todas"}
+                      Reels publicados: {editing.media_ids.length ? `${editing.media_ids.length} seleccionado(s)` : "ninguno"}
                     </Label>
                     <div className="flex gap-2">
-                      {editing.media_ids.length > 0 && (
-                        <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setEditing({ ...editing, media_ids: [] })}>
-                          Usar todas
-                        </Button>
-                      )}
                       <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={handleLoadMedia} disabled={loadingMedia || !status?.connected}>
                         <ImageIcon className="w-3.5 h-3.5" /> {loadingMedia ? "Cargando..." : "Elegir reels"}
                       </Button>
@@ -1054,7 +1147,50 @@ export default function Instagram() {
                       })}
                     </div>
                   )}
+
+                  <Label className="text-xs block pt-1">
+                    Videos programados: {linkedPosts.length ? `${linkedPosts.length} vinculado(s)` : "ninguno"}
+                  </Label>
+                  {scheduled.length === 0 ? (
+                    <p className="text-[11px] text-muted-foreground">No tienes videos programados. Prográmalos en la pestaña Contenido.</p>
+                  ) : (
+                    <div className="space-y-1 max-h-44 overflow-y-auto">
+                      {scheduled.map((p) => {
+                        const checked = linkedPosts.includes(p.id);
+                        const otra = p.campaign_id && p.campaign_id !== editing.id ? campaigns.find((c) => c.id === p.campaign_id) : undefined;
+                        return (
+                          <label
+                            key={p.id}
+                            className={`flex items-center gap-2 rounded-md border px-2 py-1.5 cursor-pointer ${checked ? "border-primary bg-primary/5" : "border-border/60"}`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => setLinkedPosts(checked ? linkedPosts.filter((x) => x !== p.id) : [...linkedPosts, p.id])}
+                            />
+                            {p.es_video ? (
+                              <video src={p.media_url} className="w-9 h-9 rounded object-cover" muted preload="metadata" />
+                            ) : (
+                              <img src={p.media_url} alt="" className="w-9 h-9 rounded object-cover" />
+                            )}
+                            <div className="min-w-0 flex-1">
+                              <p className="text-xs truncate">{p.caption || "(sin texto)"}</p>
+                              <p className="text-[10px] text-muted-foreground">
+                                {p.tipo} · {new Date(p.publicar_en).toLocaleString("es-CL", { dateStyle: "short", timeStyle: "short" })}
+                                {p.estado !== "programado" && ` · ${p.estado}`}
+                                {otra && checked === false && ` · vinculado a «${otra.nombre}»`}
+                              </p>
+                            </div>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  )}
+                  <p className="text-[10px] text-muted-foreground">
+                    Al publicarse, el video se suma solo a esta campaña. En otros videos esta campaña no responde.
+                  </p>
                 </div>
+                )}
 
                 <div className="flex items-center justify-between">
                   <Label className="text-xs">También responder si escriben la palabra clave por DM</Label>

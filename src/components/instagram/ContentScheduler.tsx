@@ -86,7 +86,7 @@ export function ContentScheduler({
   bestSlots = [],
   presetDate,
 }: {
-  campaigns: { id?: string; nombre: string }[];
+  campaigns: { id?: string; nombre: string; alcance?: "general" | "posts" }[];
   connected: boolean;
   invoke: (body: Record<string, unknown>) => Promise<{ ok?: boolean; result?: string; error?: string; scopes?: string[] }>;
   onPublished?: () => void;
@@ -405,17 +405,23 @@ export function ContentScheduler({
 
             <div className="grid sm:grid-cols-2 gap-3">
               <div className="space-y-1">
-                <Label className="text-xs">Al publicar, activar campaña</Label>
+                <Label className="text-xs">Campaña de este video</Label>
                 <Select value={draft.campaign_id} onValueChange={(v) => setDraft({ ...draft, campaign_id: v })}>
                   <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value={NONE}>Ninguna</SelectItem>
                     {campaigns.filter((c) => c.id).map((c) => (
-                      <SelectItem key={c.id} value={c.id!}>{c.nombre}</SelectItem>
+                      <SelectItem key={c.id} value={c.id!}>
+                        {c.alcance === "general" ? "🌐" : "🎬"} {c.nombre}
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
-                <p className="text-[10px] text-muted-foreground">El post se agrega a la campaña y la campaña se activa sola.</p>
+                <p className="text-[10px] text-muted-foreground">
+                  {campaigns.find((c) => c.id === draft.campaign_id)?.alcance === "general"
+                    ? "🌐 Campaña general: ya responde en todos los posts; al publicar solo se activa."
+                    : "🎬 Al publicar, el video se suma a la campaña y se activa. Solo responde en sus videos."}
+                </p>
               </div>
               {draft.tipo === "reel" && (
                 <div className="flex items-center justify-between gap-2 rounded-md border border-border/60 px-3 py-2 h-fit mt-5">

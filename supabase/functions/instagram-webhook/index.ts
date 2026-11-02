@@ -97,6 +97,8 @@ type Campaign = {
   activa: boolean;
   prioridad: number;
   media_ids: string[];
+  /** general = todos los posts · posts = solo los videos/posts vinculados (vacío = espera su video) */
+  alcance?: "general" | "posts" | null;
   keywords: string[];
   match_mode: "contiene" | "exacta" | "cualquiera";
   responder_dm: boolean;
@@ -301,9 +303,19 @@ function keywordMatch(c: Campaign, text: string): boolean {
   return kws.some((k) => padded.includes(` ${k} `));
 }
 
+/** Sin la migración de alcance, se deduce como antes: con posts = de video, sin posts = general. */
+function campaignScope(c: Campaign): "general" | "posts" {
+  return c.alcance === "posts" || c.alcance === "general" ? c.alcance : c.media_ids?.length ? "posts" : "general";
+}
+
+/**
+ * Primero las campañas de ESE video (tienen prioridad); si ninguna calza, las generales.
+ * Una campaña de video nunca responde en otros posts, aunque aún no tenga su video publicado.
+ */
 function findCampaignForComment(campaigns: Campaign[], mediaId: string, text: string): Campaign | undefined {
-  return campaigns.find(
-    (c) => (!c.media_ids?.length || c.media_ids.includes(mediaId)) && keywordMatch(c, text),
+  return (
+    campaigns.find((c) => campaignScope(c) === "posts" && c.media_ids?.includes(mediaId) && keywordMatch(c, text)) ??
+    campaigns.find((c) => campaignScope(c) === "general" && keywordMatch(c, text))
   );
 }
 
@@ -1040,10 +1052,14 @@ async function advancePost(db: SupabaseClient, acc: Account, p: IgPost): Promise
 
   // Activar la campaña asociada sobre el post recién publicado
   if (p.campaign_id) {
-    const { data: camp } = await db.from("ig_campaigns").select("media_ids").eq("id", p.campaign_id).maybeSingle();
+    const { data: camp } = await db.from("ig_campaigns").select("*").eq("id", p.campaign_id).maybeSingle();
     if (camp) {
-      const ids = Array.from(new Set([...(camp.media_ids ?? []), mediaId]));
-      await db.from("ig_campaigns").update({ media_ids: ids, activa: true }).eq("id", p.campaign_id);
+      // Una campaña general ya cubre todos los posts: solo se activa, sin volverla "de video"
+      const patch: Record<string, unknown> = { activa: true };
+      if (campaignScope(camp as Campaign) === "posts") {
+        patch.media_ids = Array.from(new Set([...(camp.media_ids ?? []), mediaId]));
+      }
+      await db.from("ig_campaigns").update(patch).eq("id", p.campaign_id);
     }
   }
   return "publicado";
@@ -1957,9 +1973,10 @@ async function actionSimulate(db: SupabaseClient, body: any) {
   const mediaId = String(body.media_id ?? "");
   const text = String(body.text ?? "");
   // Sin post elegido, el simulador prueba solo las palabras clave (ignora la restricción de posts)
+  const matching = campaigns.filter((x) => keywordMatch(x, text));
   const c = mediaId
     ? findCampaignForComment(campaigns, mediaId, text)
-    : campaigns.find((x) => keywordMatch(x, text));
+    : matching.find((x) => campaignScope(x) === "general") ?? matching[0];
   if (!c) {
     let motivo = campaigns.length
       ? "Ninguna palabra clave de tus campañas activas aparece en ese comentario."
@@ -1975,7 +1992,10 @@ async function actionSimulate(db: SupabaseClient, body: any) {
   return json({
     ok: true,
     match: { id: c.id, nombre: c.nombre, modo: c.modo },
-    solo_posts: c.media_ids?.length ?? 0,
+    alcance: campaignScope(c),
+    // Sin post elegido: otras campañas (de video) que también calzan con esas palabras
+    tambien: mediaId ? [] : matching.filter((x) => x.id !== c.id).map((x) => x.nombre),
+    solo_posts: campaignScope(c) === "posts" ? c.media_ids?.length ?? 0 : 0,
     private_reply: c.requiere_seguir
       ? render(c.mensaje_seguir || c.mensaje_inicial, { username })
       : c.modo === "directo"
