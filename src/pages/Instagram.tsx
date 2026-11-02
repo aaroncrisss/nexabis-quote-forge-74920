@@ -14,10 +14,8 @@ import {
   Instagram as InstagramIcon,
   MousePointerClick,
   Users,
-  Bot,
   FileText,
   DollarSign,
-  PauseCircle,
   Plus,
   Pencil,
   Trash2,
@@ -98,10 +96,6 @@ type Funnel = {
   ingresos: number;
   conversaciones_ia: number;
   por_campania: { campaign_id: string; enviados: number; ofertas: number; clics: number; leads: number }[];
-};
-
-type EdgeStatus = {
-  ai_provider?: string | null;
 };
 
 type AccountStatus = {
@@ -236,10 +230,6 @@ export default function Instagram() {
   const [contacts, setContacts] = useState<IgContact[]>([]);
   const [settings, setSettings] = useState<IgSettings | null>(null);
   const [savingSettings, setSavingSettings] = useState(false);
-  const [edgeStatus, setEdgeStatus] = useState<EdgeStatus | null>(null);
-  const [aiText, setAiText] = useState("Hola, ¿cuánto cuesta un sistema como el del reel?");
-  const [aiChat, setAiChat] = useState<{ role: "user" | "assistant"; content: string }[]>([]);
-  const [aiTesting, setAiTesting] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -261,9 +251,6 @@ export default function Instagram() {
     setContacts(ct.error ? [] : ((ct.data as IgContact[]) ?? []));
     setSettings(se.error ? null : ((se.data as IgSettings | null) ?? null));
     setLoading(false);
-    invokeIg({ action: "status" })
-      .then((r) => setEdgeStatus({ ai_provider: r.ai_provider ?? null }))
-      .catch(() => setEdgeStatus(null));
   }, []);
 
   useEffect(() => {
@@ -430,38 +417,6 @@ export default function Instagram() {
     toast.success("Configuración guardada");
   };
 
-  const testAi = async () => {
-    if (!aiText.trim() || !settings) return;
-    setAiTesting(true);
-    const history = aiChat;
-    const userTurn = { role: "user" as const, content: aiText.trim() };
-    setAiChat([...history, userTurn]);
-    setAiText("");
-    try {
-      const r = await invokeIg({ action: "simulate_ai", text: userTurn.content, history, prompt: settings.ai_prompt });
-      if (!r.ok) throw new Error(r.error);
-      setAiChat((prev) => [
-        ...prev,
-        { role: "assistant", content: `${r.reply ?? ""}${r.handoff ? "\n\n⚠️ [Derivaría a humano y pausaría la IA 24h]" : ""}` },
-      ]);
-    } catch (e) {
-      const msg = (e as Error).message;
-      toast.error(msg === "sin_api_key_ia" ? "Falta configurar ANTHROPIC_API_KEY o GEMINI_API_KEY en Supabase" : msg);
-      setAiChat(history);
-    } finally {
-      setAiTesting(false);
-    }
-  };
-
-  const toggleAiPause = async (c: IgContact) => {
-    const paused = c.ai_pausado_hasta && new Date(c.ai_pausado_hasta).getTime() > Date.now();
-    // "Pausar" = indefinido en la práctica (10 años); "Reanudar" = null
-    const value = paused ? null : new Date(Date.now() + 3650 * 86400000).toISOString();
-    const { error } = await supabaseCRM.from("ig_contacts").update({ ai_pausado_hasta: value }).eq("ig_user_id", c.ig_user_id);
-    if (error) return toast.error(error.message);
-    setContacts((prev) => prev.map((x) => (x.ig_user_id === c.ig_user_id ? { ...x, ai_pausado_hasta: value } : x)));
-    toast.success(paused ? "IA reanudada para este contacto" : "IA pausada para este contacto");
-  };
 
   const copy = (text: string) => {
     navigator.clipboard.writeText(text);
@@ -573,7 +528,7 @@ export default function Instagram() {
             { label: "Leads CRM", value: stats.leads, sub: pct(stats.leads, stats.ofertas), icon: Users },
             { label: "Presupuestos", value: stats.presupuestos, sub: `${stats.aprobados} aprobados`, icon: FileText },
             { label: "Ventas", value: clp(stats.ingresos), sub: pct(stats.aprobados, stats.leads), icon: DollarSign },
-            { label: "Errores", value: stats.errores, sub: stats.conversacionesIa ? `${stats.conversacionesIa} chats IA` : null, icon: AlertTriangle },
+            { label: "Errores", value: stats.errores, sub: null, icon: AlertTriangle },
           ].map((s) => (
             <Card key={s.label} className="p-3">
               <div className="flex items-center gap-2 text-muted-foreground text-xs">
@@ -590,7 +545,6 @@ export default function Instagram() {
         <TabsList>
           <TabsTrigger value="campanias" className="text-xs">Campañas</TabsTrigger>
           <TabsTrigger value="leads" className="text-xs">Leads ({contacts.length})</TabsTrigger>
-          <TabsTrigger value="ia" className="text-xs gap-1"><Bot className="w-3.5 h-3.5" /> Nexabot IA</TabsTrigger>
           <TabsTrigger value="actividad" className="text-xs">Actividad</TabsTrigger>
         </TabsList>
 
@@ -717,13 +671,11 @@ export default function Instagram() {
                     <th className="py-1.5 pr-3">Campaña</th>
                     <th className="py-1.5 pr-3">Oferta</th>
                     <th className="py-1.5 pr-3">Clics</th>
-                    <th className="py-1.5 pr-3">CRM</th>
-                    <th className="py-1.5">IA</th>
+                    <th className="py-1.5">CRM</th>
                   </tr>
                 </thead>
                 <tbody>
                   {contacts.map((c) => {
-                    const paused = c.ai_pausado_hasta && new Date(c.ai_pausado_hasta).getTime() > Date.now();
                     return (
                       <tr key={c.ig_user_id} className="border-t border-border/50 align-top">
                         <td className="py-1.5 pr-3">
@@ -747,11 +699,6 @@ export default function Instagram() {
                             <Link to={`/clientes/${c.cliente_id}`} className="text-primary hover:underline">Ver cliente</Link>
                           ) : "—"}
                         </td>
-                        <td className="py-1.5">
-                          <Button size="sm" variant="ghost" className="h-6 px-2 text-[10px] gap-1" onClick={() => toggleAiPause(c)}>
-                            {paused ? <><PlayCircle className="w-3 h-3" /> Reanudar</> : <><PauseCircle className="w-3 h-3" /> Pausar</>}
-                          </Button>
-                        </td>
                       </tr>
                     );
                   })}
@@ -760,84 +707,6 @@ export default function Instagram() {
             </div>
           )}
         </Card>
-      </TabsContent>
-
-      {/* Agente IA */}
-      <TabsContent value="ia">
-        {!settings ? (
-          <Card className="p-4 text-xs text-muted-foreground">Aplica la migración 20261101_02 para configurar el agente IA.</Card>
-        ) : (
-          <div className="grid lg:grid-cols-2 gap-3">
-            <Card className="p-4 space-y-3">
-              <div className="flex items-center justify-between">
-                <h2 className="text-sm font-semibold flex items-center gap-2"><Bot className="w-4 h-4 text-primary" /> Nexabot: agente de ventas en DM</h2>
-                <Switch checked={settings.ai_enabled} onCheckedChange={(v) => saveSettings({ ai_enabled: v })} disabled={savingSettings} />
-              </div>
-              <p className="text-[11px] text-muted-foreground">
-                Responde los DMs que no calzan con ninguna palabra clave. Se pausa 12 h si respondes tú desde Instagram, y 24 h si deriva la conversación a un humano.
-              </p>
-              <Badge variant="outline" className={edgeStatus?.ai_provider ? "" : "text-orange-400 border-orange-500/40"}>
-                {edgeStatus?.ai_provider ? `Modelo: ${edgeStatus.ai_provider}` : "Sin API key: configura ANTHROPIC_API_KEY o GEMINI_API_KEY"}
-              </Badge>
-              <div className="space-y-1">
-                <Label className="text-xs">Conocimiento e instrucciones (qué vendes, para quién, cómo cotizas)</Label>
-                <Textarea rows={9} value={settings.ai_prompt} onChange={(e) => setSettings({ ...settings, ai_prompt: e.target.value })} className="text-xs" />
-              </div>
-              <div className="grid grid-cols-3 gap-3">
-                <div className="col-span-2 space-y-1">
-                  <Label className="text-xs">Link principal</Label>
-                  <Input value={settings.ai_link ?? ""} onChange={(e) => setSettings({ ...settings, ai_link: e.target.value })} className="h-8 text-xs" />
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-xs">Máx. respuestas/día por persona</Label>
-                  <Input
-                    type="number"
-                    min={1}
-                    max={100}
-                    value={settings.ai_max_turnos_dia}
-                    onChange={(e) => setSettings({ ...settings, ai_max_turnos_dia: Number(e.target.value) || 15 })}
-                    className="h-8 text-xs"
-                  />
-                </div>
-              </div>
-              <Button size="sm" className="gradient-button h-8 text-xs" onClick={() => saveSettings()} disabled={savingSettings}>
-                {savingSettings ? "Guardando..." : "Guardar"}
-              </Button>
-            </Card>
-
-            <Card className="p-4 space-y-2 flex flex-col">
-              <div className="flex items-center justify-between">
-                <h2 className="text-sm font-semibold">Probar conversación (no envía nada)</h2>
-                {aiChat.length > 0 && (
-                  <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setAiChat([])}>Reiniciar</Button>
-                )}
-              </div>
-              <div className="flex-1 min-h-[220px] max-h-[380px] overflow-y-auto rounded-lg bg-muted/40 p-3 space-y-2 text-xs">
-                {aiChat.length === 0 && <p className="text-muted-foreground">Escribe como si fueras un cliente. Usa las instrucciones actuales del editor, aunque no las hayas guardado.</p>}
-                {aiChat.map((m, i) => (
-                  <div
-                    key={i}
-                    className={`rounded-2xl px-3 py-2 w-fit max-w-[85%] whitespace-pre-wrap ${m.role === "user" ? "ml-auto bg-primary/20" : "bg-background"}`}
-                  >
-                    {m.content}
-                  </div>
-                ))}
-                {aiTesting && <p className="text-muted-foreground">Nexabot está escribiendo…</p>}
-              </div>
-              <div className="flex gap-2">
-                <Input
-                  value={aiText}
-                  onChange={(e) => setAiText(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && !aiTesting && testAi()}
-                  className="h-8 text-xs"
-                />
-                <Button size="sm" variant="outline" className="h-8 text-xs" onClick={testAi} disabled={aiTesting}>
-                  <Send className="w-3.5 h-3.5" />
-                </Button>
-              </div>
-            </Card>
-          </div>
-        )}
       </TabsContent>
 
       <TabsContent value="actividad">

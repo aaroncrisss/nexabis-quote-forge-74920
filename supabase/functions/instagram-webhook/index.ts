@@ -24,9 +24,7 @@
 //   IG_APP_SECRET      Instagram/Meta App Secret (firma + canje de tokens)
 //   IG_VERIFY_TOKEN    string del handshake del webhook
 //   IG_ADMIN_KEY       clave para crons/llamadas admin (también en Vault: ig_admin_key)
-//   ANTHROPIC_API_KEY  (opcional) agente IA con Claude  — preferido
-//   GEMINI_API_KEY     (opcional) agente IA con Gemini  — alternativa
-//   IG_AI_MODEL        (opcional) modelo Claude, por defecto claude-haiku-5-5
+//   GEMINI_API_KEY     (opcional) agente IA con Gemini (capa gratuita de Google AI Studio). Apagado por defecto (ig_settings.ai_enabled)
 //   IG_GEMINI_MODEL    (opcional) modelo Gemini, por defecto gemini-2.5-flash
 //   IG_GRAPH_VERSION   (opcional) por defecto v21.0
 //   IG_POLL_REQUIRE_KEY (opcional) "true" = poll_comments exige x-ig-admin-key
@@ -46,9 +44,7 @@ const IG_APP_SECRET = Deno.env.get("IG_APP_SECRET") ?? "";
 const IG_VERIFY_TOKEN = Deno.env.get("IG_VERIFY_TOKEN") ?? "";
 const IG_ADMIN_KEY = Deno.env.get("IG_ADMIN_KEY") ?? "";
 const GRAPH_VERSION = Deno.env.get("IG_GRAPH_VERSION") ?? "v21.0";
-const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY") ?? "";
 const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY") ?? "";
-const AI_MODEL = Deno.env.get("IG_AI_MODEL") ?? "claude-haiku-5-5";
 const GEMINI_MODEL = Deno.env.get("IG_GEMINI_MODEL") ?? "gemini-2.5-flash";
 const POLL_REQUIRE_KEY = (Deno.env.get("IG_POLL_REQUIRE_KEY") ?? "").toLowerCase() === "true";
 const FALLBACK_URL =Deno.env.get("IG_FALLBACK_URL") ?? "https://nexabistech.com";
@@ -594,30 +590,6 @@ function toChatTurns(history: { direccion: string; texto: string | null }[]): Ch
 
 async function callLlm(system: string, turns: ChatTurn[]): Promise<{ text: string | null; error?: string }> {
   if (!turns.length || turns[turns.length - 1].role !== "user") return { text: null, error: "sin_mensaje_usuario" };
-
-  if (ANTHROPIC_API_KEY) {
-    try {
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: {
-          "x-api-key": ANTHROPIC_API_KEY,
-          "anthropic-version": "2023-06-01",
-          "content-type": "application/json",
-        },
-        body: JSON.stringify({ model: AI_MODEL, max_tokens: 400, system, messages: turns }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) return { text: null, error: `anthropic ${res.status}: ${data?.error?.message ?? "error"}` };
-      const text = (data?.content ?? [])
-        .filter((b: any) => b?.type === "text")
-        .map((b: any) => b.text)
-        .join("")
-        .trim();
-      return { text: text || null };
-    } catch (e) {
-      return { text: null, error: `anthropic: ${String(e)}` };
-    }
-  }
 
   if (GEMINI_API_KEY) {
     try {
@@ -1315,10 +1287,9 @@ Deno.serve(async (req) => {
           secrets: {
             IG_APP_SECRET: Boolean(IG_APP_SECRET),
             IG_VERIFY_TOKEN: Boolean(IG_VERIFY_TOKEN),
-            ANTHROPIC_API_KEY: Boolean(ANTHROPIC_API_KEY),
             GEMINI_API_KEY: Boolean(GEMINI_API_KEY),
           },
-          ai_provider: ANTHROPIC_API_KEY ? `anthropic:${AI_MODEL}` : GEMINI_API_KEY ? `gemini:${GEMINI_MODEL}` : null,
+          ai_provider: GEMINI_API_KEY ? `gemini:${GEMINI_MODEL}` : null,
           graph_version: GRAPH_VERSION,
         });
       }
