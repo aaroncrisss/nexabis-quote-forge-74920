@@ -51,8 +51,8 @@ const FALLBACK_URL =Deno.env.get("IG_FALLBACK_URL") ?? "https://nexabistech.com"
 const GRAPH = "https://graph.facebook.com";
 const IG_GRAPH = "https://graph.instagram.com";
 const FUNCTION_URL = `${SUPABASE_URL}/functions/v1/instagram-webhook`;
-// Links enmascarados: https://nexabistech.com/r/<código> (ruta pública del frontend)
-const LINK_BASE = (Deno.env.get("IG_LINK_BASE") ?? "https://nexabistech.com").replace(/\/+$/, "");
+// Links enmascarados: https://ecosistema.nexabistech.com/r/<código> (ruta pública del frontend)
+const LINK_BASE = (Deno.env.get("IG_LINK_BASE") ?? "https://ecosistema.nexabistech.com").replace(/\/+$/, "");
 const FOLLOW_BUTTON = "Ya te sigo ✅";
 
 const OFFER_PAYLOAD_PREFIX = "IGOFFER:";
@@ -432,6 +432,70 @@ async function sendOffer(
   return { res: await sendMessage(acc, { id: recipientId }, { text }), text };
 }
 
+// -----------------------------------------------------------------------------
+// Privacidad: STOP (no contactar) y eliminación de datos
+// -----------------------------------------------------------------------------
+const STOP_WORDS = new Set(["stop", "baja", "detener", "no me escribas", "unsubscribe", "cancelar suscripcion"]);
+const DELETE_WORDS = new Set(["borrar mis datos", "eliminar mis datos", "delete my data"]);
+const PRIVACY_URL = `${LINK_BASE}/eliminar-datos`;
+
+/** Borra/anonimiza todo lo que guardamos de una persona. Devuelve el código de confirmación. */
+async function deleteUserData(
+  db: SupabaseClient,
+  igUserId: string,
+  origen: "meta_callback" | "dm" | "manual",
+): Promise<string> {
+  const codigo = crypto.randomUUID().replace(/-/g, "").slice(0, 12).toUpperCase();
+  const filas: Record<string, number | string> = {};
+  const count = async (label: string, q: PromiseLike<{ count: number | null; error: unknown }>) => {
+    const { count: n, error } = await q;
+    filas[label] = error ? `error: ${String((error as { message?: string })?.message ?? error)}` : n ?? 0;
+  };
+  await count("ig_messages", db.from("ig_messages").delete({ count: "exact" }).eq("ig_user_id", igUserId));
+  await count("ig_links", db.from("ig_links").delete({ count: "exact" }).eq("ig_user_id", igUserId));
+  await count(
+    "ig_comment_events",
+    db
+      .from("ig_comment_events")
+      .update({ from_id: "eliminado", from_username: null, texto: null }, { count: "exact" })
+      .eq("from_id", igUserId),
+  );
+  await count("ig_contacts", db.from("ig_contacts").delete({ count: "exact" }).eq("ig_user_id", igUserId));
+  const { error } = await db.from("ig_data_deletions").insert({ codigo, origen, filas });
+  if (error) console.error("ig_data_deletions insert", error.message);
+  return codigo;
+}
+
+/** Callback de eliminación de datos de Meta (signed_request firmado con el App Secret). */
+async function handleDataDeletionCallback(db: SupabaseClient, form: URLSearchParams): Promise<Response> {
+  const signed = form.get("signed_request") ?? "";
+  const [sigB64, payloadB64] = signed.split(".");
+  if (!sigB64 || !payloadB64 || !IG_APP_SECRET) return json({ error: "invalid_signed_request" }, 400);
+  const b64 = (x: string) => x.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(x.length / 4) * 4, "=");
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(IG_APP_SECRET),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const expected = new Uint8Array(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(payloadB64)));
+  const received = Uint8Array.from(atob(b64(sigB64)), (c) => c.charCodeAt(0));
+  let diff = expected.length ^ received.length;
+  for (let i = 0; i < Math.min(expected.length, received.length); i++) diff |= expected[i] ^ received[i];
+  if (diff !== 0) return json({ error: "bad_signature" }, 401);
+
+  let payload: any = {};
+  try {
+    payload = JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(b64(payloadB64)), (c) => c.charCodeAt(0))));
+  } catch {
+    return json({ error: "bad_payload" }, 400);
+  }
+  const userId = String(payload?.user_id ?? "");
+  const codigo = userId ? await deleteUserData(db, userId, "meta_callback") : "SIN-USUARIO";
+  return json({ url: `${PRIVACY_URL}?codigo=${codigo}`, confirmation_code: codigo });
+}
+
 /** ¿La persona sigue a la cuenta? true/false, o null si Meta no lo informa. */
 async function isFollower(acc: Account, igsid: string): Promise<boolean | null> {
   const r = await graph(igsid, { token: acc.access_token, params: { fields: "is_user_follow_business" } });
@@ -590,7 +654,17 @@ async function handleComment(
   const finish = (patch: Record<string, unknown>) => db.from("ig_comment_events").update(patch).eq("id", eventId);
 
   const campaign = findCampaignForComment(campaigns, mediaId, text);
-  await upsertContact(db, fromId, { username: fromUsername, ...(campaign ? { ultima_campaign_id: campaign.id } : {}) }, true);
+  const prevContact = await upsertContact(
+    db,
+    fromId,
+    { username: fromUsername, ...(campaign ? { ultima_campaign_id: campaign.id } : {}) },
+    true,
+  );
+
+  if (prevContact?.no_contactar) {
+    await finish({ estado: "omitido", motivo: "pidió_no_ser_contactado", campaign_id: campaign?.id ?? null });
+    return;
+  }
 
   if (!campaign) {
     await finish({ estado: "omitido", motivo: "sin_campaña_que_calce" });
@@ -844,10 +918,46 @@ async function handleMessaging(
     if (!isNew) return; // ya procesado (reintento de Meta o polling repetido)
   }
 
+  // ---- Privacidad: eliminar datos / no contactar ----
+  const cmd = normalize(text);
+  if (DELETE_WORDS.has(cmd)) {
+    const codigo = await deleteUserData(db, senderId, "dm");
+    const r = await sendMessage(acc, { id: senderId }, {
+      text: `Listo ✅ Eliminamos tus datos de nuestros sistemas. Código de confirmación: ${codigo}\n${PRIVACY_URL}?codigo=${codigo}`,
+    });
+    // Marcas anónimas: guardan solo los mid para que el polling/eco no reprocese estos mensajes
+    for (const [m2, dir] of [[mid, "in"], [r.data?.message_id ?? null, "out"]] as const) {
+      if (m2) await logMessage(db, { ig_user_id: "eliminado", mid: m2, direccion: dir, origen: dir === "in" ? "usuario" : "campaña", texto: "" });
+    }
+    return; // no se registra nada más de esta persona
+  }
+
   const contact = await upsertContact(db, senderId, {
     username: m?.sender?.username ?? null,
     ultimo_mensaje_at: new Date().toISOString(),
   });
+
+  if (STOP_WORDS.has(cmd)) {
+    await upsertContact(db, senderId, {
+      no_contactar: true,
+      baja_at: new Date().toISOString(),
+      pending_campaign_id: null,
+      pending_until: null,
+    });
+    const r = await sendMessage(acc, { id: senderId }, {
+      text: "Entendido 👍 No te enviaremos más mensajes automáticos. Si cambias de opinión, comenta o escríbenos cuando quieras.",
+    });
+    if (r.ok) {
+      await logMessage(db, { ig_user_id: senderId, mid: r.data?.message_id ?? null, direccion: "out", origen: "campaña", texto: "STOP confirmado" });
+    }
+    return;
+  }
+
+  // Tocar un botón de campaña es una nueva solicitud explícita -> reactiva el contacto
+  if (contact?.no_contactar) {
+    if (!payload.startsWith(OFFER_PAYLOAD_PREFIX)) return;
+    await upsertContact(db, senderId, { no_contactar: false, baja_at: null });
+  }
 
   let campaign: Campaign | undefined;
   let viaDmKeyword = false;
@@ -1400,6 +1510,15 @@ Deno.serve(async (req) => {
   }
 
   if (req.method !== "POST") return json({ error: "method_not_allowed" }, 405);
+
+  // ---- Callback de eliminación de datos / desautorización de Meta (form-urlencoded) ----
+  const ctype = req.headers.get("content-type") ?? "";
+  if (ctype.includes("application/x-www-form-urlencoded")) {
+    const form = new URLSearchParams(await req.text());
+    if (url.searchParams.has("deauthorize")) return new Response("ok", { status: 200 });
+    if (form.has("signed_request")) return await handleDataDeletionCallback(db, form);
+    return json({ error: "unsupported" }, 400);
+  }
 
   const raw = await req.text();
   let body: any = {};

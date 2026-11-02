@@ -3,7 +3,7 @@ import { useParams } from "react-router-dom";
 import { supabaseCRM } from "@/integrations/supabase/crm-client";
 
 /**
- * Link enmascarado: https://nexabistech.com/r/<código>
+ * Link enmascarado: https://ecosistema.nexabistech.com/r/<código>
  * Resuelve un recurso (PDF, etc.) o un link rastreable de Instagram, cuenta el clic y redirige.
  */
 export default function LinkCorto() {
@@ -31,7 +31,7 @@ export default function LinkCorto() {
       {failed ? (
         <>
           <p className="text-lg font-semibold">Este link ya no está disponible</p>
-          <a href="/" className="text-primary hover:underline text-sm">Ir a nexabistech.com</a>
+          <a href="https://nexabistech.com" className="text-primary hover:underline text-sm">Ir a nexabistech.com</a>
         </>
       ) : (
         <>

@@ -87,6 +87,7 @@ type IgContact = {
   clics: number;
   ai_pausado_hasta: string | null;
   notas: string | null;
+  no_contactar?: boolean;
 };
 
 type Funnel = {
@@ -734,7 +735,7 @@ export default function Instagram() {
                         </td>
                         <td className="py-1.5 pr-3">{c.total_comentarios}</td>
                         <td className="py-1.5 pr-3">{c.ultima_campaign_id ? campaignName.get(c.ultima_campaign_id) ?? "—" : "—"}</td>
-                        <td className="py-1.5 pr-3">{c.oferta_enviada_at ? "✅" : ""}</td>
+                        <td className="py-1.5 pr-3">{c.no_contactar ? <span className="text-red-400" title="Pidió no ser contactado (STOP)">STOP</span> : c.oferta_enviada_at ? "✅" : ""}</td>
                         <td className="py-1.5 pr-3">{c.clics || ""}</td>
                         <td className="py-1.5 pr-3">
                           {c.cliente_id ? (

@@ -19,7 +19,7 @@ export type Recurso = {
   created_at: string;
 };
 
-export const LINK_BASE = "https://nexabistech.com/r/";
+export const LINK_BASE = "https://ecosistema.nexabistech.com/r/";
 const BUCKET = "recursos";
 const MAX_BYTES = 50 * 1024 * 1024;
 
@@ -138,7 +138,7 @@ export function ResourcesManager({ onChange }: { onChange?: () => void }) {
             <Input value={titulo} onChange={(e) => setTitulo(e.target.value)} placeholder="Guía gratis: automatiza tu negocio" />
           </div>
           <div className="space-y-1">
-            <Label className="text-xs">Link (nexabistech.com/r/…)</Label>
+            <Label className="text-xs">Link (ecosistema.nexabistech.com/r/…)</Label>
             <Input value={slug} onChange={(e) => setSlug(toSlug(e.target.value))} placeholder={toSlug(titulo) || "guia-gratis"} />
           </div>
           <div className="space-y-1">

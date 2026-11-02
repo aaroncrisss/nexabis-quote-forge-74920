@@ -291,6 +291,19 @@ Migración: `20261101_04_instagram_content.sql`. Componentes: `src/components/in
 
 ---
 
+## 🔐 9.7. Privacidad y App Review (2026-11-01)
+
+**Dominio del ecosistema: `ecosistema.nexabistech.com`** (este repo). `nexabistech.com` es OTRO repo (landing). Links `/r/` y páginas legales viven en el ecosistema (`IG_LINK_BASE`).
+
+* Páginas públicas: `/privacidad` (`/privacy`), `/terminos` (`/terms`), `/eliminar-datos` (`/data-deletion`, muestra `?codigo=`). Código en `src/pages/legal/`.
+* Migración `20261101_05_instagram_privacy.sql`: `ig_contacts.no_contactar`/`baja_at` y `ig_data_deletions` (código + filas borradas, sin ID de la persona).
+* DM `STOP`/`BAJA` → `no_contactar=true` (comentarios quedan `omitido: pidió_no_ser_contactado`); tocar un botón de campaña lo reactiva.
+* DM `BORRAR MIS DATOS` / `DELETE MY DATA` → `deleteUserData()` (borra ig_messages, ig_links, ig_contacts; anonimiza ig_comment_events) y responde con código.
+* Callback de Meta: POST form-urlencoded con `signed_request` a la Edge Function (verifica HMAC con `IG_APP_SECRET`) → `{ url, confirmation_code }`. `?deauthorize=1` responde 200.
+* Kit completo para el App Review: `docs/APP_REVIEW_META.md`. Mientras no haya Advanced Access se sigue con el cron de polling (sin ManyChat).
+
+---
+
 ## 🚀 10. Ideas de Mejora y Futuras Extensiones
 
 Cuando Claude o el equipo retome este sistema, estas son las extensiones recomendadas de mayor impacto:

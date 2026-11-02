@@ -18,6 +18,9 @@ const Presupuestos = lazy(() => import("./pages/Presupuestos"));
 const CrearPresupuesto = lazy(() => import("./pages/CrearPresupuesto"));
 const PresupuestoPublico = lazy(() => import("./pages/PresupuestoPublico"));
 const LinkCorto = lazy(() => import("./pages/LinkCorto"));
+const Privacidad = lazy(() => import("./pages/legal/Privacidad"));
+const Terminos = lazy(() => import("./pages/legal/Terminos"));
+const EliminarDatos = lazy(() => import("./pages/legal/EliminarDatos"));
 const Configuracion = lazy(() => import("./pages/Configuracion"));
 const Clientes = lazy(() => import("./pages/Clientes"));
 const ClienteDetalle = lazy(() => import("./pages/ClienteDetalle"));
@@ -80,6 +83,12 @@ const App = () => (
               <Route path="/register" element={<Register />} />
               <Route path="/presupuesto/:token" element={<PresupuestoPublico />} />
               <Route path="/r/:code" element={<LinkCorto />} />
+              <Route path="/privacidad" element={<Privacidad />} />
+              <Route path="/privacy" element={<Privacidad />} />
+              <Route path="/terminos" element={<Terminos />} />
+              <Route path="/terms" element={<Terminos />} />
+              <Route path="/eliminar-datos" element={<EliminarDatos />} />
+              <Route path="/data-deletion" element={<EliminarDatos />} />
               <Route path="/comprobante/:token/:pagoNumero" element={<ComprobantePago />} />
 
               {/* Protected App Routes wrapped in persistent DashboardLayout shell */}
