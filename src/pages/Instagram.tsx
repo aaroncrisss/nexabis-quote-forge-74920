@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -9,7 +9,7 @@ import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import {
   Instagram as InstagramIcon,
   MousePointerClick,
@@ -234,7 +234,26 @@ async function invokeIg(body: Record<string, unknown>): Promise<IgResult> {
 // -----------------------------------------------------------------------------
 // Página
 // -----------------------------------------------------------------------------
+const TABS = ["campanias", "bandeja", "publicaciones", "contenido", "archivos", "leads", "actividad"] as const;
+
 export default function Instagram() {
+  // Pestaña activa en la URL (?tab=bandeja): sobrevive a recargas y se puede compartir
+  const [params, setParams] = useSearchParams();
+  const tabParam = params.get("tab") ?? "";
+  const tab = (TABS as readonly string[]).includes(tabParam) ? tabParam : "campanias";
+  const tabsRef = useRef<HTMLDivElement>(null);
+  const [unread, setUnread] = useState(0);
+  const changeTab = (v: string) => {
+    setParams((p) => {
+      const n = new URLSearchParams(p);
+      n.set("tab", v);
+      return n;
+    }, { replace: true });
+    // Paneles a pantalla completa: llevar las pestañas arriba
+    if (v === "bandeja" || v === "publicaciones") {
+      requestAnimationFrame(() => tabsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
+    }
+  };
   const [status, setStatus] = useState<AccountStatus | null>(null);
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [events, setEvents] = useState<IgEvent[]>([]);
@@ -584,10 +603,13 @@ export default function Instagram() {
         </div>
       </div>
 
-      <Tabs defaultValue="campanias" className="space-y-3">
+      <Tabs ref={tabsRef} value={tab} onValueChange={changeTab} className="space-y-3 scroll-mt-4">
         <TabsList className="flex flex-wrap h-auto justify-start">
           <TabsTrigger value="campanias" className="text-xs">Campañas</TabsTrigger>
-          <TabsTrigger value="bandeja" className="text-xs">Bandeja</TabsTrigger>
+          <TabsTrigger value="bandeja" className="text-xs gap-1">
+            Bandeja
+            {unread > 0 && <span className="rounded-full bg-primary text-primary-foreground px-1.5 text-[10px] leading-4">{unread}</span>}
+          </TabsTrigger>
           <TabsTrigger value="publicaciones" className="text-xs">Publicaciones</TabsTrigger>
           <TabsTrigger value="contenido" className="text-xs">Contenido</TabsTrigger>
           <TabsTrigger value="archivos" className="text-xs">Archivos</TabsTrigger>
@@ -768,10 +790,12 @@ export default function Instagram() {
         </Card>
       </TabsContent>
 
-      <TabsContent value="bandeja">
+      {/* Montada siempre: mantiene el contador de "sin responder" aunque estés en otra pestaña */}
+      <TabsContent value="bandeja" forceMount className="data-[state=inactive]:hidden">
         <InboxPanel
           invoke={invokeIg as (b: Record<string, unknown>) => Promise<Record<string, unknown>>}
           connected={!!status?.connected}
+          onUnread={setUnread}
           quickReplies={recursos.map((r) => `Aquí tienes ${r.titulo} 👉 ${LINK_BASE}${r.slug}`)}
         />
       </TabsContent>

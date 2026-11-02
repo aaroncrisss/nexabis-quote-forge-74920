@@ -29,11 +29,15 @@ type Comment = {
   from?: { id: string; username?: string };
   replies?: { data: { id: string; text: string; username?: string; timestamp: string }[] };
   mine: boolean;
+  answered?: boolean;
   bot: { estado: string; motivo: string | null; campaign_id: string | null } | null;
   can_private_reply: boolean;
 };
 
 type Invoke = (body: Record<string, unknown>) => Promise<Record<string, unknown>>;
+
+/** Comentario de otra persona que nadie respondió (ni tú en público ni el bot por DM). */
+const isPending = (c: Comment) => !c.mine && !c.answered && c.bot?.estado !== "enviado";
 
 const BOT_LABEL: Record<string, string> = { enviado: "DM enviado", omitido: "Omitido", error: "Error", recibido: "Recibido" };
 
@@ -56,6 +60,7 @@ export function PostsPanel({
   const [replyTo, setReplyTo] = useState<{ id: string; mode: "public" | "dm"; from_id?: string } | null>(null);
   const [replyText, setReplyText] = useState("");
   const [busy, setBusy] = useState(false);
+  const [onlyPending, setOnlyPending] = useState(false);
 
   const loadMedia = useCallback(async () => {
     if (!connected) return;
@@ -139,7 +144,7 @@ export function PostsPanel({
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
           </Button>
         </div>
-        <div className="grid grid-cols-3 gap-2 max-h-[600px] overflow-y-auto">
+        <div className="grid grid-cols-3 gap-2 max-h-[calc(100dvh-260px)] min-h-[300px] overflow-y-auto overscroll-contain">
           {media.map((m) => {
             const auto = campaignsFor(m.id).length > 0;
             return (
@@ -195,16 +200,25 @@ export function PostsPanel({
             </div>
 
             <div className="flex items-center justify-between">
-              <p className="text-xs font-semibold">Comentarios ({comments.length})</p>
+              <div className="flex items-center gap-2">
+                <p className="text-xs font-semibold">Comentarios ({comments.length})</p>
+                <button
+                  type="button"
+                  onClick={() => setOnlyPending((v) => !v)}
+                  className={`rounded-full border px-2 py-0.5 text-[10px] ${onlyPending ? "border-primary text-primary" : "border-border text-muted-foreground"}`}
+                >
+                  Sin responder ({comments.filter(isPending).length})
+                </button>
+              </div>
               <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => loadComments(active)} disabled={loadingC}>
                 <RefreshCw className={`w-3.5 h-3.5 ${loadingC ? "animate-spin" : ""}`} />
               </Button>
             </div>
 
-            <div className="space-y-2 max-h-[480px] overflow-y-auto text-xs">
+            <div className="space-y-2 max-h-[calc(100dvh-360px)] min-h-[240px] overflow-y-auto overscroll-contain text-xs">
               {loadingC && comments.length === 0 && <p className="text-muted-foreground">Cargando…</p>}
               {!loadingC && comments.length === 0 && <p className="text-muted-foreground">Sin comentarios.</p>}
-              {comments.map((c) => (
+              {comments.filter((c) => !onlyPending || isPending(c)).map((c) => (
                 <div key={c.id} className={`rounded-md border border-border/50 p-2 space-y-1 ${c.hidden ? "opacity-60" : ""}`}>
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-1.5 min-w-0">

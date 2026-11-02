@@ -1759,6 +1759,7 @@ Deno.serve(async (req) => {
           comments: comments.map((c: any) => ({
             ...c,
             mine: String(c.from?.id ?? "") === acc.ig_user_id,
+            answered: (c.replies?.data ?? []).some((r: any) => String(r.from?.id ?? "") === acc.ig_user_id),
             bot: byId.get(c.id) ?? null,
             can_private_reply: Date.now() - new Date(c.timestamp).getTime() < PRIVATE_REPLY_WINDOW_MS,
           })),

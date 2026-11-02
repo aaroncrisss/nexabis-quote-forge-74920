@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { RefreshCw, Send, Search, MessageCircle, ExternalLink } from "lucide-react";
+import { RefreshCw, Send, Search, MessageCircle, ExternalLink, ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
 
 type Conversation = {
@@ -39,7 +39,17 @@ const ago = (iso: string) => {
   return new Date(iso).toLocaleDateString("es-CL", { day: "numeric", month: "short" });
 };
 
-export function InboxPanel({ invoke, connected, quickReplies = [] }: { invoke: Invoke; connected: boolean; quickReplies?: string[] }) {
+export function InboxPanel({
+  invoke,
+  connected,
+  quickReplies = [],
+  onUnread,
+}: {
+  invoke: Invoke;
+  connected: boolean;
+  quickReplies?: string[];
+  onUnread?: (n: number) => void;
+}) {
   const [convs, setConvs] = useState<Conversation[]>([]);
   const [loading, setLoading] = useState(false);
   const [filter, setFilter] = useState("");
@@ -49,7 +59,8 @@ export function InboxPanel({ invoke, connected, quickReplies = [] }: { invoke: I
   const [loadingThread, setLoadingThread] = useState(false);
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
-  const bottom = useRef<HTMLDivElement>(null);
+  const scroller = useRef<HTMLDivElement>(null);
+  const lastCount = useRef(0);
 
   const [next, setNext] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -105,6 +116,10 @@ export function InboxPanel({ invoke, connected, quickReplies = [] }: { invoke: I
   );
 
   useEffect(() => {
+    onUnread?.(convs.filter((c) => !c.last_from_me).length);
+  }, [convs, onUnread]);
+
+  useEffect(() => {
     loadInbox();
     const t = setInterval(loadInbox, 60_000);
     return () => clearInterval(t);
@@ -118,7 +133,10 @@ export function InboxPanel({ invoke, connected, quickReplies = [] }: { invoke: I
   }, [active, loadThread]);
 
   useEffect(() => {
-    bottom.current?.scrollIntoView({ behavior: "smooth" });
+    // Solo baja dentro del chat (nunca mueve la página) y solo si llegaron mensajes nuevos
+    const el = scroller.current;
+    if (el && msgs.length !== lastCount.current) el.scrollTop = el.scrollHeight;
+    lastCount.current = msgs.length;
   }, [msgs]);
 
   const send = async () => {
@@ -145,9 +163,9 @@ export function InboxPanel({ invoke, connected, quickReplies = [] }: { invoke: I
 
   return (
     <Card className="p-0 overflow-hidden">
-      <div className="grid md:grid-cols-[280px_1fr] h-[600px]">
-        {/* Lista */}
-        <div className="border-r border-border/60 flex flex-col min-h-0">
+      <div className="grid md:grid-cols-[300px_1fr] h-[calc(100dvh-200px)] min-h-[420px] max-h-[820px]">
+        {/* Lista (en celular se oculta al abrir un chat) */}
+        <div className={`border-r border-border/60 flex-col min-h-0 ${active ? "hidden md:flex" : "flex"}`}>
           <div className="p-2 flex gap-1 border-b border-border/60">
             <div className="relative flex-1">
               <Search className="w-3.5 h-3.5 absolute left-2 top-2.5 text-muted-foreground" />
@@ -163,14 +181,23 @@ export function InboxPanel({ invoke, connected, quickReplies = [] }: { invoke: I
               <button
                 key={c.id}
                 type="button"
-                onClick={() => setActive(c)}
+                onClick={() => {
+                  if (active?.id !== c.id) {
+                    setMsgs([]);
+                    lastCount.current = 0;
+                  }
+                  setActive(c);
+                }}
                 className={`w-full text-left px-3 py-2 border-b border-border/40 text-xs hover:bg-muted/40 ${active?.id === c.id ? "bg-muted/60" : ""}`}
               >
                 <div className="flex items-center justify-between gap-2">
-                  <span className="font-medium truncate">@{c.username ?? c.user_id}</span>
+                  <span className="font-medium truncate flex items-center gap-1.5">
+                    {!c.last_from_me && <span className="w-1.5 h-1.5 rounded-full bg-primary shrink-0" title="Esperando tu respuesta" />}
+                    @{c.username ?? c.user_id}
+                  </span>
                   <span className="text-[10px] text-muted-foreground shrink-0">{ago(c.updated_time)}</span>
                 </div>
-                <p className={`truncate ${c.last_from_me ? "text-muted-foreground" : "text-foreground"}`}>
+                <p className={`truncate ${c.last_from_me ? "text-muted-foreground" : "text-foreground font-medium"}`}>
                   {c.last_from_me ? "Tú: " : ""}{c.last_text || "📎 Adjunto"}
                 </p>
                 <div className="flex gap-1 mt-0.5">
@@ -189,7 +216,7 @@ export function InboxPanel({ invoke, connected, quickReplies = [] }: { invoke: I
         </div>
 
         {/* Conversación */}
-        <div className="flex flex-col min-h-0">
+        <div className={`flex-col min-h-0 ${active ? "flex" : "hidden md:flex"}`}>
           {!active ? (
             <div className="flex-1 flex flex-col items-center justify-center text-xs text-muted-foreground gap-2">
               <MessageCircle className="w-6 h-6" /> Elige una conversación
@@ -197,7 +224,10 @@ export function InboxPanel({ invoke, connected, quickReplies = [] }: { invoke: I
           ) : (
             <>
               <div className="px-3 py-2 border-b border-border/60 flex items-center justify-between gap-2">
-                <div className="min-w-0">
+                <Button size="sm" variant="ghost" className="h-7 px-1.5 md:hidden" onClick={() => setActive(null)} title="Volver">
+                  <ArrowLeft className="w-4 h-4" />
+                </Button>
+                <div className="min-w-0 flex-1">
                   <a href={`https://instagram.com/${active.username ?? ""}`} target="_blank" rel="noreferrer" className="text-sm font-semibold hover:underline">
                     @{active.username ?? active.user_id}
                   </a>
@@ -215,7 +245,7 @@ export function InboxPanel({ invoke, connected, quickReplies = [] }: { invoke: I
                 </div>
               </div>
 
-              <div className="flex-1 overflow-y-auto p-3 space-y-2 text-xs">
+              <div ref={scroller} className="flex-1 overflow-y-auto overscroll-contain p-3 space-y-2 text-xs">
                 {loadingThread && msgs.length === 0 && <p className="text-muted-foreground">Cargando…</p>}
                 {msgs.map((m) => (
                   <div key={m.id} className={`flex ${m.from_me ? "justify-end" : "justify-start"}`}>
@@ -231,7 +261,6 @@ export function InboxPanel({ invoke, connected, quickReplies = [] }: { invoke: I
                     </div>
                   </div>
                 ))}
-                <div ref={bottom} />
               </div>
 
               <div className="border-t border-border/60 p-2 space-y-1.5">
