@@ -57,6 +57,10 @@ data erased immediately.
 The account owner uses our dashboard to schedule reels, image posts and stories for our own Instagram account. At the scheduled
 time our server creates the media container and publishes it with the Content Publishing API. We only publish to our own account.
 
+### `instagram_manage_insights`
+The account owner views, inside our dashboard, the reach, views, saves, shares and profile visits of our own posts and reels,
+and the account's 28-day reach and followers, to decide which content to promote. We only read insights of our own account.
+
 ### `pages_show_list` y `pages_read_engagement`
 Our Instagram Business account is linked to our Facebook Page ("Cris Automatización, DEV & IA"). These permissions are required to
 obtain the Page access token that the Instagram Graph API uses for that linked account. We do not read or display Page content.

@@ -313,6 +313,15 @@ Migración: `20261101_04_instagram_content.sql`. Componentes: `src/components/in
 
 ---
 
+## 📊 9.9. Versión 6 (2026-11-02): Respuestas guardadas, estadísticas, menciones
+
+Migración `20261102_02_instagram_replies_mentions.sql`.
+* **Respuestas guardadas** (`ig_respuestas`, `savedReplies.ts` + `SavedRepliesDialog.tsx`): chips en Bandeja y al responder comentarios; `{username}` se reemplaza.
+* **Estadísticas**: acciones `media_insights` (métricas según REELS/FEED/STORY, pedidas una por una porque Meta rechaza la consulta entera si una no aplica) y `account_insights` (seguidores + alcance/visitas 28 d). Requiere permiso `instagram_manage_insights`; la UI avisa si falta.
+* **Menciones en historias**: `ig_settings.story_mention_*`; webhook `attachments[].type=story_mention` o polling `messages{story{mention}}` → `handleStoryMention()` cuenta (`ig_contacts.menciones`) y agradece por DM máx 1 vez/12 h. Respeta STOP.
+
+---
+
 ## 🚀 10. Ideas de Mejora y Futuras Extensiones
 
 Cuando Claude o el equipo retome este sistema, estas son las extensiones recomendadas de mayor impacto:
