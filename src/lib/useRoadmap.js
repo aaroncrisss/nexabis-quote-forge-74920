@@ -89,23 +89,27 @@ export function useRoadmap(session) {
     const [m, t, c, n, r, cl, pr] = await Promise.all([
       supabase.from("team_members").select("*").order("sort_order"),
       supabase.from("tasks").select("*").order("created_at"),
-      supabase.from("task_comments").select("id, task_id, author_id, body, created_at").order("created_at"),
+      supabase.from("task_comments").select("id, task_id, author, body, text, created_at").order("created_at"),
       supabase.from("notifications").select("*").order("created_at", { ascending: false }).limit(60),
       supabase.from("notification_reads").select("notification_id"),
       supabase.from("clientes").select("id, nombre, empresa, telefono, email").order("nombre"),
       supabase.from("proyectos").select("id, nombre, estado, cliente_id").order("nombre"),
     ]);
-    const failed = [m, t, c, n, r].find((x) => x.error);
+    // Equipo y tareas son obligatorios; comentarios/notificaciones no deben dejar el tablero vacío
+    const failed = [m, t].find((x) => x.error);
     if (failed) throw failed.error;
+    for (const [name, x] of [["task_comments", c], ["notifications", n], ["notification_reads", r]]) {
+      if (x.error) console.error(`Error cargando ${name}`, x.error);
+    }
     setMemberRows(m.data);
     if (m.data.length === 0) {
       setPhase("noaccess");
       return;
     }
     setTaskRows(t.data);
-    setCommentRows(c.data);
-    setNotifRows(n.data);
-    const readSet = new Set(r.data.map((x) => x.notification_id));
+    setCommentRows(c.data || []);
+    setNotifRows(n.data || []);
+    const readSet = new Set((r.data || []).map((x) => x.notification_id));
     setReadIds(readSet);
     if (cl.data) setClientes(cl.data);
     if (pr.data) setProyectos(pr.data);
@@ -116,8 +120,8 @@ export function useRoadmap(session) {
     writeCache({
       memberRows: m.data,
       taskRows: t.data,
-      commentRows: c.data,
-      notifRows: n.data,
+      commentRows: c.data || [],
+      notifRows: n.data || [],
       readIds: Array.from(readSet),
       clientes: cl.data || [],
       proyectos: pr.data || [],
