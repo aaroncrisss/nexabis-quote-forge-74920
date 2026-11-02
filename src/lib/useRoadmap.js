@@ -173,15 +173,19 @@ export function useRoadmap(session) {
         setLive(ok);
       });
 
-    const onVisible = () => {
-      if (document.visibilityState === "visible") refresh();
+    // Los cambios llegan en tiempo real por el canal de arriba; el polling es solo respaldo.
+    // Antes era cada 6 s (7 consultas por pestaña) y agotaba el presupuesto de Disk IO de Supabase.
+    let lastRefresh = Date.now();
+    const throttledRefresh = (minGapMs) => {
+      if (document.visibilityState !== "visible") return;
+      if (Date.now() - lastRefresh < minGapMs) return;
+      lastRefresh = Date.now();
+      refresh();
     };
+    const onVisible = () => throttledRefresh(15000);
     document.addEventListener("visibilitychange", onVisible);
     window.addEventListener("focus", onVisible);
-    // Fast polling (every 6 seconds) so incoming WhatsApp voice notes/tasks appear almost in real-time
-    const poll = setInterval(() => {
-      if (document.visibilityState === "visible") refresh();
-    }, 6000);
+    const poll = setInterval(() => throttledRefresh(55000), 60000);
 
     return () => {
       document.removeEventListener("visibilitychange", onVisible);
