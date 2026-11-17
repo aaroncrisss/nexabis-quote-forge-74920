@@ -1853,6 +1853,7 @@ async function actionListMedia(db: SupabaseClient) {
 // -----------------------------------------------------------------------------
 const RADAR_EVERY_MS = 12 * 3600_000;
 const RADAR_DAYS = 21;
+const RADAR_BATCH = 8;
 
 const FORMULAS: [string, RegExp][] = [
   ["comenta_palabra", /coment[aá]\s*(la palabra\s*)?["“«']?[A-ZÁÉÍÓÚÑ]{3,}/],
@@ -1876,14 +1877,27 @@ function detectFormulas(caption: string | null): string[] {
 }
 
 async function syncRadar(db: SupabaseClient, acc: Account, outOfTime: () => boolean) {
-  const { data: comps } = await db.from("ig_competidores").select("username").eq("activo", true);
-  if (!comps?.length) return { cuentas: 0 };
+  // Por tandas: máx. RADAR_BATCH cuentas por pasada (la pasada del cron tiene límite de tiempo),
+  // empezando por las revisadas hace más tiempo. Solo las que no se revisaron en las últimas 12 h.
+  const dueBefore = new Date(Date.now() - RADAR_EVERY_MS + 30 * 60_000).toISOString();
+  const { data: comps } = await db
+    .from("ig_competidores")
+    .select("username")
+    .eq("activo", true)
+    .or(`actualizado_at.is.null,actualizado_at.lt.${dueBefore},error.not.is.null`)
+    .order("actualizado_at", { ascending: true, nullsFirst: true })
+    .limit(RADAR_BATCH);
+  const { count: pendientes } = await db
+    .from("ig_competidores")
+    .select("username", { count: "exact", head: true })
+    .eq("activo", true)
+    .or(`actualizado_at.is.null,actualizado_at.lt.${dueBefore}`);
   const { data: st } = await db.from("ig_settings").select("radar_score_min").eq("id", 1).maybeSingle();
   const scoreMin = Number(st?.radar_score_min ?? 3);
   const since = Date.now() - RADAR_DAYS * 86400_000;
   let cuentas = 0;
   let posts = 0;
-  for (const { username } of comps) {
+  for (const { username } of comps ?? []) {
     if (outOfTime()) break;
     const fields =
       `business_discovery.username(${username}){followers_count,media.limit(30){id,caption,like_count,comments_count,media_product_type,media_type,timestamp,permalink}}`;
@@ -1938,8 +1952,8 @@ async function syncRadar(db: SupabaseClient, acc: Account, outOfTime: () => bool
     }
     cuentas++;
   }
-  // Sin ninguna cuenta leída (tiempo agotado o todo falló): no marcar como revisado
-  if (!cuentas) return { cuentas, posts };
+  // Quedan cuentas por revisar: seguir en la próxima pasada (no se cierra la ronda todavía)
+  if ((pendientes ?? 0) > cuentas) return { cuentas, posts, pendientes: (pendientes ?? 0) - cuentas };
   // Limpieza: fuera de la ventana y sin guardar
   await db.from("ig_radar_posts").delete().lt("publicado_at", new Date(since).toISOString()).neq("estado", "guardado");
   await db.from("ig_settings").update({ radar_synced_at: new Date().toISOString() }).eq("id", 1);
