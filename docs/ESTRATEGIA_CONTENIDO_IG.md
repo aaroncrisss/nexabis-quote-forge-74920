@@ -45,6 +45,34 @@ Conclusiones:
 3. **En el nicho de IA y automatización para negocios, los carruseles superan a los Reels** en cuentas chicas.
 4. **Noticias de IA del día** = los picos de @dotcsv y @bencorde. Es un formato rápido de producir y con buen alcance.
 
+### 3.1 Nicho directo (IA, agentes, Claude)
+
+**@claudecode_es** (91,7 mil seguidores, formato animado como NexaBot)
+- Publica unos **15 Reels al día**: 30 posts en 46 h, en cualquier horario. La mediana es de 115 interacciones (ER 0,13 %), con picos de 2.282.
+- Usa una fórmula única que repite: `Claude, <situación cotidiana absurda>.` Por ejemplo: "Claude, mi amigo programador dice que yo no programo", "el vecino quiere una web, me paga con carne asada" o "en el banco preguntan mi trabajo".
+  - Cada video es un diálogo de dos personajes que parte directo en el conflicto.
+  - El humor es latino y cotidiano. La palabra "Claude" funciona como búsqueda y como tendencia.
+- CTA fijo: "Guárdalo y sígueme" + "la guía está en la bio" (imán de leads).
+- Crece por volumen más serie reconocible. Cada post rinde poco; el total suma.
+
+**@bencorde** (375 mil, Chile)
+- 14 por semana, a las 13–14 h de Chile. Escribe en primera persona y cuenta su vida con la IA: "Tengo 4 máquinas corriendo Claude Code 24/7", "con mi hermano Max…".
+- Lo que funciona: demos impactantes ("Recreé un reel COMPLETO con IA"), noticias de IA ("China acaba de lanzar…") y CTA de comentario (133 comentarios en un post de anuncios de Meta).
+- Muchos posts recientes tienen 0–2 me gusta. Pueden ser recién publicados o Trial Reels.
+
+**Juanpe Navarro:** el usuario `juanpe.navarro` es un bailarín, no la cuenta del nicho. Falta el usuario correcto.
+
+**Lecciones para NexaBot**
+1. Pasar de "explicador" a **personaje en una serie con fórmula fija** y título fijo, por ejemplo: `NexaBot, <cliente o pyme con un problema absurdo>`. El gancho es la situación, en la primera frase.
+2. Una sola idea por video, de 10–20 s, con remate.
+3. CTA de guardar + imán ("guía gratis: comenta GUÍA"), conectado al sistema Comment-to-DM.
+4. Cris en primera persona en paralelo, al estilo bencorde: "esto automaticé hoy para un cliente".
+
+### 3.2 Reels de prueba (Trial Reels)
+- Se muestran solo a no seguidores durante 24–72 h. Es la herramienta indicada para probar ganchos.
+- Elegibilidad: cuenta profesional pública. El mínimo de seguidores no está claro (200 o 1.000). Con 107 seguidores, probablemente todavía no aplica; revisa la opción "Prueba" al compartir un Reel.
+- **La API sí los soporta** (changelog de Meta, noviembre 2025): `trial_params: { graduation_strategy: "MANUAL" | "SS_PERFORMANCE" }` en el contenedor REELS. Se podría agregar un switch "Reel de prueba" en Contenido. Pasarlo a seguidores manualmente solo se puede desde la app.
+
 ## 4. Plan
 
 ### Formato (mezcla semanal, 4 publicaciones)
