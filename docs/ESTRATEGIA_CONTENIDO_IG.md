@@ -1,5 +1,53 @@
 # Estrategia de contenido Instagram — @cris.nexabis
 
+## ▶ PLAN COMPLETO (17 de noviembre de 2026) — resumen ejecutable
+
+**Fase 0: esta semana (bases)**
+1. **App Review de Meta**, el bloqueo principal: sin él, el "Comenta X" no le llega a gente real. Cris graba el screencast; el guion está en `docs/APP_REVIEW_META.md`.
+2. **Bio nueva:** qué haces + para quién + CTA + link. Ej.: "Automatizo pymes con IA 🇨🇱 · Escríbeme BOT y te muestro cómo atiendo Instagram solo ↓ nexabistech.com".
+3. Revisar si la cuenta ya puede publicar **Reels de prueba** (con 200 seguidores probablemente sí).
+4. Ya hecho: calendario de 1 post al día con textos nuevos, Radar de ideas, interruptor de Reel de prueba y etiqueta de IA en los textos.
+
+**Fase 1: semanas 1 a 4 (contenido), 5 posts por semana a las 19:00**
+| Día | Formato | Fórmula |
+|---|---|---|
+| Lunes | Carrusel de valor por rubro | "Si tienes una peluquería, haz estas 3 cosas con IA" + Comenta GUÍA |
+| Martes | Cris a cámara o pantalla | "Así hice…" (fábrica de 51 videos, mi ManyChat gratis, un caso de cliente) |
+| Miércoles | NexaBot con desafío | "Pruébalo ahora y comenta tu número" (participación) |
+| Jueves | Tendencia o noticia del día (sale del Radar) | "Acaba de salir X: esto significa para tu negocio" |
+| Sábado | NexaBot humor/POV | Serie "NexaBot, mi cliente quiere…" + Mándaselo a… |
+
+Checklist de cada pieza:
+- Gancho escrito en pantalla desde el primer segundo, sin introducción.
+- Duración de 12 a 25 s, con una sola idea y un remate.
+- Un solo CTA: comenta PALABRA, mándaselo a <persona> o guárdalo.
+- Primera línea del texto distinta a lo que dice el video, terminada en "↓".
+- 3 o 4 hashtags y la línea "🤖 Video animado con IA" cuando corresponda.
+
+**Distribución: 30 minutos diarios de Cris**
+- Compartir el post en historias con una encuesta o un sticker.
+- 15 minutos comentando con aporte en 10 cuentas del nicho, antes y después de publicar.
+- Responder todos los comentarios en la primera hora. Mientras no esté el App Review, mandar el recurso a mano por mensaje directo.
+- Subir el mismo video a TikTok y YouTube Shorts.
+- Publicar como Reel de prueba cuando la cuenta sea elegible.
+
+**Embudo:** comentario → mensaje directo (bot) → recurso (`nexabistech.com/r/…`) → lead en el CRM → WhatsApp → presupuesto. Recursos para regalar a cambio de un comentario:
+- Guía "10 automatizaciones para tu pyme".
+- Prompts por rubro.
+- Checklist de la web (ya existe).
+- Lista de atajos (ya existe).
+
+**Revisión semanal (lunes, 20 minutos):** abrir el Radar, elegir 2 ideas con ×3 o más para adaptar, mirar Analítica y repetir lo que funcionó.
+
+**Metas a 30 días** (punto de partida → meta):
+- Alcance promedio: 17 → 150.
+- Visualización: 4 s → 8 s o más (más del 50 % del video).
+- Envíos: 0 → al menos 1 de cada 3 posts.
+- Comentarios: 0 → 10 por post.
+- Seguidores: 107 → 300.
+
+**Reparto:** Claude produce los videos de NexaBot, las plantillas de carrusel, los recursos, los textos y la programación. Cris graba lo que lleva cámara o pantalla, el App Review y los 30 minutos diarios.
+
 Diagnóstico y plan a partir de datos reales (`ig_media_stats`, 40 posts) y de un análisis de competencia con `business_discovery` (17 de noviembre de 2026).
 
 ## 1. Diagnóstico de la cuenta (107 seguidores)
