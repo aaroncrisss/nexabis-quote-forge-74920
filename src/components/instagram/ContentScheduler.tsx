@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { CalendarClock, ExternalLink, Pencil, Rocket, Trash2, Upload, Film, Image as ImageIcon, CircleDot, Layers, Copy } from "lucide-react";
+import { CalendarClock, ExternalLink, Pencil, Rocket, Trash2, Upload, Film, Image as ImageIcon, CircleDot, Layers, Copy, Check } from "lucide-react";
 import { supabaseCRM } from "@/integrations/supabase/crm-client";
 import { toast } from "sonner";
 import { nextOccurrence, slotLabel, type Slot } from "./analytics";
@@ -348,6 +348,15 @@ export function ContentScheduler({
     load();
   };
 
+  /** Aprueba un borrador (p.ej. de la tarea semanal automática): queda programado en su fecha, o en 1 h si ya pasó. */
+  const approve = async (p: IgPost) => {
+    const when = new Date(p.publicar_en).getTime() > Date.now() + 10 * 60_000 ? p.publicar_en : new Date(Date.now() + 3600_000).toISOString();
+    const { error } = await supabaseCRM.from("ig_posts").update({ estado: "programado", publicar_en: when }).eq("id", p.id).eq("estado", "borrador");
+    if (error) return toast.error(error.message);
+    toast.success("Aprobado y programado");
+    load();
+  };
+
   const publishNow = async (p: IgPost) => {
     setPublishing(p.id);
     try {
@@ -594,6 +603,7 @@ export function ContentScheduler({
                 p={p}
                 campaign={p.campaign_id ? campaignName.get(p.campaign_id) : undefined}
                 onEdit={() => edit(p)}
+                onApprove={p.estado === "borrador" ? () => approve(p) : undefined}
                 onDelete={() => remove(p)}
                 onPublish={() => publishNow(p)}
                 onDuplicate={() => duplicate(p)}
@@ -628,6 +638,7 @@ function PostRow({
   p,
   campaign,
   onEdit,
+  onApprove,
   onDelete,
   onPublish,
   onDuplicate,
@@ -637,6 +648,7 @@ function PostRow({
   p: IgPost;
   campaign?: string;
   onEdit?: () => void;
+  onApprove?: () => void;
   onDelete: () => void;
   onPublish?: () => void;
   onDuplicate?: () => void;
@@ -659,7 +671,7 @@ function PostRow({
         <div className="flex flex-wrap items-center gap-1.5">
           <Icon className="w-3.5 h-3.5 text-primary" />
           <span className="font-medium">{when.toLocaleTimeString("es-CL", { hour: "2-digit", minute: "2-digit" })}</span>
-          {p.estado === "publicado" && <span className="text-muted-foreground">{when.toLocaleDateString("es-CL")}</span>}
+          {(p.estado === "publicado" || p.estado === "borrador") && <span className="text-muted-foreground">{when.toLocaleDateString("es-CL")}</span>}
           <Badge variant="outline" className={`text-[10px] ${st.cls}`}>{st.label}</Badge>
           {p.tipo === "carrusel" && <Badge variant="outline" className="text-[10px]">{p.media_items?.length ?? 0} archivos</Badge>}
           {campaign && <Badge variant="outline" className="text-[10px]">Campaña: {campaign}</Badge>}
@@ -677,6 +689,11 @@ function PostRow({
           <a href={p.permalink} target="_blank" rel="noreferrer" className="inline-flex h-7 px-2 items-center text-muted-foreground hover:text-foreground" title="Ver en Instagram">
             <ExternalLink className="w-3.5 h-3.5" />
           </a>
+        )}
+        {onApprove && (
+          <Button size="sm" variant="ghost" className="h-7 px-2 gap-1 text-[11px] text-emerald-400" onClick={onApprove} title="Aprobar y programar en su fecha">
+            <Check className="w-3.5 h-3.5" /> Aprobar
+          </Button>
         )}
         {onPublish && p.estado !== "procesando" && (
           <Button size="sm" variant="ghost" className="h-7 px-2 gap-1 text-[11px]" onClick={onPublish} disabled={publishing || !connected} title="Publicar ahora">
