@@ -1782,6 +1782,109 @@ async function actionListMedia(db: SupabaseClient) {
 // Meta no entrega webhooks en tiempo real (app en desarrollo / sin Advanced Access).
 // -----------------------------------------------------------------------------
 /** Tareas periódicas del cron: estadísticas cada 6 h y resumen semanal. Nunca rompe el polling. */
+// -----------------------------------------------------------------------------
+// Radar de ideas (sin IA): business_discovery sobre la competencia, 1 vez al día.
+// score = (me gusta + comentarios) / mediana de esa cuenta  →  ≥ 3 = idea probada.
+// -----------------------------------------------------------------------------
+const RADAR_EVERY_MS = 24 * 3600_000;
+const RADAR_DAYS = 21;
+
+const FORMULAS: [string, RegExp][] = [
+  ["comenta_palabra", /coment[aá]\s*(la palabra\s*)?["“«']?[A-ZÁÉÍÓÚÑ]{3,}/],
+  ["gratis", /gratis|free|open source|c[oó]digo abierto|sin pagar/i],
+  ["github_repo", /github|repositorio|\brepo\b|estrellas/i],
+  ["rubro", /^\W*si (eres|tienes|trabajas)/i],
+  ["gancho_tu", /^\W*(tu|tus|te|ya puedes|deja de)\b/i],
+  ["lista_numero", /^\W*\d+\s/],
+  ["pov", /^\W*pov\b/i],
+  ["pregunta", /^\W*¿/],
+  ["mandaselo", /m[aá]nd[aá]selo|comp[aá]rtelo|etiqueta a/i],
+  ["guardalo", /gu[aá]rd[aá]lo/i],
+  ["noticia", /acaba de|lanz[oó]|nuevo modelo|ayer|hoy sali[oó]|se filtr/i],
+  ["historia_personal", /^\W*(yo |mi |me |hace \d|cuando yo|llevo )/i],
+];
+
+function detectFormulas(caption: string | null): string[] {
+  const c = (caption ?? "").trim();
+  return FORMULAS.filter(([, re]) => re.test(c)).map(([k]) => k);
+}
+
+async function syncRadar(db: SupabaseClient, acc: Account, outOfTime: () => boolean) {
+  const { data: comps } = await db.from("ig_competidores").select("username").eq("activo", true);
+  if (!comps?.length) return { cuentas: 0 };
+  const { data: st } = await db.from("ig_settings").select("radar_score_min").eq("id", 1).maybeSingle();
+  const scoreMin = Number(st?.radar_score_min ?? 3);
+  const since = Date.now() - RADAR_DAYS * 86400_000;
+  let cuentas = 0;
+  let posts = 0;
+  for (const { username } of comps) {
+    if (outOfTime()) break;
+    const fields =
+      `business_discovery.username(${username}){followers_count,media.limit(30){id,caption,like_count,comments_count,media_product_type,media_type,timestamp,permalink}}`;
+    const r = await graph(acc.ig_user_id, { token: acc.access_token, params: { fields } });
+    const bd = r.data?.business_discovery;
+    if (!r.ok || !bd) {
+      await db.from("ig_competidores").update({ error: graphError(r).slice(0, 300), actualizado_at: new Date().toISOString() }).eq("username", username);
+      continue;
+    }
+    const media: any[] = bd.media?.data ?? [];
+    const eng = (m: any) => (m.like_count ?? 0) + (m.comments_count ?? 0);
+    const sorted = media.map(eng).sort((a, b) => a - b);
+    const mediana = Math.max(1, sorted[Math.floor(sorted.length / 2)] ?? 1);
+    const span = media.length > 1 ? (new Date(media[0].timestamp).getTime() - new Date(media[media.length - 1].timestamp).getTime()) / 86400_000 : 0;
+    await db.from("ig_competidores").update({
+      seguidores: bd.followers_count ?? null,
+      mediana,
+      posts_semana: span > 0 ? Math.round((media.length / span) * 7 * 10) / 10 : null,
+      error: null,
+      actualizado_at: new Date().toISOString(),
+    }).eq("username", username);
+    const rows = media
+      .filter((m) => new Date(m.timestamp).getTime() >= since)
+      .map((m) => ({
+        media_id: String(m.id),
+        username,
+        caption: (m.caption ?? "").slice(0, 2200),
+        tipo: m.media_product_type === "REELS" ? "REEL" : m.media_type === "CAROUSEL_ALBUM" ? "CARRUSEL" : "FOTO",
+        permalink: m.permalink,
+        likes: m.like_count ?? 0,
+        comments: m.comments_count ?? 0,
+        publicado_at: m.timestamp,
+        score: Math.round((eng(m) / mediana) * 100) / 100,
+        formulas: detectFormulas(m.caption),
+        updated_at: new Date().toISOString(),
+      }));
+    if (rows.length) {
+      // upsert sin pisar estado/avisado (no van en el payload)
+      const { error } = await db.from("ig_radar_posts").upsert(rows, { onConflict: "media_id" });
+      if (error) console.error("radar upsert", username, error.message);
+      else posts += rows.length;
+    }
+    cuentas++;
+  }
+  // Limpieza: fuera de la ventana y sin guardar
+  await db.from("ig_radar_posts").delete().lt("publicado_at", new Date(since).toISOString()).neq("estado", "guardado");
+  await db.from("ig_settings").update({ radar_synced_at: new Date().toISOString() }).eq("id", 1);
+
+  // Aviso por WhatsApp: las 5 mejores ideas nuevas
+  const { data: top } = await db
+    .from("ig_radar_posts")
+    .select("media_id, username, caption, score, permalink")
+    .eq("avisado", false)
+    .eq("estado", "nuevo")
+    .gte("score", scoreMin)
+    .order("score", { ascending: false })
+    .limit(5);
+  if (top?.length) {
+    const lines = top.map((t, i) =>
+      `${i + 1}. @${t.username} · x${Number(t.score).toFixed(1)} su normal\n   "${(t.caption ?? "").replace(/\s+/g, " ").slice(0, 90)}…"\n   ${t.permalink}`
+    );
+    await notifyOwner(db, `💡 Radar de ideas: ${top.length} posts de tu competencia rindieron muy sobre lo normal\n\n${lines.join("\n\n")}\n\nRevísalos en el panel → Instagram → Radar.`);
+    await db.from("ig_radar_posts").update({ avisado: true }).in("media_id", top.map((t) => t.media_id));
+  }
+  return { cuentas, posts, ideas: top?.length ?? 0 };
+}
+
 async function maintenance(db: SupabaseClient, acc: Account, outOfTime: () => boolean) {
   const out: Record<string, unknown> = {};
   try {
@@ -1797,6 +1900,11 @@ async function maintenance(db: SupabaseClient, acc: Account, outOfTime: () => bo
     if (!outOfTime() && st.resumen_semanal && weeklyDue(st.resumen_enviado_at)) {
       const r = await runWeeklySummary(db, acc);
       out.resumen = { enviado: r.sent, error: r.email_error, whatsapp_error: r.whatsapp_error };
+    }
+    // Radar (consulta aparte: si falta la migración _02 del 17/11, no rompe lo demás)
+    const { data: rs, error: rErr } = await db.from("ig_settings").select("radar_synced_at").eq("id", 1).maybeSingle();
+    if (!rErr && !outOfTime() && (!rs?.radar_synced_at || Date.now() - new Date(rs.radar_synced_at).getTime() > RADAR_EVERY_MS)) {
+      out.radar = await syncRadar(db, acc, outOfTime);
     }
   } catch (e) {
     console.error("maintenance", e);
@@ -2328,6 +2436,12 @@ Deno.serve(async (req) => {
         const acc = await loadAccount(db);
         if (!acc) return json({ ok: false, error: "Conecta la cuenta primero" }, 400);
         return json({ ok: true, ...(await syncMediaStats(db, acc)) });
+      }
+      case "radar_sync": {
+        const acc = await loadAccount(db);
+        if (!acc) return json({ ok: false, error: "Conecta la cuenta primero" }, 400);
+        const t0 = Date.now();
+        return json({ ok: true, ...(await syncRadar(db, acc, () => Date.now() - t0 > 100_000)) });
       }
       case "weekly_summary": {
         const acc = await loadAccount(db);

@@ -36,6 +36,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { ContentScheduler } from "@/components/instagram/ContentScheduler";
 import { InboxPanel } from "@/components/instagram/InboxPanel";
 import { AnalyticsPanel } from "@/components/instagram/AnalyticsPanel";
+import { RadarPanel } from "@/components/instagram/RadarPanel";
 import { useBestTimes } from "@/components/instagram/analytics";
 import { PostsPanel } from "@/components/instagram/PostsPanel";
 import { ResourcesManager, LINK_BASE, type Recurso } from "@/components/instagram/ResourcesManager";
@@ -261,7 +262,7 @@ async function invokeIg(body: Record<string, unknown>): Promise<IgResult> {
 // -----------------------------------------------------------------------------
 // Página
 // -----------------------------------------------------------------------------
-const TABS = ["campanias", "analitica", "bandeja", "publicaciones", "contenido", "archivos", "leads", "actividad"] as const;
+const TABS = ["campanias", "analitica", "radar", "bandeja", "publicaciones", "contenido", "archivos", "leads", "actividad"] as const;
 
 export default function Instagram() {
   // Pestaña activa en la URL (?tab=bandeja): sobrevive a recargas y se puede compartir
@@ -696,6 +697,7 @@ export default function Instagram() {
         <TabsList className="flex flex-wrap h-auto justify-start">
           <TabsTrigger value="campanias" className="text-xs">Campañas</TabsTrigger>
           <TabsTrigger value="analitica" className="text-xs">Analítica</TabsTrigger>
+          <TabsTrigger value="radar" className="text-xs">Radar</TabsTrigger>
           <TabsTrigger value="bandeja" className="text-xs gap-1">
             Bandeja
             {unread > 0 && <span className="rounded-full bg-primary text-primary-foreground px-1.5 text-[10px] leading-4">{unread}</span>}
@@ -956,6 +958,13 @@ export default function Instagram() {
             changeTab("contenido");
             toast.success(`Fecha sugerida: ${d.toLocaleString("es-CL", { weekday: "long", hour: "2-digit", minute: "2-digit" })}. Sube tu contenido y programa.`);
           }}
+        />
+      </TabsContent>
+
+      <TabsContent value="radar">
+        <RadarPanel
+          invoke={invokeIg as (b: Record<string, unknown>) => Promise<Record<string, unknown>>}
+          connected={!!status?.connected}
         />
       </TabsContent>
 
