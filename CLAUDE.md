@@ -267,6 +267,8 @@ Migraciones: `20261101_02_instagram_growth.sql` (esquema) y `20261101_03_instagr
 
 > [!WARNING]
 > **Hallazgo 2026-11-01:** en modo desarrollo, los DMs a usuarios que NO son testers fallan con `(#100) No se puede encontrar al usuario solicitado.` El polling detecta los comentarios, pero Meta no deja enviar. **Advanced Access (App Review) es requisito para vender a usuarios reales.**
+>
+> **Actualización 2026-11-17:** prueba con una cuenta NO tester (`vozqueedifica`, comentario "Seguro"): webhook en tiempo real + private reply + respuesta pública OK (`estado=enviado`). Hoy los DMs a usuarios reales SÍ salen. Si un envío falla por límite de Meta (#4/#17/#32/#613), `retryLimitedComments()` lo reintenta entre 5 min y 6 h después, aunque el post no esté en el listado del polling (25 posts).
 
 * **`ig_settings`** (fila única, editable por el equipo): `crm_sync`, `crm_owner_id`, `ai_enabled`, `ai_prompt`, `ai_link`, `ai_max_turnos_dia`.
 * **CRM:** trigger AFTER `private.ig_sync_contact_to_crm` sobre `ig_contacts.oferta_enviada_at` → crea `clientes` (`fuente='instagram'`, `etapa_ciclo='lead'`, `email=''`) + `oportunidades` en la primera etapa del pipeline del owner; guarda `ig_contacts.cliente_id`. Es AFTER a propósito: con `upsert`, un BEFORE INSERT duplicaría clientes.
