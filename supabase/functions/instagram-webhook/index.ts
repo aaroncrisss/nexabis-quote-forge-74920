@@ -1824,7 +1824,13 @@ async function syncRadar(db: SupabaseClient, acc: Account, outOfTime: () => bool
     const r = await graph(acc.ig_user_id, { token: acc.access_token, params: { fields } });
     const bd = r.data?.business_discovery;
     if (!r.ok || !bd) {
-      await db.from("ig_competidores").update({ error: graphError(r).slice(0, 300), actualizado_at: new Date().toISOString() }).eq("username", username);
+      const msg = graphError(r);
+      // Límite de llamadas de Meta (#4 app, #17 usuario, #32 página): parar y reintentar en la próxima pasada
+      if (/\(#(4|17|32|613)\)|request limit|too many calls/i.test(msg)) {
+        console.warn("[radar] límite de Meta, se reintenta luego:", msg);
+        return { cuentas, posts, limitado: true };
+      }
+      await db.from("ig_competidores").update({ error: msg.slice(0, 300), actualizado_at: new Date().toISOString() }).eq("username", username);
       continue;
     }
     const media: any[] = bd.media?.data ?? [];
@@ -1862,6 +1868,8 @@ async function syncRadar(db: SupabaseClient, acc: Account, outOfTime: () => bool
     }
     cuentas++;
   }
+  // Sin ninguna cuenta leída (tiempo agotado o todo falló): no marcar como revisado
+  if (!cuentas) return { cuentas, posts };
   // Limpieza: fuera de la ventana y sin guardar
   await db.from("ig_radar_posts").delete().lt("publicado_at", new Date(since).toISOString()).neq("estado", "guardado");
   await db.from("ig_settings").update({ radar_synced_at: new Date().toISOString() }).eq("id", 1);
