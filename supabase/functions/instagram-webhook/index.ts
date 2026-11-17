@@ -1143,6 +1143,36 @@ async function publishDuePosts(db: SupabaseClient, acc: Account, onlyId?: string
   return results;
 }
 
+/**
+ * Reintento de comentarios que fallaron por límite de llamadas de Meta (#4/#17/#32/#613):
+ * entre 5 min y 6 h después, se borra el registro fallido y se vuelve a procesar con los datos guardados.
+ * No depende del listado de posts del polling (el comentario puede venir de un webhook en un post antiguo).
+ */
+async function retryLimitedComments(db: SupabaseClient, acc: Account, campaigns: Campaign[], alerts: string[]) {
+  const now = Date.now();
+  const { data } = await db
+    .from("ig_comment_events")
+    .select("id, comment_id, media_id, media_type, parent_id, from_id, from_username, texto, motivo")
+    .eq("estado", "error")
+    .lte("created_at", new Date(now - 5 * 60_000).toISOString())
+    .gte("created_at", new Date(now - 6 * 3600_000).toISOString())
+    .limit(10);
+  let n = 0;
+  for (const row of data ?? []) {
+    if (!/\(#(4|17|32|613)\)|request limit|too many calls/i.test(row.motivo ?? "")) continue;
+    await db.from("ig_comment_events").delete().eq("id", row.id);
+    await handleComment(db, acc, campaigns, {
+      id: row.comment_id,
+      text: row.texto ?? "",
+      from: { id: row.from_id, username: row.from_username },
+      media: { id: row.media_id, media_product_type: row.media_type },
+      parent_id: row.parent_id,
+    }, { alerts });
+    n++;
+  }
+  return n;
+}
+
 /** Aviso por WhatsApp de comentarios nuevos (ig_settings.alerta_comentarios, migración _03 del 17/11). */
 async function commentAlertsOn(db: SupabaseClient): Promise<boolean> {
   const { data, error } = await db.from("ig_settings").select("alerta_comentarios").eq("id", 1).maybeSingle();
@@ -2084,6 +2114,16 @@ async function actionPollComments(db: SupabaseClient) {
     return json({ ok: true, skipped: "no_active_campaigns", published, analytics: await maintenance(db, acc, outOfTime) });
   }
 
+  // ---- 0. Reintentos por límite de Meta ----
+  let retried = 0;
+  if (campaigns.length) {
+    try {
+      retried = await retryLimitedComments(db, acc, campaigns, alerts);
+    } catch (e) {
+      console.error("retryLimitedComments", e);
+    }
+  }
+
   // ---- 1. Comentarios ----
   let mediaCount = 0;
   let newCommentsCount = 0;
@@ -2095,7 +2135,7 @@ async function actionPollComments(db: SupabaseClient) {
       token: acc.access_token,
       params: {
         fields: "id,media_product_type,timestamp,comments.limit(50){id,text,from,timestamp,parent_id}",
-        limit: "15",
+        limit: "25",
       },
     });
     if (!r.ok || !r.data?.data) return json({ ok: false, error: graphError(r) }, 502);
@@ -2126,19 +2166,9 @@ async function actionPollComments(db: SupabaseClient) {
     for (let i = 0; i < ids.length; i += 200) {
       const { data } = await db
         .from("ig_comment_events")
-        .select("id, comment_id, estado, motivo, created_at")
+        .select("comment_id")
         .in("comment_id", ids.slice(i, i + 200));
-      for (const row of data ?? []) {
-        // Reintento: si falló por límite de llamadas de Meta (#4/#17/#32/#613), se reprocesa
-        // después de 5 min y hasta 6 h desde el primer intento (borra el registro fallido).
-        const age = Date.now() - new Date(row.created_at).getTime();
-        const limited = row.estado === "error" && /\(#(4|17|32|613)\)|request limit|too many calls/i.test(row.motivo ?? "");
-        if (limited && age > 5 * 60_000 && age < 6 * 3600_000) {
-          await db.from("ig_comment_events").delete().eq("id", row.id);
-          continue;
-        }
-        seen.add(row.comment_id);
-      }
+      for (const row of data ?? []) seen.add(row.comment_id);
     }
 
     for (const { media, c } of candidates) {
