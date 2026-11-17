@@ -1865,8 +1865,9 @@ const FORMULAS: [string, RegExp][] = [
   ["pregunta", /^\W*¿/],
   ["mandaselo", /m[aá]nd[aá]selo|comp[aá]rtelo|etiqueta a/i],
   ["guardalo", /gu[aá]rd[aá]lo/i],
-  ["noticia", /acaba de|lanz[oó]|nuevo modelo|ayer|hoy sali[oó]|se filtr/i],
+  ["noticia", /acaba de|lanz[oó]|nuevo modelo|ayer|hoy sali[oó]|hoy sale|se filtr/i],
   ["historia_personal", /^\W*(yo |mi |me |hace \d|cuando yo|llevo )/i],
+  ["desafio", /prueba (esto|ahora)|haz esta prueba|abre tu|cuenta (tus|los)|comenta tu (n[uú]mero|tarea)/i],
 ];
 
 function detectFormulas(caption: string | null): string[] {

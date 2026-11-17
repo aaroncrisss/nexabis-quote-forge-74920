@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Bookmark, ExternalLink, Plus, Radar, RefreshCw, Trash2, X } from "lucide-react";
 import { supabaseCRM } from "@/integrations/supabase/crm-client";
 import { toast } from "sonner";
+import { detectFormulas, viralScore, type PostStat } from "./formulas";
 
 /**
  * Radar de ideas: posts de la competencia que rindieron muy sobre su normal.
@@ -49,6 +50,7 @@ export const FORMULA_LABEL: Record<string, string> = {
   guardalo: "🔖 Guárdalo",
   noticia: "📰 Noticia",
   historia_personal: "🙋 Historia personal",
+  desafio: "🎯 Desafío",
 };
 
 type Props = {
@@ -66,8 +68,47 @@ export function RadarPanel({ invoke, connected }: Props) {
   const [syncing, setSyncing] = useState(false);
   const [nuevo, setNuevo] = useState("");
   const [filtro, setFiltro] = useState<string | null>(null);
-  const [vista, setVista] = useState<"ideas" | "comentar" | "guardadas">("ideas");
+  const [vista, setVista] = useState<"ideas" | "comentar" | "guardadas" | "lab">("ideas");
   const [missing, setMissing] = useState(false);
+  const [mine, setMine] = useState<PostStat[]>([]);
+
+  useEffect(() => {
+    const desde = new Date(Date.now() - 60 * 86400_000).toISOString();
+    supabaseCRM
+      .from("ig_media_stats")
+      .select("media_id, caption, permalink, publicado_at, views, reach, likes, comments, shares, saved, avg_watch_ms")
+      .gte("publicado_at", desde)
+      .order("publicado_at", { ascending: false })
+      .limit(200)
+      .then(({ data }) => setMine((data ?? []) as PostStat[]));
+  }, []);
+
+  // Laboratorio: tus posts por fórmula + comparación semana a semana
+  const lab = useMemo(() => {
+    const rows = mine.map((p) => ({ ...p, f: detectFormulas(p.caption), score: viralScore(p) }));
+    const pct = (a: number, b: number) => (b > 0 ? (a / b) * 100 : 0);
+    const agg = (list: typeof rows) => {
+      const n = list.length || 1;
+      const sum = (k: keyof PostStat) => list.reduce((s, x) => s + Number(x[k] ?? 0), 0);
+      return {
+        n: list.length,
+        views: sum("views") / n,
+        reach: sum("reach") / n,
+        watch: sum("avg_watch_ms") / n / 1000,
+        envios: pct(sum("shares"), sum("reach")),
+        guardados: pct(sum("saved"), sum("reach")),
+        score: list.reduce((s, x) => s + x.score, 0) / n,
+      };
+    };
+    const porFormula: Record<string, typeof rows> = {};
+    for (const r of rows) for (const f of r.f.length ? r.f : ["sin_formula"]) (porFormula[f] ??= []).push(r);
+    const formulas = Object.entries(porFormula)
+      .map(([f, list]) => ({ f, ...agg(list) }))
+      .sort((a, b) => b.score - a.score);
+    const now = Date.now();
+    const sem = (a: number, b: number) => rows.filter((r) => r.publicado_at && now - new Date(r.publicado_at).getTime() >= a * 86400_000 && now - new Date(r.publicado_at).getTime() < b * 86400_000);
+    return { formulas, top: [...rows].sort((a, b) => b.score - a.score).slice(0, 5), est: agg(sem(0, 7)), ant: agg(sem(7, 14)), total: rows.length };
+  }, [mine]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -208,6 +249,9 @@ export function RadarPanel({ invoke, connected }: Props) {
             <Button size="sm" variant={vista === "comentar" ? "default" : "outline"} onClick={() => setVista("comentar")} title="Posts de tu nicho de las últimas 48 h: comenta con aporte, temprano">
               💬 Comenta hoy ({frescos.length})
             </Button>
+            <Button size="sm" variant={vista === "lab" ? "default" : "outline"} onClick={() => setVista("lab")} title="Qué fórmula funciona en TU cuenta, con las señales que Instagram premia">
+              🧪 Laboratorio
+            </Button>
             <Button size="sm" variant={vista === "guardadas" ? "default" : "outline"} onClick={() => setVista("guardadas")}>
               <Bookmark className="w-3.5 h-3.5 mr-1" /> Guardadas ({posts.filter((p) => p.estado === "guardado").length})
             </Button>
@@ -217,7 +261,78 @@ export function RadarPanel({ invoke, connected }: Props) {
               </Button>
             )}
           </div>
-          {loading ? (
+          {vista === "lab" ? (
+            <Card className="p-4 space-y-4 text-xs">
+              <div>
+                <p className="font-semibold text-sm">🧪 Laboratorio viral · tus últimos 60 días ({lab.total} posts)</p>
+                <p className="text-muted-foreground">
+                  Puntaje viral (0–100) con las señales que Instagram confirmó que pesan: <b>envíos por alcance</b> (40 %), guardados y comentarios por alcance (25 %), me gusta por alcance (15 %) y tiempo de visualización (20 %).
+                </p>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                {([
+                  ["Alcance prom.", lab.est.reach, lab.ant.reach, (v: number) => v.toFixed(0)],
+                  ["Visualización", lab.est.watch, lab.ant.watch, (v: number) => v.toFixed(1) + " s"],
+                  ["Envíos / alcance", lab.est.envios, lab.ant.envios, (v: number) => v.toFixed(1) + " %"],
+                  ["Guardados / alcance", lab.est.guardados, lab.ant.guardados, (v: number) => v.toFixed(1) + " %"],
+                  ["Puntaje viral", lab.est.score, lab.ant.score, (v: number) => v.toFixed(0)],
+                ] as [string, number, number, (v: number) => string][]).map(([t, a, b, fm]) => (
+                  <div key={t} className="rounded-md border border-border/60 p-2">
+                    <div className="text-muted-foreground">{t} · 7 días</div>
+                    <div className="text-base font-semibold">{fm(a)}</div>
+                    <div className={a >= b ? "text-emerald-400" : "text-red-400"}>
+                      {a >= b ? "▲" : "▼"} antes {fm(b)}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div>
+                <p className="font-medium mb-1">Fórmulas en tu cuenta (mejor puntaje arriba)</p>
+                <table className="w-full">
+                  <thead className="text-muted-foreground">
+                    <tr className="text-left">
+                      <th>Fórmula</th>
+                      <th>Posts</th>
+                      <th>Vistas</th>
+                      <th>Visualiz.</th>
+                      <th>Envíos</th>
+                      <th>Puntaje</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {lab.formulas.map((r) => (
+                      <tr key={r.f} className="border-t border-border/40">
+                        <td>{FORMULA_LABEL[r.f] ?? (r.f === "sin_formula" ? "— sin fórmula" : r.f)}</td>
+                        <td>{r.n}</td>
+                        <td>{r.views.toFixed(0)}</td>
+                        <td>{r.watch.toFixed(1)} s</td>
+                        <td>{r.envios.toFixed(1)} %</td>
+                        <td className="font-semibold">{r.score.toFixed(0)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <p className="text-muted-foreground mt-1">Con menos de 3 posts por fórmula el resultado es indicativo. Compáralo con el ranking del nicho de arriba: si una fórmula rinde en el nicho y en tu cuenta no, el problema es la ejecución (gancho, primer segundo), no la idea.</p>
+              </div>
+              <div>
+                <p className="font-medium mb-1">Tus 5 posts con mejor puntaje: repite lo que tienen en común</p>
+                {lab.top.map((p) => (
+                  <div key={p.media_id} className="flex items-center gap-2 border-t border-border/40 py-1">
+                    <Badge className="bg-orange-500/80">{p.score}</Badge>
+                    <span className="flex-1 truncate">{(p.caption ?? "").split("\n")[0]}</span>
+                    <span className="text-muted-foreground whitespace-nowrap">
+                      {p.views ?? 0} vistas · {p.shares ?? 0} envíos
+                    </span>
+                    {p.permalink && (
+                      <a href={p.permalink} target="_blank" rel="noreferrer" className="text-muted-foreground hover:text-foreground">
+                        <ExternalLink className="w-3.5 h-3.5" />
+                      </a>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </Card>
+          ) : loading ? (
             <p className="text-sm text-muted-foreground">Cargando…</p>
           ) : lista.length === 0 ? (
             <Card className="p-4 text-sm text-muted-foreground">
