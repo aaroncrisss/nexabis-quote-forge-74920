@@ -1853,7 +1853,7 @@ async function actionListMedia(db: SupabaseClient) {
 // -----------------------------------------------------------------------------
 const RADAR_EVERY_MS = 12 * 3600_000;
 const RADAR_DAYS = 21;
-const RADAR_BATCH = 8;
+const RADAR_BATCH = 4;
 
 const FORMULAS: [string, RegExp][] = [
   ["comenta_palabra", /coment[aá]\s*(la palabra\s*)?["“«']?[A-ZÁÉÍÓÚÑ]{3,}/],
@@ -2124,8 +2124,21 @@ async function actionPollComments(db: SupabaseClient) {
     const seen = new Set<string>();
     const ids = candidates.map(({ c }) => String(c.id));
     for (let i = 0; i < ids.length; i += 200) {
-      const { data } = await db.from("ig_comment_events").select("comment_id").in("comment_id", ids.slice(i, i + 200));
-      for (const row of data ?? []) seen.add(row.comment_id);
+      const { data } = await db
+        .from("ig_comment_events")
+        .select("id, comment_id, estado, motivo, created_at")
+        .in("comment_id", ids.slice(i, i + 200));
+      for (const row of data ?? []) {
+        // Reintento: si falló por límite de llamadas de Meta (#4/#17/#32/#613), se reprocesa
+        // después de 5 min y hasta 6 h desde el primer intento (borra el registro fallido).
+        const age = Date.now() - new Date(row.created_at).getTime();
+        const limited = row.estado === "error" && /\(#(4|17|32|613)\)|request limit|too many calls/i.test(row.motivo ?? "");
+        if (limited && age > 5 * 60_000 && age < 6 * 3600_000) {
+          await db.from("ig_comment_events").delete().eq("id", row.id);
+          continue;
+        }
+        seen.add(row.comment_id);
+      }
     }
 
     for (const { media, c } of candidates) {
