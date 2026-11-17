@@ -1152,16 +1152,9 @@ async function commentAlertsOn(db: SupabaseClient): Promise<boolean> {
 async function sendCommentAlerts(db: SupabaseClient, alerts: string[]) {
   if (!alerts.length || !(await commentAlertsOn(db))) return;
   const head = alerts.length === 1 ? "💬 Comentario nuevo en Instagram" : `💬 ${alerts.length} comentarios nuevos en Instagram`;
-  await notifyOwner(
-    db,
-    `${head}
-
-${alerts.slice(0, 15).join("
-")}${alerts.length > 15 ? `
-… y ${alerts.length - 15} más` : ""}
-
-Responde en la primera hora (el algoritmo lo premia): https://ecosistema.nexabistech.com/instagram?tab=publicaciones`,
-  );
+  const more = alerts.length > 15 ? `\n… y ${alerts.length - 15} más` : "";
+  const link = "https://ecosistema.nexabistech.com/instagram?tab=publicaciones";
+  await notifyOwner(db, `${head}\n\n${alerts.slice(0, 15).join("\n")}${more}\n\nResponde en la primera hora (el algoritmo lo premia): ${link}`);
 }
 
 // -----------------------------------------------------------------------------
