@@ -190,7 +190,7 @@ const EMPTY_CAMPAIGN: Campaign = {
   utm_activo: true,
   rastrear_clics: false,
   requiere_seguir: false,
-  mensaje_seguir: "¡Hola {username}! 🙌 Para enviarte el contenido, primero sígueme y luego toca el botón 👇",
+  mensaje_seguir: "¡Hola {username}! 🙌 Te lo envío al tiro. Si ya me sigues, solo toca el botón 👇 (si aún no, sígueme primero y luego tócalo)",
   mensaje_no_sigue: "Aún no me sigues 👀 Sígueme y vuelve a tocar el botón para recibirlo.",
   activa_desde: null,
   activa_hasta: null,
