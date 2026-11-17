@@ -948,6 +948,8 @@ type IgPost = {
   es_video: boolean;
   caption: string;
   compartir_feed: boolean;
+  /** Reel de prueba (Trial Reel): primero solo a no seguidores. */
+  prueba?: boolean | null;
   publicar_en: string;
   estado: string;
   campaign_id: string | null;
@@ -1015,7 +1017,17 @@ async function advancePost(db: SupabaseClient, acc: Account, p: IgPost): Promise
       params.image_url = p.media_url;
     }
     if (p.tipo !== "historia" && p.caption) params.caption = p.caption.slice(0, 2200);
-    const c = await graph(`${acc.ig_user_id}/media`, { method: "POST", token: acc.access_token, params });
+    // Trial Reel: Meta lo muestra primero a no seguidores y lo comparte con seguidores si rinde.
+    const trial = p.tipo === "reel" && !!p.prueba;
+    if (trial) params.trial_params = JSON.stringify({ graduation_strategy: "SS_PERFORMANCE" });
+    let c = await graph(`${acc.ig_user_id}/media`, { method: "POST", token: acc.access_token, params });
+    if (trial && (!c.ok || !c.data?.id)) {
+      // Cuenta no elegible (o Meta rechaza la prueba): se publica como Reel normal y se anota.
+      delete params.trial_params;
+      console.warn("[ig] trial reel rechazado, se publica normal:", graphError(c));
+      c = await graph(`${acc.ig_user_id}/media`, { method: "POST", token: acc.access_token, params });
+      if (c.ok && c.data?.id) await upd({ prueba: false });
+    }
     if (!c.ok || !c.data?.id) return await fail(graphError(c));
     containerId = String(c.data.id);
     await upd({ estado: "procesando", container_id: containerId, error: null });

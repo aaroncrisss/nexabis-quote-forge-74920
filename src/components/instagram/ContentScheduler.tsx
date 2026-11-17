@@ -24,6 +24,7 @@ export type IgPost = {
   es_video: boolean;
   caption: string;
   compartir_feed: boolean;
+  prueba?: boolean | null;
   publicar_en: string;
   estado: Estado;
   campaign_id: string | null;
@@ -39,6 +40,9 @@ type Draft = {
   tipo: Tipo;
   caption: string;
   compartir_feed: boolean;
+  prueba: boolean;
+  /** Valor guardado: permite apagar la prueba aunque la columna exista solo tras la migración. */
+  pruebaOrig?: boolean;
   fecha: string; // datetime-local
   campaign_id: string;
   media_url: string;
@@ -60,6 +64,7 @@ const newDraft = (): Draft => ({
   tipo: "reel",
   caption: "",
   compartir_feed: true,
+  prueba: false,
   fecha: toLocalInput(new Date(Date.now() + 3600_000)),
   campaign_id: NONE,
   media_url: "",
@@ -206,6 +211,8 @@ export function ContentScheduler({
         tipo: draft.tipo,
         caption: draft.caption,
         compartir_feed: draft.compartir_feed,
+        // Solo se envía si se usa (así funciona aunque falte la migración _06)
+        ...(draft.tipo === "reel" && (draft.prueba || draft.pruebaOrig) ? { prueba: draft.prueba } : {}),
         publicar_en: when.toISOString(),
         campaign_id: draft.campaign_id === NONE ? null : draft.campaign_id,
         media_url,
@@ -240,6 +247,8 @@ export function ContentScheduler({
       tipo: p.tipo,
       caption: p.caption,
       compartir_feed: p.compartir_feed,
+      prueba: !!p.prueba,
+      pruebaOrig: !!p.prueba,
       fecha: toLocalInput(new Date(p.publicar_en)),
       campaign_id: p.campaign_id ?? NONE,
       media_url: p.media_url,
@@ -258,6 +267,7 @@ export function ContentScheduler({
       tipo: p.tipo,
       caption: p.caption,
       compartir_feed: p.compartir_feed,
+      prueba: !!p.prueba,
       fecha: toLocalInput(new Date(Date.now() + 86400_000)),
       campaign_id: p.campaign_id ?? NONE,
       media_url: p.media_url,
@@ -429,6 +439,17 @@ export function ContentScheduler({
                   <Switch checked={draft.compartir_feed} onCheckedChange={(v) => setDraft({ ...draft, compartir_feed: v })} />
                 </div>
               )}
+              {draft.tipo === "reel" && (
+                <div className="flex items-start justify-between gap-2 rounded-md border border-border/60 px-3 py-2 h-fit mt-5">
+                  <div>
+                    <Label className="text-xs">🧪 Reel de prueba</Label>
+                    <p className="text-[10px] text-muted-foreground">
+                      Primero solo a NO seguidores; Instagram lo comparte con tus seguidores si rinde. Si la cuenta aún no es elegible, se publica normal.
+                    </p>
+                  </div>
+                  <Switch checked={draft.prueba} onCheckedChange={(v) => setDraft({ ...draft, prueba: v })} />
+                </div>
+              )}
             </div>
           </div>
 
@@ -537,7 +558,10 @@ function PostRow({
           {p.tipo === "carrusel" && <Badge variant="outline" className="text-[10px]">{p.media_items?.length ?? 0} archivos</Badge>}
           {campaign && <Badge variant="outline" className="text-[10px]">Campaña: {campaign}</Badge>}
         </div>
-        <p className="text-muted-foreground line-clamp-2 whitespace-pre-wrap">{p.caption || (p.tipo === "historia" ? "Historia" : "Sin texto")}</p>
+        <p className="text-muted-foreground line-clamp-2 whitespace-pre-wrap">
+          {p.prueba && <span className="mr-1 rounded bg-violet-500/15 px-1 text-violet-300">🧪 prueba</span>}
+          {p.caption || (p.tipo === "historia" ? "Historia" : "Sin texto")}
+        </p>
         {p.error && <p className="text-red-400">{p.error}</p>}
       </div>
       <div className="flex items-center gap-1 shrink-0">

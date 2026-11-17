@@ -68,6 +68,29 @@ Conclusiones:
 3. CTA de guardar + imán ("guía gratis: comenta GUÍA"), conectado al sistema Comment-to-DM.
 4. Cris en primera persona en paralelo, al estilo bencorde: "esto automaticé hoy para un cliente".
 
+### 3.1b Competencia directa (lista de Cris, 17 de noviembre)
+
+| Cuenta | Seguidores | Posts/semana | ER | Patrón ganador |
+|---|---|---|---|---|
+| @maxecomm__ | 995 | 22 | 54,7 % | Tendencia del día (GTA 6 sale el jueves 19) + "cómo ganar con eso usando Claude". 2.265 comentarios |
+| @datosmotion | 81,6 mil | 12,5 | 38,8 % | Miedo o curiosidad de actualidad ("si mañana cae una bomba…", "días sin luz"). 607 mil me gusta |
+| @alejomartinez.k | 459 | 10 | 24,2 % | `Comentá PIXEL y te mando el link 👇` + "todos pagan X, un pibe lo liberó gratis" |
+| @diegodavila.ai | 4,8 mil | 3,1 | 21,4 % | `🤯 71 AGENTES y 314 SKILLS para tu Claude ↓` (repos de GitHub con miles de estrellas). 11.862 comentarios |
+| @nzstudio__._ | 574 | 6,3 | 16,2 % | "Tres herramientas gratis para que Claude te anime un video" (Remotion) |
+| @calbornoz.ia (Chile) | 16,9 mil | 21,5 | 6,8 % | Mascota "Claudito" con voz IA + **serie por profesión**: "Si eres kinesiólogo/médico y no haces estas 4 cosas con Claude…" (500–660 comentarios). Rumor chileno del momento: 22 mil me gusta |
+| @jayson_security | 15 mil | 6,8 | — | `Tu PC está hablando con alguien. Y tu antivirus no lo ve.` + 3 comandos + "mándaselo al que…". 12,5 mil me gusta. CVE del día |
+| @juanpe.divisual | 54,9 mil | 1,4 | 0,37 % | Historia personal y estilo de vida. Los carruseles (517) superan a los Reels (138) |
+| @iterixs / @santiremedio / @neutra.labs_ | 12 mil / 17 mil / 59 | 25 / 95 / 70 | < 0,8 % | Mucho volumen y baja interacción: **el volumen solo no funciona** |
+
+**Las 5 fórmulas que se repiten en las cuentas chicas que se hacen virales:**
+1. **Imán por comentario:** `Comenta PALABRA y te mando <recurso gratis> 📩` en la primera línea. Los comentarios empujan el alcance (diegodavila 45 % de comentarios, alejomartinez 35 %). *Requiere App Review para que el bot entregue a usuarios reales; mientras tanto, responder a mano.*
+2. **"Gratis que reemplaza algo pagado":** repos de GitHub con miles de estrellas, "todos pagan X". Ahorro + novedad.
+3. **Tendencia del día con ángulo de negocio o IA:** lanzamiento, rumor viral o noticia. Publicar en menos de 24 h.
+4. **Serie por rubro o profesión:** "Si tienes una peluquería y no haces estas 3 cosas con IA…". El rubro se siente aludido y lo comparte entre colegas. Encaja perfecto con Nexabis (pymes).
+5. **Gancho en segunda persona con amenaza o curiosidad + solución práctica:** "Tu PC está hablando con alguien", "Tu web pierde clientes antes de cargar". Cierre: `Guárdalo y mándaselo a <persona concreta>`.
+
+Horario del nicho en Chile: la mayoría publica entre las 14:00 y las 20:00.
+
 ### 3.2 Reels de prueba (Trial Reels)
 - Se muestran solo a no seguidores durante 24–72 h. Es la herramienta indicada para probar ganchos.
 - Elegibilidad: cuenta profesional pública. El mínimo de seguidores no está claro (200 o 1.000). Con 107 seguidores, probablemente todavía no aplica; revisa la opción "Prueba" al compartir un Reel.
