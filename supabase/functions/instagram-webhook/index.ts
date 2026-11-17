@@ -1892,7 +1892,11 @@ async function syncRadar(db: SupabaseClient, acc: Account, outOfTime: () => bool
       const msg = graphError(r);
       // Límite de llamadas de Meta (#4 app, #17 usuario, #32 página): parar y reintentar en la próxima pasada
       if (/\(#(4|17|32|613)\)|request limit|too many calls/i.test(msg)) {
-        console.warn("[radar] límite de Meta, se reintenta luego:", msg);
+        // Esperar 1 h antes de reintentar (insistir cada 2 min alarga el bloqueo de Meta)
+        console.warn("[radar] límite de Meta, se reintenta en 1 h:", msg);
+        if (!cuentas) {
+          await db.from("ig_settings").update({ radar_synced_at: new Date(Date.now() - RADAR_EVERY_MS + 3600_000).toISOString() }).eq("id", 1);
+        }
         return { cuentas, posts, limitado: true };
       }
       await db.from("ig_competidores").update({ error: msg.slice(0, 300), actualizado_at: new Date().toISOString() }).eq("username", username);
@@ -1958,6 +1962,61 @@ async function syncRadar(db: SupabaseClient, acc: Account, outOfTime: () => bool
   return { cuentas, posts, ideas: top?.length ?? 0 };
 }
 
+// -----------------------------------------------------------------------------
+// Aviso de despegue: 1 h después de publicar, ¿el Reel va sobre lo normal? → WhatsApp con acciones.
+// Es la ventana en que el algoritmo decide si lo empuja a más gente: actuar ahí multiplica el alcance.
+// -----------------------------------------------------------------------------
+const DESPEGUE_MIN_MS = 60 * 60_000;
+const DESPEGUE_MAX_MS = 4 * 3600_000;
+
+async function checkDespegue(db: SupabaseClient, acc: Account) {
+  const now = Date.now();
+  const { data: posts, error } = await db
+    .from("ig_posts")
+    .select("id, media_id, caption, permalink, publicado_at")
+    .eq("estado", "publicado")
+    .eq("tipo", "reel")
+    .is("despegue_revisado_at", null)
+    .not("media_id", "is", null)
+    .lte("publicado_at", new Date(now - DESPEGUE_MIN_MS).toISOString())
+    .gte("publicado_at", new Date(now - DESPEGUE_MAX_MS).toISOString())
+    .limit(3);
+  if (error || !posts?.length) return { revisados: 0 };
+  // Línea base: mediana de vistas de tus últimos 20 Reels (valor total; a la hora 1 un post normal va bastante abajo)
+  const { data: base } = await db
+    .from("ig_media_stats")
+    .select("views")
+    .eq("media_product_type", "REELS")
+    .order("publicado_at", { ascending: false })
+    .limit(20);
+  const vs = (base ?? []).map((b) => Number(b.views ?? 0)).sort((a, b) => a - b);
+  const mediana = Math.max(1, vs[Math.floor(vs.length / 2)] ?? 1);
+  let avisos = 0;
+  for (const p of posts) {
+    const m = await insightsFor(acc, p.media_id!, "REELS");
+    const views = Number(m.views ?? 0);
+    const ratio = Math.round((views / mediana) * 10) / 10;
+    const despegue = { views, reach: m.reach ?? null, shares: m.shares ?? null, saved: m.saved ?? null, mediana, ratio, a_los_min: Math.round((now - new Date(p.publicado_at!).getTime()) / 60_000) };
+    await db.from("ig_posts").update({ despegue_revisado_at: new Date().toISOString(), despegue }).eq("id", p.id);
+    if (ratio >= 1.5) {
+      avisos++;
+      const titulo = (p.caption ?? "").split("\n")[0].slice(0, 80);
+      const pasos = [
+        "1. Responde todos los comentarios con una pregunta.",
+        "2. Compártelo en historias con encuesta.",
+        "3. Mándalo a 3 chats o grupos.",
+        "4. Fija un comentario tuyo que invite a opinar.",
+        "5. Graba la parte 2 hoy mismo.",
+      ].join("\n");
+      await notifyOwner(
+        db,
+        `🚀 ¡Está despegando! "${titulo}"\n${views} vistas en ${despegue.a_los_min} min (×${ratio} tu normal, ${despegue.shares ?? 0} compartidos).\n\nEmpújalo AHORA (la primera hora decide):\n${pasos}\n\n${p.permalink ?? ""}`,
+      );
+    }
+  }
+  return { revisados: posts.length, avisos, mediana };
+}
+
 async function maintenance(db: SupabaseClient, acc: Account, outOfTime: () => boolean) {
   const out: Record<string, unknown> = {};
   try {
@@ -1973,6 +2032,14 @@ async function maintenance(db: SupabaseClient, acc: Account, outOfTime: () => bo
     if (!outOfTime() && st.resumen_semanal && weeklyDue(st.resumen_enviado_at)) {
       const r = await runWeeklySummary(db, acc);
       out.resumen = { enviado: r.sent, error: r.email_error, whatsapp_error: r.whatsapp_error };
+    }
+    // Despegue (consulta aparte por si falta la migración _04 del 17/11)
+    if (!outOfTime()) {
+      try {
+        out.despegue = await checkDespegue(db, acc);
+      } catch (e) {
+        console.error("despegue", e);
+      }
     }
     // Radar (consulta aparte: si falta la migración _02 del 17/11, no rompe lo demás)
     const { data: rs, error: rErr } = await db.from("ig_settings").select("radar_synced_at").eq("id", 1).maybeSingle();

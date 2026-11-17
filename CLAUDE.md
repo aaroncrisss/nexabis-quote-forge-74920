@@ -342,6 +342,8 @@ Migración `20261102_03_instagram_analytics.sql`. Componentes `AnalyticsPanel.ts
   * Aviso de comentarios: `ig_settings.alerta_comentarios`. `handleComment` agrega cada comentario nuevo a `opts.alerts` y `sendCommentAlerts()` manda un resumen por WhatsApp por cada pasada o webhook. Con el aviso activo, el polling revisa comentarios aunque no haya campañas.
   * Extras de publicación: `ig_posts.portada_url` (`cover_url`), `colaboradores` (`collaborators`, máx. 3) y `audio_nombre` (`audio_name`). Si Meta rechaza un extra, se reintenta sin él en este orden: trial → colaboradores → portada → audio. El post nunca falla por un extra.
   * Radar: revisa cada 12 h. La vista "Comenta hoy" muestra los posts del nicho de las últimas 48 h.
+  * **Aviso de despegue** (migración `20261117_04_instagram_despegue.sql`): `checkDespegue()` corre en `maintenance()`. Entre 1 y 4 h después de publicar un Reel pide sus métricas y, si las vistas llegan a ≥ 1,5× la mediana de los últimos 20 Reels, manda por WhatsApp 5 acciones para empujarlo. Guarda `ig_posts.despegue`.
+  * Si Meta limita las llamadas (#4) en `business_discovery`, el Radar espera 1 h antes de reintentar.
 
 ---
 
