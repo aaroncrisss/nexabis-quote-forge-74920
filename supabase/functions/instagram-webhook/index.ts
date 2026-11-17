@@ -950,6 +950,10 @@ type IgPost = {
   compartir_feed: boolean;
   /** Reel de prueba (Trial Reel): primero solo a no seguidores. */
   prueba?: boolean | null;
+  portada_url?: string | null;
+  colaboradores?: string[] | null;
+  audio_nombre?: string | null;
+  storage_path?: string | null;
   publicar_en: string;
   estado: string;
   campaign_id: string | null;
@@ -1017,18 +1021,33 @@ async function advancePost(db: SupabaseClient, acc: Account, p: IgPost): Promise
       params.image_url = p.media_url;
     }
     if (p.tipo !== "historia" && p.caption) params.caption = p.caption.slice(0, 2200);
+    if (p.tipo === "reel") {
+      if (p.portada_url) params.cover_url = p.portada_url; // portada con el gancho escrito
+      if (p.audio_nombre) params.audio_name = p.audio_nombre.slice(0, 60);
+    }
+    // Posts en colaboración: aparecen en el perfil de ambas cuentas (la otra debe aceptar)
+    const collab = (p.colaboradores ?? []).map((u) => u.replace(/^@/, "").trim()).filter(Boolean).slice(0, 3);
+    if (p.tipo !== "historia" && collab.length) params.collaborators = JSON.stringify(collab);
     // Trial Reel: Meta lo muestra primero a no seguidores y lo comparte con seguidores si rinde.
     const trial = p.tipo === "reel" && !!p.prueba;
     if (trial) params.trial_params = JSON.stringify({ graduation_strategy: "SS_PERFORMANCE" });
     let c = await graph(`${acc.ig_user_id}/media`, { method: "POST", token: acc.access_token, params });
-    if (trial && (!c.ok || !c.data?.id)) {
-      // Cuenta no elegible (o Meta rechaza la prueba): se publica como Reel normal y se anota.
-      delete params.trial_params;
-      console.warn("[ig] trial reel rechazado, se publica normal:", graphError(c));
+    // Respaldo: si Meta rechaza un extra opcional, se quita y se reintenta (el post nunca se pierde por un extra).
+    // Orden: prueba (cuenta no elegible) → colaboradores (usuario inválido) → portada → nombre de audio.
+    const quitados: string[] = [];
+    for (const key of ["trial_params", "collaborators", "cover_url", "audio_name"]) {
+      if (c.ok && c.data?.id) break;
+      if (!(key in params)) continue;
+      console.warn(`[ig] Meta rechazó el contenedor; reintento sin ${key}:`, graphError(c));
+      delete params[key];
+      quitados.push(key);
       c = await graph(`${acc.ig_user_id}/media`, { method: "POST", token: acc.access_token, params });
-      if (c.ok && c.data?.id) await upd({ prueba: false });
     }
     if (!c.ok || !c.data?.id) return await fail(graphError(c));
+    if (quitados.length) {
+      console.warn(`[ig] post ${p.id} publicado sin: ${quitados.join(", ")}`);
+      if (quitados.includes("trial_params")) await upd({ prueba: false });
+    }
     containerId = String(c.data.id);
     await upd({ estado: "procesando", container_id: containerId, error: null });
   }
@@ -1074,6 +1093,32 @@ async function advancePost(db: SupabaseClient, acc: Account, p: IgPost): Promise
       await db.from("ig_campaigns").update(patch).eq("id", p.campaign_id);
     }
   }
+
+  // Historia automática: el mismo video en historias 20 min después (no en Reels de prueba:
+  // esos deben llegar primero a NO seguidores). Consulta aparte por si falta la migración _03.
+  if (p.tipo === "reel" && !p.prueba && p.es_video) {
+    try {
+      const { data: st, error } = await db.from("ig_settings").select("auto_historia").eq("id", 1).maybeSingle();
+      if (!error && st?.auto_historia) {
+        const { count } = await db.from("ig_posts").select("id", { count: "exact", head: true }).eq("origen_post_id", p.id);
+        if (!count) {
+          await db.from("ig_posts").insert({
+            tipo: "historia",
+            media_url: p.media_url,
+            storage_path: null, // comparte el archivo del Reel: borrar la historia no debe borrarlo
+            es_video: true,
+            caption: "",
+            compartir_feed: false,
+            publicar_en: new Date(Date.now() + 20 * 60_000).toISOString(),
+            estado: "programado",
+            origen_post_id: p.id,
+          });
+        }
+      }
+    } catch (e) {
+      console.error("auto_historia", e);
+    }
+  }
   return "publicado";
 }
 
@@ -1098,6 +1143,27 @@ async function publishDuePosts(db: SupabaseClient, acc: Account, onlyId?: string
   return results;
 }
 
+/** Aviso por WhatsApp de comentarios nuevos (ig_settings.alerta_comentarios, migración _03 del 17/11). */
+async function commentAlertsOn(db: SupabaseClient): Promise<boolean> {
+  const { data, error } = await db.from("ig_settings").select("alerta_comentarios").eq("id", 1).maybeSingle();
+  return !error && !!data?.alerta_comentarios;
+}
+
+async function sendCommentAlerts(db: SupabaseClient, alerts: string[]) {
+  if (!alerts.length || !(await commentAlertsOn(db))) return;
+  const head = alerts.length === 1 ? "💬 Comentario nuevo en Instagram" : `💬 ${alerts.length} comentarios nuevos en Instagram`;
+  await notifyOwner(
+    db,
+    `${head}
+
+${alerts.slice(0, 15).join("
+")}${alerts.length > 15 ? `
+… y ${alerts.length - 15} más` : ""}
+
+Responde en la primera hora (el algoritmo lo premia): https://ecosistema.nexabistech.com/instagram?tab=publicaciones`,
+  );
+}
+
 // -----------------------------------------------------------------------------
 // Handler: comentario nuevo
 // -----------------------------------------------------------------------------
@@ -1106,7 +1172,7 @@ async function handleComment(
   acc: Account,
   campaigns: Campaign[],
   value: any,
-  opts: { allowDelay?: boolean } = {},
+  opts: { allowDelay?: boolean; alerts?: string[] } = {},
 ) {
   const commentId = String(value?.id ?? "");
   const fromId = String(value?.from?.id ?? "");
@@ -1140,6 +1206,10 @@ async function handleComment(
   const finish = (patch: Record<string, unknown>) => db.from("ig_comment_events").update(patch).eq("id", eventId);
 
   const campaign = findCampaignForComment(campaigns, mediaId, text);
+  // Aviso al dueño (se envía como resumen al final de la pasada)
+  opts.alerts?.push(
+    `• @${fromUsername ?? "alguien"}: "${text.replace(/\s+/g, " ").slice(0, 120)}"${campaign ? ` → bot: ${campaign.nombre}` : ""}`,
+  );
   const prevContact = await upsertContact(
     db,
     fromId,
@@ -1583,12 +1653,13 @@ async function processWebhook(db: SupabaseClient, body: any) {
     return;
   }
   const campaigns = await loadActiveCampaigns(db);
+  const alerts: string[] = [];
 
   for (const entry of body?.entry ?? []) {
     for (const change of entry?.changes ?? []) {
       try {
         if (change?.field === "comments" || change?.field === "live_comments") {
-          await handleComment(db, acc, campaigns, change.value, { allowDelay: true });
+          await handleComment(db, acc, campaigns, change.value, { allowDelay: true, alerts });
         } else if (change?.field === "messages" || change?.field === "messaging_postbacks") {
           await handleMessaging(db, acc, campaigns, change.value);
         }
@@ -1604,6 +1675,7 @@ async function processWebhook(db: SupabaseClient, body: any) {
       }
     }
   }
+  await sendCommentAlerts(db, alerts);
 }
 
 // -----------------------------------------------------------------------------
@@ -1786,7 +1858,7 @@ async function actionListMedia(db: SupabaseClient) {
 // Radar de ideas (sin IA): business_discovery sobre la competencia, 1 vez al día.
 // score = (me gusta + comentarios) / mediana de esa cuenta  →  ≥ 3 = idea probada.
 // -----------------------------------------------------------------------------
-const RADAR_EVERY_MS = 24 * 3600_000;
+const RADAR_EVERY_MS = 12 * 3600_000;
 const RADAR_DAYS = 21;
 
 const FORMULAS: [string, RegExp][] = [
@@ -1931,7 +2003,9 @@ async function actionPollComments(db: SupabaseClient) {
   const published = await publishDuePosts(db, acc);
   const campaigns = await loadActiveCampaigns(db);
   const settings = await loadSettings(db);
-  if (!campaigns.length && !settings.ai_enabled) {
+  const alertOn = await commentAlertsOn(db);
+  const alerts: string[] = [];
+  if (!campaigns.length && !settings.ai_enabled && !alertOn) {
     return json({ ok: true, skipped: "no_active_campaigns", published, analytics: await maintenance(db, acc, outOfTime) });
   }
 
@@ -1941,7 +2015,7 @@ async function actionPollComments(db: SupabaseClient) {
   let processedCount = 0;
   let skippedOld = 0;
 
-  if (campaigns.length) {
+  if (campaigns.length || alertOn) {
     const r = await graph(`${acc.ig_user_id}/media`, {
       token: acc.access_token,
       params: {
@@ -1990,13 +2064,14 @@ async function actionPollComments(db: SupabaseClient) {
           from: c.from,
           media: { id: media.id, media_product_type: media.media_product_type },
           parent_id: c.parent_id ?? null,
-        });
+        }, { alerts });
         processedCount++;
       } catch (err) {
         console.error(`Error procesando comentario ${c.id}:`, err);
       }
     }
   }
+  await sendCommentAlerts(db, alerts);
 
   // ---- 2. Conversaciones (botón de dos pasos, keywords por DM, agente IA, toma humana) ----
   let processedMessagesCount = 0;

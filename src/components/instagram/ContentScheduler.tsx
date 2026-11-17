@@ -25,6 +25,10 @@ export type IgPost = {
   caption: string;
   compartir_feed: boolean;
   prueba?: boolean | null;
+  portada_url?: string | null;
+  colaboradores?: string[] | null;
+  audio_nombre?: string | null;
+  origen_post_id?: string | null;
   publicar_en: string;
   estado: Estado;
   campaign_id: string | null;
@@ -43,6 +47,9 @@ type Draft = {
   prueba: boolean;
   /** Valor guardado: permite apagar la prueba aunque la columna exista solo tras la migración. */
   pruebaOrig?: boolean;
+  portada_url: string;
+  colaboradores: string; // "@a, @b"
+  audio_nombre: string;
   fecha: string; // datetime-local
   campaign_id: string;
   media_url: string;
@@ -65,6 +72,9 @@ const newDraft = (): Draft => ({
   caption: "",
   compartir_feed: true,
   prueba: false,
+  portada_url: "",
+  colaboradores: "",
+  audio_nombre: "",
   fecha: toLocalInput(new Date(Date.now() + 3600_000)),
   campaign_id: NONE,
   media_url: "",
@@ -112,6 +122,23 @@ export function ContentScheduler({
   const [busy, setBusy] = useState(false);
   const [publishing, setPublishing] = useState<string | null>(null);
   const [scopes, setScopes] = useState<string[] | null>(null);
+  const [coverFile, setCoverFile] = useState<File | null>(null);
+  const [growth, setGrowth] = useState<{ auto_historia: boolean; alerta_comentarios: boolean } | null>(null);
+
+  useEffect(() => {
+    supabaseCRM
+      .from("ig_settings")
+      .select("auto_historia, alerta_comentarios")
+      .eq("id", 1)
+      .maybeSingle()
+      .then(({ data, error }) => setGrowth(error || !data ? null : (data as { auto_historia: boolean; alerta_comentarios: boolean })));
+  }, []);
+
+  const toggleGrowth = async (key: "auto_historia" | "alerta_comentarios", v: boolean) => {
+    setGrowth((g) => (g ? { ...g, [key]: v } : g));
+    const { error } = await supabaseCRM.from("ig_settings").update({ [key]: v }).eq("id", 1);
+    if (error) toast.error(error.message);
+  };
 
   const load = useCallback(async () => {
     const { data, error } = await supabaseCRM.from("ig_posts").select("*").order("publicar_en", { ascending: true });
@@ -207,8 +234,30 @@ export function ContentScheduler({
         storage_path = path;
         media_url = supabaseCRM.storage.from(BUCKET).getPublicUrl(path).data.publicUrl;
       }
+      let portada_url = draft.portada_url;
+      if (coverFile && draft.tipo === "reel") {
+        if (!/jpe?g$/i.test(coverFile.type)) throw new Error("La portada debe ser JPG");
+        const cpath = `portadas/${crypto.randomUUID()}.jpg`;
+        const up = await supabaseCRM.storage.from(BUCKET).upload(cpath, coverFile, { contentType: coverFile.type, upsert: false });
+        if (up.error) throw new Error(up.error.message);
+        portada_url = supabaseCRM.storage.from(BUCKET).getPublicUrl(cpath).data.publicUrl;
+      }
+      const colaboradores = draft.colaboradores
+        .split(/[,\s]+/)
+        .map((u) => u.replace(/^@/, "").trim())
+        .filter(Boolean)
+        .slice(0, 3);
+      const usaExtras = !!(portada_url || colaboradores.length || draft.audio_nombre || draft.id);
       const row = {
         tipo: draft.tipo,
+        // Extras de la API (portada, colaboradores, audio): solo si se usan o al editar
+        ...(usaExtras
+          ? {
+              portada_url: draft.tipo === "reel" ? portada_url || null : null,
+              colaboradores: draft.tipo === "historia" ? [] : colaboradores,
+              audio_nombre: draft.tipo === "reel" ? draft.audio_nombre.trim() || null : null,
+            }
+          : {}),
         caption: draft.caption,
         compartir_feed: draft.compartir_feed,
         // Solo se envía si se usa (así funciona aunque falte la migración _06)
@@ -233,6 +282,7 @@ export function ContentScheduler({
       setDraft(newDraft());
       setFile(null);
       setFiles([]);
+      setCoverFile(null);
       load();
     } catch (e) {
       toast.error((e as Error).message);
@@ -249,6 +299,9 @@ export function ContentScheduler({
       compartir_feed: p.compartir_feed,
       prueba: !!p.prueba,
       pruebaOrig: !!p.prueba,
+      portada_url: p.portada_url ?? "",
+      colaboradores: (p.colaboradores ?? []).map((u) => `@${u}`).join(", "),
+      audio_nombre: p.audio_nombre ?? "",
       fecha: toLocalInput(new Date(p.publicar_en)),
       campaign_id: p.campaign_id ?? NONE,
       media_url: p.media_url,
@@ -268,6 +321,9 @@ export function ContentScheduler({
       caption: p.caption,
       compartir_feed: p.compartir_feed,
       prueba: !!p.prueba,
+      portada_url: p.portada_url ?? "",
+      colaboradores: (p.colaboradores ?? []).map((u) => `@${u}`).join(", "),
+      audio_nombre: p.audio_nombre ?? "",
       fecha: toLocalInput(new Date(Date.now() + 86400_000)),
       campaign_id: p.campaign_id ?? NONE,
       media_url: p.media_url,
@@ -325,6 +381,19 @@ export function ContentScheduler({
         <Card className="p-3 text-xs border-orange-500/40 text-orange-300">
           Tu token no tiene el permiso <code>instagram_content_publish</code>. Genera un token nuevo en Meta incluyendo ese permiso y
           vuelve a conectarlo arriba; si no, las publicaciones fallarán.
+        </Card>
+      )}
+
+      {growth && (
+        <Card className="p-3 flex flex-wrap gap-x-6 gap-y-2 text-xs">
+          <label className="flex items-center gap-2">
+            <Switch checked={growth.auto_historia} onCheckedChange={(v) => toggleGrowth("auto_historia", v)} />
+            📲 Compartir cada Reel en historias (20 min después)
+          </label>
+          <label className="flex items-center gap-2">
+            <Switch checked={growth.alerta_comentarios} onCheckedChange={(v) => toggleGrowth("alerta_comentarios", v)} />
+            💬 Avisarme por WhatsApp cada comentario nuevo
+          </label>
         </Card>
       )}
 
@@ -410,6 +479,43 @@ export function ContentScheduler({
                   onChange={(e) => setDraft({ ...draft, caption: e.target.value })}
                   placeholder={"Comenta GUIA y te envío el PDF gratis por DM 📩\n\n#automatizacion #negocios"}
                 />
+              </div>
+            )}
+
+            {draft.tipo !== "historia" && (
+              <div className="grid gap-2 sm:grid-cols-3 rounded-md border border-border/60 p-2">
+                {draft.tipo === "reel" && (
+                  <div className="space-y-1">
+                    <Label className="text-[11px]">🖼 Portada (JPG con el gancho escrito)</Label>
+                    <Input type="file" accept="image/jpeg" className="h-8 text-xs" onChange={(e) => setCoverFile(e.target.files?.[0] ?? null)} />
+                    {draft.portada_url && !coverFile && (
+                      <button className="text-[10px] text-muted-foreground underline" onClick={() => setDraft({ ...draft, portada_url: "" })}>
+                        Quitar portada actual
+                      </button>
+                    )}
+                  </div>
+                )}
+                <div className="space-y-1">
+                  <Label className="text-[11px]">🤝 Colaboradores (máx. 3)</Label>
+                  <Input
+                    value={draft.colaboradores}
+                    onChange={(e) => setDraft({ ...draft, colaboradores: e.target.value })}
+                    placeholder="@cliente, @socio"
+                    className="h-8 text-xs"
+                  />
+                  <p className="text-[10px] text-muted-foreground">Sale en ambos perfiles si lo aceptan. Duplica tu alcance.</p>
+                </div>
+                {draft.tipo === "reel" && (
+                  <div className="space-y-1">
+                    <Label className="text-[11px]">🎵 Nombre del audio</Label>
+                    <Input
+                      value={draft.audio_nombre}
+                      onChange={(e) => setDraft({ ...draft, audio_nombre: e.target.value })}
+                      placeholder="NexaBot · sonido original"
+                      className="h-8 text-xs"
+                    />
+                  </div>
+                )}
               </div>
             )}
 
@@ -560,6 +666,8 @@ function PostRow({
         </div>
         <p className="text-muted-foreground line-clamp-2 whitespace-pre-wrap">
           {p.prueba && <span className="mr-1 rounded bg-violet-500/15 px-1 text-violet-300">🧪 prueba</span>}
+          {p.origen_post_id && <span className="mr-1 rounded bg-sky-500/15 px-1 text-sky-300">📲 historia automática</span>}
+          {!!p.colaboradores?.length && <span className="mr-1 rounded bg-emerald-500/15 px-1 text-emerald-300">🤝 {p.colaboradores.map((u) => "@" + u).join(" ")}</span>}
           {p.caption || (p.tipo === "historia" ? "Historia" : "Sin texto")}
         </p>
         {p.error && <p className="text-red-400">{p.error}</p>}

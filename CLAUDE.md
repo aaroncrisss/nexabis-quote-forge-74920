@@ -337,6 +337,12 @@ Migración `20261102_03_instagram_analytics.sql`. Componentes `AnalyticsPanel.ts
 * **Reels de prueba (2026-11-17, migración `20261117_01_instagram_trial_reels.sql`):** `ig_posts.prueba` → `advancePost` envía `trial_params {graduation_strategy:"SS_PERFORMANCE"}`. Si Meta lo rechaza (cuenta no elegible), se publica como Reel normal y se guarda `prueba=false`. Pasarlo a seguidores manualmente solo se puede desde la app.
 * **Radar de ideas (2026-11-17, migración `20261117_02_instagram_radar.sql`, pestaña `?tab=radar`, `RadarPanel.tsx`):** sin IA. `ig_competidores` (lista editable) y `ig_radar_posts`. `syncRadar()` corre 1 vez al día desde `maintenance()` (o con la acción `radar_sync`): hace `business_discovery` sobre cada cuenta (solo funciona con cuentas profesionales), calcula `score = (me gusta + comentarios) / mediana de la cuenta` y etiqueta fórmulas con regex (`detectFormulas`: comenta_palabra, gratis, github_repo, rubro, mandaselo, guardalo…). Por WhatsApp avisa el top 5 nuevo con `score ≥ ig_settings.radar_score_min` (3). Guarda 21 días. Estrategia completa en `docs/ESTRATEGIA_CONTENIDO_IG.md`.
 
+* **Herramientas de crecimiento (2026-11-17, migración `20261117_03_instagram_growth_tools.sql`):**
+  * Historia automática: `ig_settings.auto_historia`. Al publicar un Reel (que no sea de prueba), `advancePost` programa una `historia` con el mismo video para 20 minutos después (`origen_post_id`, `storage_path=null`).
+  * Aviso de comentarios: `ig_settings.alerta_comentarios`. `handleComment` agrega cada comentario nuevo a `opts.alerts` y `sendCommentAlerts()` manda un resumen por WhatsApp por cada pasada o webhook. Con el aviso activo, el polling revisa comentarios aunque no haya campañas.
+  * Extras de publicación: `ig_posts.portada_url` (`cover_url`), `colaboradores` (`collaborators`, máx. 3) y `audio_nombre` (`audio_name`). Si Meta rechaza un extra, se reintenta sin él en este orden: trial → colaboradores → portada → audio. El post nunca falla por un extra.
+  * Radar: revisa cada 12 h. La vista "Comenta hoy" muestra los posts del nicho de las últimas 48 h.
+
 ---
 
 ## 🚀 10. Ideas de Mejora y Futuras Extensiones

@@ -66,7 +66,7 @@ export function RadarPanel({ invoke, connected }: Props) {
   const [syncing, setSyncing] = useState(false);
   const [nuevo, setNuevo] = useState("");
   const [filtro, setFiltro] = useState<string | null>(null);
-  const [vista, setVista] = useState<"ideas" | "guardadas">("ideas");
+  const [vista, setVista] = useState<"ideas" | "comentar" | "guardadas">("ideas");
   const [missing, setMissing] = useState(false);
 
   const load = useCallback(async () => {
@@ -140,12 +140,20 @@ export function RadarPanel({ invoke, connected }: Props) {
       .sort((a, b) => b.prom - a.prom);
   }, [posts]);
 
+  // "Comenta hoy": posts de las últimas 48 h, del más nuevo al más antiguo (comentar temprano = más visibilidad)
+  const frescos = useMemo(() => {
+    const desde = Date.now() - 48 * 3600_000;
+    return posts
+      .filter((p) => p.publicado_at && new Date(p.publicado_at).getTime() >= desde)
+      .sort((a, b) => new Date(b.publicado_at!).getTime() - new Date(a.publicado_at!).getTime());
+  }, [posts]);
+
   const lista = useMemo(
     () =>
-      posts
-        .filter((p) => (vista === "guardadas" ? p.estado === "guardado" : p.score >= 2))
+      (vista === "comentar" ? frescos : posts)
+        .filter((p) => (vista === "guardadas" ? p.estado === "guardado" : vista === "comentar" ? true : p.score >= 2))
         .filter((p) => !filtro || p.formulas.includes(filtro)),
-    [posts, vista, filtro],
+    [posts, frescos, vista, filtro],
   );
 
   if (missing) {
@@ -165,7 +173,7 @@ export function RadarPanel({ invoke, connected }: Props) {
               <Radar className="w-4 h-4" /> Radar de ideas
             </h3>
             <p className="text-xs text-muted-foreground">
-              Cada día revisa a tu competencia y destaca los posts que rindieron muy sobre lo normal de esa cuenta (×3 o más = idea probada). Te avisa las mejores por WhatsApp.
+              Cada 12 h revisa a tu competencia y destaca los posts que rindieron muy sobre lo normal de esa cuenta (×3 o más = idea probada). Te avisa las mejores por WhatsApp.
             </p>
           </div>
           <Button size="sm" variant="outline" className="gap-1" onClick={sync} disabled={syncing || !connected}>
@@ -197,6 +205,9 @@ export function RadarPanel({ invoke, connected }: Props) {
             <Button size="sm" variant={vista === "ideas" ? "default" : "outline"} onClick={() => setVista("ideas")}>
               Ideas ({posts.filter((p) => p.score >= 2).length})
             </Button>
+            <Button size="sm" variant={vista === "comentar" ? "default" : "outline"} onClick={() => setVista("comentar")} title="Posts de tu nicho de las últimas 48 h: comenta con aporte, temprano">
+              💬 Comenta hoy ({frescos.length})
+            </Button>
             <Button size="sm" variant={vista === "guardadas" ? "default" : "outline"} onClick={() => setVista("guardadas")}>
               <Bookmark className="w-3.5 h-3.5 mr-1" /> Guardadas ({posts.filter((p) => p.estado === "guardado").length})
             </Button>
@@ -210,7 +221,11 @@ export function RadarPanel({ invoke, connected }: Props) {
             <p className="text-sm text-muted-foreground">Cargando…</p>
           ) : lista.length === 0 ? (
             <Card className="p-4 text-sm text-muted-foreground">
-              {posts.length === 0 ? "Aún no hay datos. Toca «Actualizar ahora»." : "Nada con este filtro."}
+              {posts.length === 0
+                ? "Aún no hay datos. Toca «Actualizar ahora»."
+                : vista === "comentar"
+                  ? "No hay posts nuevos de tu nicho en las últimas 48 h."
+                  : "Nada con este filtro."}
             </Card>
           ) : (
             lista.map((p) => (
@@ -234,8 +249,14 @@ export function RadarPanel({ invoke, connected }: Props) {
                   ))}
                   <div className="ml-auto flex gap-1">
                     {p.permalink && (
-                      <a href={p.permalink} target="_blank" rel="noreferrer" className="inline-flex h-7 px-2 items-center text-muted-foreground hover:text-foreground" title="Ver en Instagram">
-                        <ExternalLink className="w-3.5 h-3.5" />
+                      <a
+                        href={p.permalink}
+                        target="_blank"
+                        rel="noreferrer"
+                        className={`inline-flex h-7 px-2 items-center gap-1 text-[11px] ${vista === "comentar" ? "rounded bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
+                        title="Ver en Instagram"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" /> {vista === "comentar" && "Abrir y comentar"}
                       </a>
                     )}
                     <Button
