@@ -1713,6 +1713,8 @@ async function getAccessLevel(req: Request, db: SupabaseClient): Promise<"admin"
   const auth = req.headers.get("authorization") ?? "";
   const jwt = auth.replace(/^Bearer\s+/i, "");
   if (!jwt) return null;
+  // Scripts locales del equipo (ej. lote automático de videos) usan la service role: acceso total
+  if (SUPABASE_SERVICE_ROLE_KEY && jwt === SUPABASE_SERVICE_ROLE_KEY) return "admin";
   const { data, error } = await db.auth.getUser(jwt);
   if (error || !data?.user) return null;
   const uid = data.user.id;
@@ -2627,6 +2629,15 @@ Deno.serve(async (req) => {
         return json({ ok: r.ok, error: r.ok ? null : graphError(r) });
       }
 
+      case "notify_owner": {
+        // Aviso al número del dueño (ig_settings.whatsapp_numero), nunca a otro número. Lo usa el lote de videos.
+        const { data: st } = await db.from("ig_settings").select("whatsapp_numero").eq("id", 1).maybeSingle();
+        const text = String(body.text ?? "").slice(0, 3000);
+        if (!text) return json({ ok: false, error: "Falta text" }, 400);
+        if (!st?.whatsapp_numero) return json({ ok: false, error: "Falta ig_settings.whatsapp_numero" }, 400);
+        const err = await sendWhatsApp(st.whatsapp_numero, text);
+        return json({ ok: !err, error: err });
+      }
       case "test_whatsapp": {
         const { data: st } = await db.from("ig_settings").select("whatsapp_numero").eq("id", 1).maybeSingle();
         const to = String(body.numero ?? st?.whatsapp_numero ?? "");
