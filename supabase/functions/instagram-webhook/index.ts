@@ -1712,9 +1712,18 @@ async function getAccessLevel(req: Request, db: SupabaseClient): Promise<"admin"
 
   const auth = req.headers.get("authorization") ?? "";
   const jwt = auth.replace(/^Bearer\s+/i, "");
+  // Scripts locales del equipo (ej. lote automático de videos) usan la service role / secret key: acceso total.
+  // Se acepta la clave antigua (JWT) o la nueva (sb_secret_...), en Authorization o en apikey.
+  const apikey = req.headers.get("apikey") ?? "";
+  let extra: string[] = [];
+  try {
+    extra = Object.values(JSON.parse(Deno.env.get("SUPABASE_SECRET_KEYS") ?? "{}")).map(String);
+  } catch {
+    /* sin claves nuevas */
+  }
+  const secrets = [SUPABASE_SERVICE_ROLE_KEY, ...extra].filter(Boolean);
+  if (secrets.some((s) => s === jwt || s === apikey)) return "admin";
   if (!jwt) return null;
-  // Scripts locales del equipo (ej. lote automático de videos) usan la service role: acceso total
-  if (SUPABASE_SERVICE_ROLE_KEY && jwt === SUPABASE_SERVICE_ROLE_KEY) return "admin";
   const { data, error } = await db.auth.getUser(jwt);
   if (error || !data?.user) return null;
   const uid = data.user.id;
