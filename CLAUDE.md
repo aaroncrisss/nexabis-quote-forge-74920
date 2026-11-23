@@ -276,7 +276,7 @@ Migraciones: `20261101_02_instagram_growth.sql` (esquema) y `20261101_03_instagr
 * **`ig_messages`:** historial de DMs con `mid` UNIQUE (deduplica webhook y polling y da contexto a la IA). `origen`: `usuario | campaña | ia | humano`.
 * **Nexabot IA (APAGADO, sin pestaña en el panel por decisión del usuario):** solo modelos gratuitos. Si se activa (`ig_settings.ai_enabled=true`), DMs sin keyword → `aiReply()` con Gemini (`GEMINI_API_KEY`, capa gratuita). No usar APIs de pago. Se pausa 12 h si un humano responde desde Instagram (eco no registrado) y 24 h si la IA responde con `[HUMANO]`. Hay un límite diario de respuestas por persona. Acción `simulate_ai` para probar desde el panel.
 * **Embudo:** RPC `ig_funnel_stats()` → comentarios, DMs, ofertas, clics, leads, presupuestos, aprobados e ingresos, más un desglose por campaña.
-* **Polling:** 15 posts × 50 comentarios; descarta comentarios de más de 7 días; deduplica en lote; tiene un presupuesto de 110 s; la pausa `delay_segundos` solo se aplica en webhooks; DMs del polling de máximo 30 min de antigüedad.
+* **Polling (cada 5 min desde 2026-11-23, migración `20261123_01`, por aviso de Disk IO de Supabase):** 15 posts × 50 comentarios; descarta comentarios de más de 7 días; deduplica en lote; tiene un presupuesto de 110 s; la pausa `delay_segundos` solo se aplica en webhooks; DMs del polling de máximo 30 min de antigüedad.
 * **Token:** los tokens de Página `EAA...` se validan con `debug_token` (`token_expires_at = null` si no vencen). Ya no se usa `ig_refresh_token` con ellos.
 * **`poll_comments`:** es público hasta que se define `IG_POLL_REQUIRE_KEY=true` y se aplica la migración `_03`.
 
