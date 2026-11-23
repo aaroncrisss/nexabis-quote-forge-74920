@@ -9,6 +9,10 @@ const EVO_URL = Deno.env.get("EVOLUTION_API_URL") || "https://evoapi.nexabistech
 const EVO_KEY = Deno.env.get("EVOLUTION_API_KEY") ?? "";
 const EVO_INSTANCE = Deno.env.get("EVOLUTION_INSTANCE") || "NexabisTech";
 const TARGET_PHONE = "56986343217";
+// Texto: "tarea: ...", "pendiente: ...", "nexabis: ...", "trabajo: ...", "diaria: ..." (con o sin #).
+const TASK_PREFIX_RE = /^#?(tarea|pendiente|nexabis|trabajo|diaria)\s*:/i;
+// Nota de voz: la transcripción debe empezar con "tarea", "nueva tarea", "pendiente", "anota" o "agrega tarea".
+const SPOKEN_TASK_RE = /^(nueva\s+tarea|tarea|pendiente|anota(r)?|agrega(r)?\s+(una\s+)?tarea)\b/i;
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "https://htwuamsbzaznmwuypflt.supabase.co";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
@@ -319,7 +323,7 @@ async function tryProcessAudioMessage(
 // -----------------------------------------------------------------------------
 function parseSpokenOrWrittenTask(rawText: string, today: string) {
   let text = rawText
-    .replace(/^(#?tarea\s*:?|#?pendiente\s*:?|agrega(r)?\s+tarea\s*:?|anota(r)?\s*:?)\s*/i, "")
+    .replace(/^(nueva\s+tarea\s*[:,.]?|#?tarea\s*[:,.]?|#?pendiente\s*[:,.]?|agrega(r)?\s+(una\s+)?tarea\s*[:,.]?|anota(r)?\s*[:,.]?)\s*/i, "")
     .trim();
 
   const lower = text.toLowerCase();
@@ -473,7 +477,7 @@ Deno.serve(async (req) => {
       lines.push(`☀️ *Diarias & Personales (${diarias.length}):*`);
       lines.push(diarias.length ? formatList(diarias, 5) : "  _Sin pendientes_ ✅");
       lines.push(``);
-      lines.push(`💡 _Tip: Escribe "tarea: [texto]" o envía una nota de voz a este chat para agendar una nueva tarea al instante._`);
+      lines.push(`💡 _Tip: Escribe "tarea: [texto]" o manda una nota de voz que empiece con "tarea…" para agendar una nueva tarea. Lo demás no se registra._`);
 
       const waRes = await sendWhatsAppMessage(targetPhone, lines.join("\n"));
 
@@ -518,27 +522,26 @@ Deno.serve(async (req) => {
         });
       }
 
-      const isGroup = remoteJid.endsWith("@g.us");
+      // Solo se crea una tarea si Cris la pide explícitamente. Antes cualquier mensaje "de Cris"
+      // (en la instancia, `sender` es siempre el número dueño) y cualquier nota de voz se volvían tarea:
+      // cuentas, links y audios sueltos terminaban en el tablero (NEX-102..105).
       const isFromCris =
-        remoteJid.includes(TARGET_PHONE) ||
-        String(msgData.sender || "").includes(TARGET_PHONE) ||
-        String(key.participant || "").includes(TARGET_PHONE);
+        Boolean(key.fromMe) ||
+        String(key.participant || "").includes(TARGET_PHONE) ||
+        (remoteJid.includes(TARGET_PHONE) && !remoteJid.endsWith("@g.us"));
 
-      const hasTaskPrefix = /^(#?tarea\s*:|#?pendiente\s*:|nexabis\s*:|trabajo\s*:|diaria\s*:)/i.test(
-        textContent.trim()
-      );
+      const hasTaskPrefix = TASK_PREFIX_RE.test(textContent.trim());
       const isAudioMessage = Boolean(messageObj.audioMessage);
 
-      // In groups, strictly require explicit task prefix
-      if (isGroup && !hasTaskPrefix) {
-        return new Response(JSON.stringify({ ignored: "group_message_without_prefix" }), {
+      // Texto: siempre exige prefijo ("tarea: ...") y que lo escriba Cris.
+      if (!isAudioMessage && !(isFromCris && hasTaskPrefix)) {
+        return new Response(JSON.stringify({ ignored: "sin_prefijo_tarea" }), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
-
-      // In 1-on-1 private chat, accept if from Cris, or prefixed with tarea:, or any voice note
-      if (!isFromCris && !hasTaskPrefix && !isAudioMessage) {
-        return new Response(JSON.stringify({ ignored: "not_task_channel" }), {
+      // Nota de voz: solo de Cris; más abajo se exige que la transcripción empiece con "tarea…".
+      if (isAudioMessage && !isFromCris) {
+        return new Response(JSON.stringify({ ignored: "audio_ajeno" }), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
@@ -552,17 +555,14 @@ Deno.serve(async (req) => {
         const result = await tryProcessAudioMessage(key, messageObj, supabase);
         audioPayload = result.audio;
 
-        if (result.transcription) {
-          rawTaskString = result.transcription;
-        } else if (!rawTaskString) {
-          const seconds = messageObj.audioMessage?.seconds || 0;
-          const timeStr = new Date().toLocaleTimeString("es-CL", {
-            timeZone: "America/Santiago",
-            hour: "2-digit",
-            minute: "2-digit",
+        // Sin transcripción no se puede saber si era una tarea: no se crea nada.
+        const spoken = (result.transcription || "").trim().replace(/^[¿¡"'«\s]+/, "");
+        if (!spoken || !SPOKEN_TASK_RE.test(spoken)) {
+          return new Response(JSON.stringify({ ignored: spoken ? "audio_sin_palabra_tarea" : "audio_sin_transcripcion" }), {
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
           });
-          rawTaskString = `🎙️ Nota de voz WhatsApp (${seconds}s) - ${timeStr}`;
         }
+        rawTaskString = spoken;
       }
 
       if (!rawTaskString) {
