@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -11,6 +11,7 @@ import { CalendarClock, ExternalLink, Pencil, Rocket, Trash2, Upload, Film, Imag
 import { supabaseCRM } from "@/integrations/supabase/crm-client";
 import { toast } from "sonner";
 import { nextOccurrence, slotLabel, type Slot } from "./analytics";
+import { createVisibleInterval, isTabVisible } from "@/lib/realtimeVisibility";
 
 type Tipo = "reel" | "imagen" | "historia" | "carrusel";
 type Item = { url: string; es_video: boolean; path: string };
@@ -140,20 +141,51 @@ export function ContentScheduler({
     if (error) toast.error(error.message);
   };
 
+  const loadInFlight = useRef(false);
+  const lastLoadAt = useRef(0);
+
   const load = useCallback(async () => {
-    const { data, error } = await supabaseCRM.from("ig_posts").select("*").order("publicar_en", { ascending: true });
-    setReady(!error);
-    setPosts((data as IgPost[]) ?? []);
+    if (loadInFlight.current) return;
+    loadInFlight.current = true;
+    try {
+      const { data, error } = await supabaseCRM.from("ig_posts").select("*").order("publicar_en", { ascending: true });
+      setReady(!error);
+      setPosts((data as IgPost[]) ?? []);
+      lastLoadAt.current = Date.now();
+    } finally {
+      loadInFlight.current = false;
+    }
   }, []);
+
+  // Solo consulta cada 60 s si hay publicaciones en proceso o por publicarse en ≤10 min;
+  // en reposo baja a cada 5 min y se pausa por completo cuando la pestaña está oculta.
+  const hasActiveJobs = useMemo(() => {
+    const soon = Date.now() + 10 * 60_000;
+    return posts.some(
+      (p) =>
+        p.estado === "procesando" ||
+        (p.estado === "programado" && new Date(p.publicar_en).getTime() <= soon),
+    );
+  }, [posts]);
 
   useEffect(() => {
     load();
-    // Refleja el avance del cron; nunca con la pestaña del navegador oculta
-    const t = setInterval(() => {
-      if (document.visibilityState === "visible") load();
-    }, 30_000);
-    return () => clearInterval(t);
   }, [load]);
+
+  useEffect(() => {
+    const intervalMs = hasActiveJobs ? 60_000 : 300_000;
+    const stopPoll = createVisibleInterval(() => {
+      load();
+    }, intervalMs);
+    const onVisible = () => {
+      if (isTabVisible() && Date.now() - lastLoadAt.current >= 60_000) load();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      stopPoll();
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [load, hasActiveJobs]);
 
   useEffect(() => {
     if (!connected) return;
@@ -345,7 +377,7 @@ export function ContentScheduler({
       const paths = [p.storage_path, ...(p.media_items ?? []).map((i) => i.path)].filter(Boolean) as string[];
       if (paths.length) await supabaseCRM.storage.from(BUCKET).remove(paths);
     }
-    load();
+    setPosts((prev) => prev.filter((x) => x.id !== p.id));
   };
 
   /** Aprueba un borrador (p.ej. de la tarea semanal automática): queda programado en su fecha, o en 1 h si ya pasó. */
@@ -354,7 +386,7 @@ export function ContentScheduler({
     const { error } = await supabaseCRM.from("ig_posts").update({ estado: "programado", publicar_en: when }).eq("id", p.id).eq("estado", "borrador");
     if (error) return toast.error(error.message);
     toast.success("Aprobado y programado");
-    load();
+    setPosts((prev) => prev.map((x) => (x.id === p.id ? { ...x, estado: "programado", publicar_en: when } : x)));
   };
 
   const publishNow = async (p: IgPost) => {

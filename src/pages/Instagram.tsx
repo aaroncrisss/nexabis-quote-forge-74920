@@ -973,6 +973,7 @@ export default function Instagram() {
         <InboxPanel
           invoke={invokeIg as (b: Record<string, unknown>) => Promise<Record<string, unknown>>}
           connected={!!status?.connected}
+          isActive={tab === "bandeja"}
           onUnread={setUnread}
           quickReplies={recursos.map((r) => `Aquí tienes ${r.titulo} 👉 ${LINK_BASE}${r.slug}`)}
         />

@@ -115,7 +115,7 @@ const Configuracion = () => {
 
   const verifyWhatsApp = async () => {
     setCheckingWa(true);
-    const st = await checkWhatsAppConnection();
+    const st = await checkWhatsAppConnection({ fresh: true });
     setWaStatus(st);
     setCheckingWa(false);
   };

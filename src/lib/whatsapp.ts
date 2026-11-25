@@ -43,15 +43,43 @@ export interface EvolutionInstanceStatus {
   ownerJid?: string;
 }
 
-export async function checkWhatsAppConnection(): Promise<EvolutionInstanceStatus> {
+// El estado de la instancia se pedía en cada pantalla (DashboardLayout) y la llamada tarda varios segundos.
+// Se guarda 10 min en sessionStorage; Configuración puede forzar con { fresh: true }.
+const WA_STATUS_KEY = "wa_status_cache";
+const WA_STATUS_TTL_MS = 10 * 60_000;
+let waStatusInFlight: Promise<EvolutionInstanceStatus> | null = null;
+
+export async function checkWhatsAppConnection(opts: { fresh?: boolean } = {}): Promise<EvolutionInstanceStatus> {
+  if (!opts.fresh) {
+    try {
+      const c = JSON.parse(sessionStorage.getItem(WA_STATUS_KEY) || "null");
+      if (c && Date.now() - c.at < WA_STATUS_TTL_MS) return c.st;
+    } catch {
+      /* caché inválida */
+    }
+    if (waStatusInFlight) return waStatusInFlight;
+  }
+  waStatusInFlight = fetchWhatsAppStatus().finally(() => {
+    waStatusInFlight = null;
+  });
+  return waStatusInFlight;
+}
+
+async function fetchWhatsAppStatus(): Promise<EvolutionInstanceStatus> {
   try {
     const r = await invokeWa<{ connected: boolean; state: string; instanceName?: string }>({ action: "status" });
-    return {
+    const st = {
       connected: !!r?.connected,
       state: r?.state || "unknown",
       instanceName: r?.instanceName || EVOLUTION_API_CONFIG.instanceName,
       instanceId: EVOLUTION_API_CONFIG.instanceId,
     };
+    try {
+      sessionStorage.setItem(WA_STATUS_KEY, JSON.stringify({ at: Date.now(), st }));
+    } catch {
+      /* sin storage */
+    }
+    return st;
   } catch (err: any) {
     return {
       connected: false,

@@ -38,42 +38,48 @@ const DEFAULT_STATE: SubscriptionState = {
     loading: true,
 };
 
-export const useSubscription = () => {
-    const { user } = useAuth();
-    const [state, setState] = useState<SubscriptionState>(DEFAULT_STATE);
+// Caché compartida en memoria (60 s) + deduplicación de promesas entre DashboardLayout y páginas hijas.
+const SUB_CACHE_TTL_MS = 60_000;
+let subCache: {
+    userId: string | null;
+    state: SubscriptionState | null;
+    ts: number;
+    promise: Promise<SubscriptionState> | null;
+} = { userId: null, state: null, ts: 0, promise: null };
 
-    const loadSubscription = useCallback(async () => {
-        if (!user) {
-            setState({ ...DEFAULT_STATE, loading: false });
-            return;
+async function fetchSubscriptionForUser(userId: string, force = false): Promise<SubscriptionState> {
+    if (!force && subCache.userId === userId) {
+        if (subCache.state && Date.now() - subCache.ts < SUB_CACHE_TTL_MS) {
+            return subCache.state;
         }
+        if (subCache.promise) return subCache.promise;
+    }
 
+    const p = (async (): Promise<SubscriptionState> => {
         try {
-            // Load profile subscription fields
-            const { data: profile, error: profileError } = await supabase
-                .from("profiles")
-                .select("subscription_tier, subscription_status, trial_ends_at, subscription_current_period_end, subscription_cancel_at_period_end, rubro, max_presupuestos_mes")
-                .eq("id", user.id)
-                .single();
+            const [profileRes, rpcRes] = await Promise.all([
+                supabase
+                    .from("profiles")
+                    .select("subscription_tier, subscription_status, trial_ends_at, subscription_current_period_end, subscription_cancel_at_period_end, rubro, max_presupuestos_mes")
+                    .eq("id", userId)
+                    .single(),
+                supabase.rpc("can_create_presupuesto", { user_uuid: userId }),
+            ]);
 
-            if (profileError) {
-                console.error("Error loading subscription:", profileError);
-                setState({ ...DEFAULT_STATE, loading: false });
-                return;
+            if (profileRes.error) {
+                console.error("Error loading subscription:", profileRes.error);
+                return { ...DEFAULT_STATE, loading: false };
             }
 
-            // Check if can create via RPC
-            const { data: canCreateResult, error: rpcError } = await supabase
-                .rpc("can_create_presupuesto", { user_uuid: user.id });
-
+            const profile = profileRes.data;
             let canCreate = true;
             let remaining: number | null = null;
             let current: number | null = null;
             let limit: number | null = null;
             let blockReason: string | null = null;
 
-            if (!rpcError && canCreateResult) {
-                const result = canCreateResult as any;
+            if (!rpcRes.error && rpcRes.data) {
+                const result = rpcRes.data as any;
                 canCreate = result.allowed ?? true;
                 remaining = result.remaining ?? null;
                 current = result.current ?? null;
@@ -81,7 +87,7 @@ export const useSubscription = () => {
                 blockReason = result.allowed ? null : result.reason;
             }
 
-            setState({
+            const nextState: SubscriptionState = {
                 tier: (profile?.subscription_tier as SubscriptionTier) || "free",
                 status: (profile?.subscription_status as SubscriptionStatus) || "trial",
                 trialEndsAt: profile?.trial_ends_at || null,
@@ -95,16 +101,57 @@ export const useSubscription = () => {
                 limit,
                 blockReason,
                 loading: false,
-            });
+            };
+            if (subCache.userId === userId) {
+                subCache.state = nextState;
+                subCache.ts = Date.now();
+                subCache.promise = null;
+            }
+            return nextState;
         } catch (err) {
             console.error("Error in useSubscription:", err);
-            setState({ ...DEFAULT_STATE, loading: false });
+            if (subCache.userId === userId) subCache.promise = null;
+            return { ...DEFAULT_STATE, loading: false };
         }
-    }, [user]);
+    })();
+
+    subCache = { userId, state: force ? null : subCache.state, ts: force ? 0 : subCache.ts, promise: p };
+    return p;
+}
+
+export const useSubscription = () => {
+    const { user } = useAuth();
+    const userId = user?.id ?? null;
+    const [state, setState] = useState<SubscriptionState>(() => {
+        if (userId && subCache.userId === userId && subCache.state && Date.now() - subCache.ts < SUB_CACHE_TTL_MS) {
+            return subCache.state;
+        }
+        return DEFAULT_STATE;
+    });
+
+    const loadSubscription = useCallback(async (force = false) => {
+        if (!userId) {
+            subCache = { userId: null, state: null, ts: 0, promise: null };
+            setState({ ...DEFAULT_STATE, loading: false });
+            return;
+        }
+        const next = await fetchSubscriptionForUser(userId, force);
+        setState(next);
+    }, [userId]);
 
     useEffect(() => {
-        loadSubscription();
-    }, [loadSubscription]);
+        let alive = true;
+        if (!userId) {
+            setState({ ...DEFAULT_STATE, loading: false });
+            return;
+        }
+        fetchSubscriptionForUser(userId, false).then((next) => {
+            if (alive) setState(next);
+        });
+        return () => {
+            alive = false;
+        };
+    }, [userId]);
 
     const isPremium = state.tier === "premium" || state.tier === "enterprise";
     const isTrial = state.status === "trial";
@@ -133,6 +180,8 @@ export const useSubscription = () => {
         }
     };
 
+    const refresh = useCallback(() => loadSubscription(true), [loadSubscription]);
+
     return {
         ...state,
         isPremium,
@@ -142,6 +191,6 @@ export const useSubscription = () => {
         isCancelled,
         trialDaysLeft,
         getBlockMessage,
-        refresh: loadSubscription,
+        refresh,
     };
 };

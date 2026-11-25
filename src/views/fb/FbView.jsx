@@ -31,11 +31,11 @@ const PAGINAS_LIDER = [
  */
 export function FbView({ session, access, showToast, dark, users, nameOf }) {
   const c = tokens(dark);
-  const fb = useFb({ userId: session.user.id, access, showToast });
   const esLider = !!access?.es_lider;
   const home = useMemo(() => (esLider ? { name: "panel" } : { name: "ficha", personaId: access?.persona_id, tab: "resumen" }), [esLider, access?.persona_id]);
   const [stack, setStack] = useState([home]);
   const page = stack[stack.length - 1];
+  const fb = useFb({ userId: session.user.id, access, showToast, pageName: page.name });
   const [overlay, setOverlay] = useState(null); // ventanas: compromiso, revisar, nuevoCompromiso, seguimiento, persona, objetivo, rol, asignarRol
   const [pendiente, setPendiente] = useState(null); // navegación en espera de confirmar que se descartan cambios
   const dirtyRef = useRef(false);

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "./supabase";
 import { todayCL } from "./crm/calendar";
 import { cfgDesdeFilas } from "./fb/logic";
+import { createDebounced, createVisibilityLifecycle, createVisibleInterval, isTabVisible } from "./realtimeVisibility";
 
 /* Reemplaza o agrega una fila por llave, ignorando versiones más antiguas que la que ya tenemos. */
 function upsertBy(rows, row, key = "id") {
@@ -40,19 +41,47 @@ async function fetchAll(build) {
   return out;
 }
 
+// Caché en memoria (5 min) + deduplicación de `fb_mi_acceso` para evitar RPC repetido al navegar entre rutas de Tareas.
+const FB_ACCESS_TTL_MS = 300_000;
+let fbAccessCache = { userId: null, state: null, ts: 0, promise: null };
+
 /** Qué puede ver esta cuenta en el módulo: { es_lider, member_id, persona_id }. null mientras carga o si el módulo no está disponible. */
 export function useFbAccess(userId) {
-  const [state, setState] = useState({ status: "loading", access: null });
+  const [state, setState] = useState(() => {
+    if (userId && fbAccessCache.userId === userId && fbAccessCache.state && Date.now() - fbAccessCache.ts < FB_ACCESS_TTL_MS) {
+      return fbAccessCache.state;
+    }
+    return { status: "loading", access: null };
+  });
+
   useEffect(() => {
     let alive = true;
     if (!userId) return undefined;
-    supabase.rpc("fb_mi_acceso").then(({ data, error }) => {
-      if (!alive) return;
-      if (error || !data) { setState({ status: "error", access: null }); return; }
-      setState({ status: "ready", access: data });
+
+    if (fbAccessCache.userId === userId && fbAccessCache.state && Date.now() - fbAccessCache.ts < FB_ACCESS_TTL_MS) {
+      setState(fbAccessCache.state);
+      return undefined;
+    }
+
+    if (fbAccessCache.userId !== userId || !fbAccessCache.promise) {
+      const p = supabase.rpc("fb_mi_acceso").then(({ data, error }) => {
+        const next = error || !data ? { status: "error", access: null } : { status: "ready", access: data };
+        if (fbAccessCache.userId === userId) {
+          fbAccessCache.state = next;
+          fbAccessCache.ts = Date.now();
+          fbAccessCache.promise = null;
+        }
+        return next;
+      });
+      fbAccessCache = { userId, state: null, ts: 0, promise: p };
+    }
+
+    fbAccessCache.promise.then((next) => {
+      if (alive) setState(next);
     });
     return () => { alive = false; };
   }, [userId]);
+
   const visible = state.status === "ready" && !!(state.access?.es_lider || state.access?.persona_id);
   return { ...state, visible };
 }
@@ -63,8 +92,28 @@ const SESION_COLS = ["persona_id", "fecha_hora", "tipo", "modalidad", "participa
 const pick = (o, keys) => Object.fromEntries(keys.filter((k) => k in o).map((k) => [k, o[k]]));
 const blankToNull = (v) => (v === "" || v === undefined ? null : v);
 
+const LIVE_RECONCILE_MS = 600_000; // 10 min red de seguridad cuando Realtime está vivo
+const FALLBACK_POLL_MS = 180_000;  // 3 min cuando no hay canal Realtime activo
+const HIDDEN_GRACE_MS = 30_000;    // desconecta Realtime tras 30 s con pestaña oculta
+
+/** Determina qué tablas colaborativas necesita escuchar en vivo la sub-pantalla actual de Feedback. */
+function realtimeTablesForPage(pageName) {
+  switch (pageName) {
+    case "config":
+    case "equipo":
+      return [];
+    case "compromisos":
+      return ["fb_compromisos"];
+    case "agenda":
+      return ["fb_compromisos", "fb_seguimientos"];
+    default:
+      // panel, ficha, feedback, minuta, preparar
+      return ["fb_compromisos", "fb_seguimientos", "fb_sesiones"];
+  }
+}
+
 /** Estado compartido del módulo Feedback & Desarrollo: carga, tiempo real y acciones. Se monta solo al abrir el módulo. */
-export function useFb({ userId, access, showToast }) {
+export function useFb({ userId, access, showToast, pageName = "panel" }) {
   const esLider = !!access?.es_lider;
   const [phase, setPhase] = useState("loading");
   const [loadError, setLoadError] = useState("");
@@ -83,22 +132,37 @@ export function useFb({ userId, access, showToast }) {
   const [seguimientos, setSeguimientos] = useState([]);
   const [notas, setNotas] = useState([]);
   const [configFilas, setConfigFilas] = useState([]);
+
   const alive = useRef(true);
+  const liveRef = useRef(false);
+  const inFlightRef = useRef(false);
+  const loadedRef = useRef(false);
+  const lastSyncRef = useRef(0);
+  const compromisosRef = useRef(compromisos);
+  compromisosRef.current = compromisos;
 
   const loadAll = useCallback(async () => {
-    const q = (t, order = "created_at") => fetchAll(() => supabase.from(t).select("*").order(order).order("id"));
-    const [per, rol, pr, obj, orl, ses, com, rev, seg, nts, cfg] = await Promise.all([
-      q("fb_personas", "nombre"), q("fb_roles", "nombre"), q("fb_persona_roles"), q("fb_objetivos"), fetchAll(() => supabase.from("fb_objetivo_roles").select("*").order("objetivo_id").order("rol_id")),
-      q("fb_sesiones", "fecha_hora"), q("fb_compromisos"), q("fb_compromiso_revisiones"), q("fb_seguimientos", "fecha"),
-      esLider ? q("fb_notas_privadas") : Promise.resolve([]),
-      esLider ? supabase.from("fb_config").select("*") : Promise.resolve({ data: [] }),
-    ]);
-    if (cfg.error) throw cfg.error;
-    if (!alive.current) return;
-    setPersonas(per); setRoles(rol); setPersonaRoles(pr); setObjetivos(obj); setObjetivoRoles(orl); setSesiones(ses);
-    setCompromisos(com); setRevisiones(rev); setSeguimientos(seg); setNotas(nts); setConfigFilas(cfg.data || []);
-    setSyncedAt(new Date());
-    setPhase("ready");
+    if (inFlightRef.current) return;
+    inFlightRef.current = true;
+    try {
+      const q = (t, order = "created_at") => fetchAll(() => supabase.from(t).select("*").order(order).order("id"));
+      const [per, rol, pr, obj, orl, ses, com, rev, seg, nts, cfg] = await Promise.all([
+        q("fb_personas", "nombre"), q("fb_roles", "nombre"), q("fb_persona_roles"), q("fb_objetivos"), fetchAll(() => supabase.from("fb_objetivo_roles").select("*").order("objetivo_id").order("rol_id")),
+        q("fb_sesiones", "fecha_hora"), q("fb_compromisos"), q("fb_compromiso_revisiones"), q("fb_seguimientos", "fecha"),
+        esLider ? q("fb_notas_privadas") : Promise.resolve([]),
+        esLider ? supabase.from("fb_config").select("*") : Promise.resolve({ data: [] }),
+      ]);
+      if (cfg.error) throw cfg.error;
+      if (!alive.current) return;
+      setPersonas(per); setRoles(rol); setPersonaRoles(pr); setObjetivos(obj); setObjetivoRoles(orl); setSesiones(ses);
+      setCompromisos(com); setRevisiones(rev); setSeguimientos(seg); setNotas(nts); setConfigFilas(cfg.data || []);
+      loadedRef.current = true;
+      lastSyncRef.current = Date.now();
+      setSyncedAt(new Date());
+      setPhase("ready");
+    } finally {
+      inFlightRef.current = false;
+    }
   }, [esLider]);
 
   const refresh = useCallback(() => {
@@ -110,41 +174,156 @@ export function useFb({ userId, access, showToast }) {
     });
   }, [loadAll]);
 
+  // Carga inicial una sola vez por sesión/rol
   useEffect(() => {
     alive.current = true;
     if (!userId) return undefined;
     setPhase("loading");
     refresh();
-    const touch = () => setSyncedAt(new Date());
-    const watch = (channel, table, setter) =>
-      channel.on("postgres_changes", { event: "*", schema: "public", table }, (p) => {
-        setter((rows) => (p.eventType === "DELETE" ? rows.filter((x) => x.id !== p.old.id) : upsertBy(rows, p.new)));
-        touch();
-      });
-    let ch = supabase.channel(`fb-live-${Math.random().toString(36).slice(2, 8)}`);
-    ch = watch(ch, "fb_personas", setPersonas);
-    ch = watch(ch, "fb_roles", setRoles);
-    ch = watch(ch, "fb_persona_roles", setPersonaRoles);
-    ch = watch(ch, "fb_objetivos", setObjetivos);
-    ch = watch(ch, "fb_sesiones", setSesiones);
-    ch = watch(ch, "fb_compromisos", setCompromisos);
-    ch = watch(ch, "fb_compromiso_revisiones", setRevisiones);
-    ch = watch(ch, "fb_seguimientos", setSeguimientos);
-    ch.subscribe((status) => {
-      const ok = status === "SUBSCRIBED";
-      if (alive.current) setLive(ok);
-      if (ok) refresh();
-    });
-    const onVisible = () => { if (document.visibilityState === "visible") refresh(); };
-    document.addEventListener("visibilitychange", onVisible);
-    const poll = setInterval(() => { if (document.visibilityState === "visible") refresh(); }, 180000);
     return () => {
       alive.current = false;
-      document.removeEventListener("visibilitychange", onVisible);
-      clearInterval(poll);
-      supabase.removeChannel(ch);
     };
   }, [userId, refresh]);
+
+  // Refresco puntual de revisiones de un compromiso cuando otro usuario lo actualiza vía Realtime
+  const pendingRevIds = useRef(new Set());
+  const flushRevisionFetch = useMemo(
+    () =>
+      createDebounced(() => {
+        const ids = Array.from(pendingRevIds.current);
+        pendingRevIds.current.clear();
+        if (!ids.length || !alive.current) return;
+        supabase
+          .from("fb_compromiso_revisiones")
+          .select("*")
+          .in("compromiso_id", ids)
+          .order("created_at")
+          .order("id")
+          .then(({ data: revs, error }) => {
+            if (error || !revs || !alive.current) return;
+            const idSet = new Set(ids);
+            setRevisiones((rows) => [...rows.filter((r) => !idSet.has(r.compromiso_id)), ...revs]);
+          });
+      }, 400),
+    []
+  );
+
+  useEffect(() => () => flushRevisionFetch.cancel(), [flushRevisionFetch]);
+
+  // Clave estable de tablas Realtime según sub-pantalla abierta (evita reconectar si las tablas no cambian)
+  const tablesKey = realtimeTablesForPage(pageName).join(",");
+
+  useEffect(() => {
+    if (!userId) return undefined;
+    const tables = tablesKey ? tablesKey.split(",") : [];
+
+    let channel = null;
+    let hasSubscribedOnce = false;
+    let needsResyncOnSubscribe = false;
+
+    const touch = () => setSyncedAt(new Date());
+
+    const detachChannel = () => {
+      if (!channel) return;
+      const ch = channel;
+      channel = null;
+      liveRef.current = false;
+      if (alive.current) setLive(false);
+      supabase.removeChannel(ch);
+    };
+
+    const attachChannel = () => {
+      if (!tables.length || channel || !alive.current || !isTabVisible()) return;
+      let ch = supabase.channel(`fb-live-${Math.random().toString(36).slice(2, 8)}`);
+      for (const table of tables) {
+        if (table === "fb_sesiones") {
+          ch = ch.on("postgres_changes", { event: "*", schema: "public", table }, (p) => {
+            setSesiones((rows) => (p.eventType === "DELETE" ? rows.filter((x) => x.id !== p.old.id) : upsertBy(rows, p.new)));
+            touch();
+          });
+        } else if (table === "fb_compromisos") {
+          ch = ch.on("postgres_changes", { event: "*", schema: "public", table }, (p) => {
+            if (p.eventType === "DELETE") {
+              setCompromisos((rows) => rows.filter((x) => x.id !== p.old.id));
+            } else {
+              const prev = compromisosRef.current.find((x) => x.id === p.new.id);
+              const isExternalUpdate = p.eventType === "UPDATE" && (!prev || prev.updated_at !== p.new.updated_at);
+              setCompromisos((rows) => upsertBy(rows, p.new));
+              if (isExternalUpdate) {
+                pendingRevIds.current.add(p.new.id);
+                flushRevisionFetch();
+              }
+            }
+            touch();
+          });
+        } else if (table === "fb_seguimientos") {
+          ch = ch.on("postgres_changes", { event: "*", schema: "public", table }, (p) => {
+            setSeguimientos((rows) => (p.eventType === "DELETE" ? rows.filter((x) => x.id !== p.old.id) : upsertBy(rows, p.new)));
+            touch();
+          });
+        }
+      }
+      ch.subscribe((status) => {
+        const ok = status === "SUBSCRIBED";
+        liveRef.current = ok;
+        if (alive.current) setLive(ok);
+        if (ok) {
+          // Evita doble carga al montar: solo resincroniza al reconectar tras desconexión o pausa.
+          if (hasSubscribedOnce && needsResyncOnSubscribe) {
+            needsResyncOnSubscribe = false;
+            refresh();
+          }
+          hasSubscribedOnce = true;
+        } else if (status === "CLOSED" || status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+          needsResyncOnSubscribe = true;
+        }
+      });
+      channel = ch;
+    };
+
+    if (tables.length) {
+      attachChannel();
+    } else {
+      liveRef.current = false;
+      setLive(false);
+    }
+
+    const stopVisibility = createVisibilityLifecycle({
+      hiddenGraceMs: HIDDEN_GRACE_MS,
+      onPause: () => {
+        if (tables.length) {
+          needsResyncOnSubscribe = true;
+          detachChannel();
+        }
+      },
+      onResume: ({ wasPaused, hiddenMs }) => {
+        if (tables.length && (wasPaused || !channel)) {
+          if (hiddenMs >= HIDDEN_GRACE_MS) {
+            needsResyncOnSubscribe = false;
+            refresh();
+          } else {
+            needsResyncOnSubscribe = true;
+          }
+          attachChannel();
+        } else if (loadedRef.current && Date.now() - lastSyncRef.current >= 120_000) {
+          refresh();
+        }
+      },
+    });
+
+    const stopPoll = createVisibleInterval(() => {
+      const minGap = liveRef.current ? LIVE_RECONCILE_MS : FALLBACK_POLL_MS;
+      if (loadedRef.current && Date.now() - lastSyncRef.current >= minGap) {
+        refresh();
+      }
+    }, 60_000);
+
+    return () => {
+      stopVisibility();
+      stopPoll();
+      detachChannel();
+    };
+  }, [userId, tablesKey, refresh, flushRevisionFetch]);
 
   const cfg = useMemo(() => cfgDesdeFilas(configFilas), [configFilas]);
   const data = useMemo(() => ({ personas, roles, personaRoles, objetivos, objetivoRoles, sesiones, compromisos, revisiones, seguimientos }), [personas, roles, personaRoles, objetivos, objetivoRoles, sesiones, compromisos, revisiones, seguimientos]);
@@ -248,9 +427,18 @@ export function useFb({ userId, access, showToast }) {
     const { data: out, error } = await supabase.rpc("fb_publicar_sesion", { p_sesion: id });
     if (error) throw error;
     setSesiones((rows) => upsertBy(rows, out));
-    refresh(); // trae los compromisos y seguimientos que creó la base de datos
+    // Trae solo los compromisos y seguimientos que pudo haber creado la base (2 consultas en vez de 11)
+    const [com, seg] = await Promise.all([
+      fetchAll(() => supabase.from("fb_compromisos").select("*").order("created_at").order("id")),
+      fetchAll(() => supabase.from("fb_seguimientos").select("*").order("fecha").order("id")),
+    ]);
+    if (alive.current) {
+      setCompromisos(com);
+      setSeguimientos(seg);
+      stamp();
+    }
     return out;
-  }, "No se pudo publicar la minuta"), [run, refresh]);
+  }, "No se pudo publicar la minuta"), [run]);
 
   const editarPublicada = useCallback((id, cambios, motivo) => run(async () => {
     const { data: out, error } = await supabase.rpc("fb_editar_sesion_publicada", { p_sesion: id, p_cambios: cambios, p_motivo: motivo });

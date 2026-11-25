@@ -4,6 +4,7 @@ import { todayISO } from "./dates";
 import { computeInitials } from "./team";
 import { memberFromRow, taskFromRow, taskToRow, historyFromRow, notificationFromRow } from "./mappers";
 import { notifyTaskWhatsApp } from "./whatsapp";
+import { createDebounced, createVisibilityLifecycle, createVisibleInterval, isTabVisible } from "./realtimeVisibility";
 
 function upsertRow(rows, row, key = "id") {
   const i = rows.findIndex((r) => r[key] === row[key]);
@@ -25,12 +26,13 @@ function friendlyError(e) {
   return msg || "Error inesperado.";
 }
 
-// In-memory + sessionStorage cache for instant 0ms mount (SWR)
+// Caché en localStorage (sobrevive entre pestañas y visitas): la pantalla se muestra al instante con lo último
+// conocido y se actualiza en segundo plano (SWR). Se borra al cerrar sesión (useAuth).
 const CACHE_KEY = "nexabis_roadmap_cache_v1";
 
 function readCache() {
   try {
-    const raw = sessionStorage.getItem(CACHE_KEY);
+    const raw = localStorage.getItem(CACHE_KEY);
     if (!raw) return null;
     return JSON.parse(raw);
   } catch {
@@ -40,7 +42,7 @@ function readCache() {
 
 function writeCache(data) {
   try {
-    sessionStorage.setItem(CACHE_KEY, JSON.stringify(data));
+    localStorage.setItem(CACHE_KEY, JSON.stringify(data));
   } catch {
     // ignore
   }
@@ -59,7 +61,13 @@ const DEFAULT_CRIS = {
   order: 1,
 };
 
-export function useRoadmap(session) {
+// Intervalos de respaldo (pausados automáticamente si la pestaña está oculta)
+const LIVE_RECONCILE_MS = 300_000; // 5 min solo como red de seguridad cuando Realtime está conectado
+const FALLBACK_POLL_MS = 120_000;  // 2 min si Realtime está caído
+const HIDDEN_GRACE_MS = 30_000;    // desconecta Realtime tras 30 s con la pestaña oculta
+
+export function useRoadmap(session, options = {}) {
+  const active = options.active !== false;
   const initialCache = useMemo(() => readCache(), []);
 
   const [memberRows, setMemberRows] = useState(() => initialCache?.memberRows || []);
@@ -75,9 +83,46 @@ export function useRoadmap(session) {
   const [saving, setSaving] = useState(0);
   const [syncedAt, setSyncedAt] = useState(null);
   const [toast, setToast] = useState(null);
+
   const toastTimer = useRef(null);
+  const alive = useRef(true);
+  const liveRef = useRef(false);
+  const inFlightRef = useRef(false);
+  const fullLoadedRef = useRef(false);
+  const lastSyncRef = useRef(0);
 
   const userId = typeof session === "string" ? session : session?.user?.id;
+
+  // Mantiene snapshot en ref para persistir cache con debounce tras eventos Realtime
+  const snapshotRef = useRef({ memberRows, taskRows, commentRows, notifRows, readIds, clientes, proyectos });
+  snapshotRef.current = { memberRows, taskRows, commentRows, notifRows, readIds, clientes, proyectos };
+
+  const persistCacheDebounced = useMemo(
+    () =>
+      createDebounced(() => {
+        const s = snapshotRef.current;
+        if (!s.memberRows.length) return;
+        writeCache({
+          memberRows: s.memberRows,
+          taskRows: s.taskRows,
+          commentRows: s.commentRows,
+          notifRows: s.notifRows,
+          readIds: Array.from(s.readIds),
+          clientes: s.clientes,
+          proyectos: s.proyectos,
+        });
+      }, 1200),
+    []
+  );
+
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+      clearTimeout(toastTimer.current);
+      persistCacheDebounced.cancel();
+    };
+  }, [persistCacheDebounced]);
 
   const showToast = useCallback((message, tone = "error") => {
     clearTimeout(toastTimer.current);
@@ -85,115 +130,242 @@ export function useRoadmap(session) {
     toastTimer.current = setTimeout(() => setToast(null), 6000);
   }, []);
 
-  const loadAll = useCallback(async () => {
-    const [m, t, c, n, r, cl, pr] = await Promise.all([
-      supabase.from("team_members").select("*").order("sort_order"),
-      supabase.from("tasks").select("*").order("created_at"),
-      supabase.from("task_comments").select("id, task_id, author, body, text, created_at").order("created_at"),
-      supabase.from("notifications").select("*").order("created_at", { ascending: false }).limit(60),
-      supabase.from("notification_reads").select("notification_id"),
-      supabase.from("clientes").select("id, nombre, empresa, telefono, email").order("nombre"),
-      supabase.from("proyectos").select("id, nombre, estado, cliente_id").order("nombre"),
-    ]);
-    // Equipo y tareas son obligatorios; comentarios/notificaciones no deben dejar el tablero vacío
-    const failed = [m, t].find((x) => x.error);
-    if (failed) throw failed.error;
-    for (const [name, x] of [["task_comments", c], ["notifications", n], ["notification_reads", r]]) {
-      if (x.error) console.error(`Error cargando ${name}`, x.error);
+  /** Carga mínima de equipo cuando la pantalla abierta no usa tareas (ej. vista Feedback). */
+  const loadMembersOnly = useCallback(async () => {
+    if (inFlightRef.current) return;
+    inFlightRef.current = true;
+    try {
+      const m = await supabase.from("team_members").select("*").order("sort_order");
+      if (m.error) throw m.error;
+      if (!alive.current) return;
+      setMemberRows(m.data);
+      if (m.data.length === 0) {
+        setPhase("noaccess");
+        return;
+      }
+      setPhase("ready");
+    } finally {
+      inFlightRef.current = false;
     }
-    setMemberRows(m.data);
-    if (m.data.length === 0) {
-      setPhase("noaccess");
-      return;
-    }
-    setTaskRows(t.data);
-    setCommentRows(c.data || []);
-    setNotifRows(n.data || []);
-    const readSet = new Set((r.data || []).map((x) => x.notification_id));
-    setReadIds(readSet);
-    if (cl.data) setClientes(cl.data);
-    if (pr.data) setProyectos(pr.data);
-    setSyncedAt(new Date());
-    setPhase("ready");
-
-    // Cache fresh data for instant next load
-    writeCache({
-      memberRows: m.data,
-      taskRows: t.data,
-      commentRows: c.data || [],
-      notifRows: n.data || [],
-      readIds: Array.from(readSet),
-      clientes: cl.data || [],
-      proyectos: pr.data || [],
-    });
   }, []);
+
+  /** Carga completa (montaje inicial activo, botón Sincronizar o recuperación de error). */
+  const loadAll = useCallback(async () => {
+    if (inFlightRef.current) return;
+    inFlightRef.current = true;
+    try {
+      const [m, t, c, n, r, cl, pr] = await Promise.all([
+        supabase.from("team_members").select("*").order("sort_order"),
+        supabase.from("tasks").select("*").order("created_at"),
+        supabase.from("task_comments").select("id, task_id, author, body, text, created_at").order("created_at"),
+        supabase.from("notifications").select("*").order("created_at", { ascending: false }).limit(60),
+        supabase.from("notification_reads").select("notification_id"),
+        supabase.from("clientes").select("id, nombre, empresa, telefono, email").order("nombre"),
+        supabase.from("proyectos").select("id, nombre, estado, cliente_id").order("nombre"),
+      ]);
+      // Equipo y tareas son obligatorios; comentarios/notificaciones no deben dejar el tablero vacío
+      const failed = [m, t].find((x) => x.error);
+      if (failed) throw failed.error;
+      for (const [name, x] of [["task_comments", c], ["notifications", n], ["notification_reads", r]]) {
+        if (x.error) console.error(`Error cargando ${name}`, x.error);
+      }
+      if (!alive.current) return;
+      setMemberRows(m.data);
+      if (m.data.length === 0) {
+        setPhase("noaccess");
+        return;
+      }
+      setTaskRows(t.data);
+      setCommentRows(c.data || []);
+      setNotifRows(n.data || []);
+      const readSet = new Set((r.data || []).map((x) => x.notification_id));
+      setReadIds(readSet);
+      if (cl.data) setClientes(cl.data);
+      if (pr.data) setProyectos(pr.data);
+      fullLoadedRef.current = true;
+      lastSyncRef.current = Date.now();
+      setSyncedAt(new Date());
+      setPhase("ready");
+
+      writeCache({
+        memberRows: m.data,
+        taskRows: t.data,
+        commentRows: c.data || [],
+        notifRows: n.data || [],
+        readIds: Array.from(readSet),
+        clientes: cl.data || [],
+        proyectos: pr.data || [],
+      });
+    } finally {
+      inFlightRef.current = false;
+    }
+  }, []);
+
+  /** Sincronización liviana de tablas dinámicas (4 consultas; omite team_members, clientes y proyectos). */
+  const syncDynamic = useCallback(async () => {
+    if (!fullLoadedRef.current) return loadAll();
+    if (inFlightRef.current) return;
+    inFlightRef.current = true;
+    try {
+      const [t, c, n, r] = await Promise.all([
+        supabase.from("tasks").select("*").order("created_at"),
+        supabase.from("task_comments").select("id, task_id, author, body, text, created_at").order("created_at"),
+        supabase.from("notifications").select("*").order("created_at", { ascending: false }).limit(60),
+        supabase.from("notification_reads").select("notification_id"),
+      ]);
+      if (t.error) throw t.error;
+      if (!alive.current) return;
+      setTaskRows(t.data);
+      if (!c.error) setCommentRows(c.data || []);
+      if (!n.error) setNotifRows(n.data || []);
+      if (!r.error) setReadIds(new Set((r.data || []).map((x) => x.notification_id)));
+      lastSyncRef.current = Date.now();
+      setSyncedAt(new Date());
+      persistCacheDebounced();
+    } finally {
+      inFlightRef.current = false;
+    }
+  }, [loadAll, persistCacheDebounced]);
 
   const refresh = useCallback(() => {
     loadAll().catch((e) => {
       console.error("Error al sincronizar", e);
+      if (!alive.current) return;
       setLoadError(friendlyError(e));
       setPhase((p) => (p === "ready" ? p : "error"));
     });
   }, [loadAll]);
 
+  const refreshDynamic = useCallback(() => {
+    syncDynamic().catch((e) => {
+      console.error("Error al sincronizar cambios", e);
+    });
+  }, [syncDynamic]);
+
   useEffect(() => {
-    // Only show full loading screen if no cached data is present
-    if (!memberRows.length) {
+    if (!userId) return undefined;
+
+    // Si estamos en una vista que no usa tareas (ej. Feedback), cargamos solo team_members si hace falta
+    // y NO abrimos canal Realtime ni polling de tareas.
+    if (!active) {
+      liveRef.current = false;
+      setLive(false);
+      if (!snapshotRef.current.memberRows.length) {
+        loadMembersOnly().catch((e) => {
+          console.error("Error al cargar equipo", e);
+          if (!alive.current) return;
+          setLoadError(friendlyError(e));
+          setPhase((p) => (p === "ready" ? p : "error"));
+        });
+      }
+      return undefined;
+    }
+
+    if (!snapshotRef.current.memberRows.length) {
       setPhase("loading");
     }
-    refresh();
-
-    const touch = () => setSyncedAt(new Date());
-    const channel = supabase
-      .channel(`roadmap-live-${Math.random().toString(36).slice(2, 8)}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "tasks" }, (p) => {
-        setTaskRows((rows) =>
-          p.eventType === "DELETE" ? rows.filter((x) => x.id !== p.old.id) : upsertRow(rows, p.new)
-        );
-        touch();
-      })
-      .on("postgres_changes", { event: "*", schema: "public", table: "task_comments" }, (p) => {
-        setCommentRows((rows) =>
-          p.eventType === "DELETE" ? rows.filter((x) => x.id !== p.old.id) : upsertRow(rows, p.new)
-        );
-        touch();
-      })
-      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "team_members" }, (p) => {
-        setMemberRows((rows) => rows.map((x) => (x.id === p.new.id ? { ...x, ...p.new } : x)));
-        touch();
-      })
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "notifications" }, (p) => {
-        setNotifRows((rows) => upsertRow(rows, p.new));
-      })
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "notification_reads" }, (p) => {
-        setReadIds((s) => new Set(s).add(p.new.notification_id));
-      })
-      .subscribe((status) => {
-        const ok = status === "SUBSCRIBED";
-        setLive(ok);
-      });
-
-    // Los cambios llegan en tiempo real por el canal de arriba; el polling es solo respaldo.
-    // Antes era cada 6 s (7 consultas por pestaña) y agotaba el presupuesto de Disk IO de Supabase.
-    let lastRefresh = Date.now();
-    const throttledRefresh = (minGapMs) => {
-      if (document.visibilityState !== "visible") return;
-      if (Date.now() - lastRefresh < minGapMs) return;
-      lastRefresh = Date.now();
+    if (!fullLoadedRef.current) {
       refresh();
+    } else if (Date.now() - lastSyncRef.current > 30_000) {
+      refreshDynamic();
+    }
+
+    let channel = null;
+    let hasSubscribedOnce = false;
+    let needsResyncOnSubscribe = false;
+
+    const touch = () => {
+      setSyncedAt(new Date());
+      persistCacheDebounced();
     };
-    const onVisible = () => throttledRefresh(15000);
-    document.addEventListener("visibilitychange", onVisible);
-    window.addEventListener("focus", onVisible);
-    const poll = setInterval(() => throttledRefresh(55000), 60000);
+
+    const detachChannel = () => {
+      if (!channel) return;
+      const ch = channel;
+      channel = null;
+      liveRef.current = false;
+      if (alive.current) setLive(false);
+      supabase.removeChannel(ch);
+    };
+
+    const attachChannel = () => {
+      if (channel || !alive.current || !isTabVisible()) return;
+      // Solo las 3 tablas colaborativas en vivo: team_members y notification_reads se actualizan
+      // de forma optimista/local y no justifican slots ni evaluaciones RLS en Realtime.
+      const ch = supabase
+        .channel(`roadmap-live-${Math.random().toString(36).slice(2, 8)}`)
+        .on("postgres_changes", { event: "*", schema: "public", table: "tasks" }, (p) => {
+          setTaskRows((rows) =>
+            p.eventType === "DELETE" ? rows.filter((x) => x.id !== p.old.id) : upsertRow(rows, p.new)
+          );
+          touch();
+        })
+        .on("postgres_changes", { event: "*", schema: "public", table: "task_comments" }, (p) => {
+          setCommentRows((rows) =>
+            p.eventType === "DELETE" ? rows.filter((x) => x.id !== p.old.id) : upsertRow(rows, p.new)
+          );
+          touch();
+        })
+        .on("postgres_changes", { event: "INSERT", schema: "public", table: "notifications" }, (p) => {
+          setNotifRows((rows) => upsertRow(rows, p.new));
+          touch();
+        })
+        .subscribe((status) => {
+          const ok = status === "SUBSCRIBED";
+          liveRef.current = ok;
+          if (alive.current) setLive(ok);
+          if (ok) {
+            if (hasSubscribedOnce && needsResyncOnSubscribe) {
+              needsResyncOnSubscribe = false;
+              refreshDynamic();
+            }
+            hasSubscribedOnce = true;
+          } else if (status === "CLOSED" || status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+            needsResyncOnSubscribe = true;
+          }
+        });
+      channel = ch;
+    };
+
+    attachChannel();
+
+    // Pausa Realtime tras 30 s con la pestaña oculta; al volver reconecta y sincroniza solo si se desconectó o pasó tiempo sin conexión.
+    const stopVisibility = createVisibilityLifecycle({
+      hiddenGraceMs: HIDDEN_GRACE_MS,
+      onPause: () => {
+        needsResyncOnSubscribe = true;
+        detachChannel();
+      },
+      onResume: ({ wasPaused, hiddenMs }) => {
+        if (wasPaused || !channel) {
+          if (hiddenMs >= HIDDEN_GRACE_MS) {
+            needsResyncOnSubscribe = false;
+            refreshDynamic();
+          } else {
+            needsResyncOnSubscribe = true;
+          }
+          attachChannel();
+        } else if (!liveRef.current && Date.now() - lastSyncRef.current >= 60_000) {
+          refreshDynamic();
+        }
+      },
+    });
+
+    // Polling de respaldo pausado automáticamente cuando la pestaña está oculta.
+    // Revisa cada 60 s pero solo consulta cada 5 min si Realtime está vivo (o cada 2 min si está caído).
+    const stopPoll = createVisibleInterval(() => {
+      const minGap = liveRef.current ? LIVE_RECONCILE_MS : FALLBACK_POLL_MS;
+      if (Date.now() - lastSyncRef.current >= minGap) {
+        refreshDynamic();
+      }
+    }, 60_000);
 
     return () => {
-      document.removeEventListener("visibilitychange", onVisible);
-      window.removeEventListener("focus", onVisible);
-      clearInterval(poll);
-      supabase.removeChannel(channel);
+      stopVisibility();
+      stopPoll();
+      detachChannel();
     };
-  }, [refresh]);
+  }, [userId, active, refresh, refreshDynamic, loadMembersOnly, persistCacheDebounced]);
 
   const users = useMemo(() => {
     const list = memberRows.map(memberFromRow);
@@ -293,10 +465,11 @@ export function useRoadmap(session) {
         if (error) throw error;
         setTaskRows((rows) => upsertRow(rows, data));
         setSyncedAt(new Date());
+        persistCacheDebounced();
         dispatchWhatsAppIfNeeded(data, null, !!draft.notifyWhatsApp);
         return data.id;
       }, "No se pudo crear la tarea"),
-    [run, dispatchWhatsAppIfNeeded]
+    [run, dispatchWhatsAppIfNeeded, persistCacheDebounced]
   );
 
   const updateTask = useCallback(
@@ -325,9 +498,10 @@ export function useRoadmap(session) {
         if (error) throw error;
         setTaskRows((rows) => rows.map((r) => (r.id === id ? data : r)));
         setSyncedAt(new Date());
+        persistCacheDebounced();
         dispatchWhatsAppIfNeeded(data, prevRow, !!patch.notifyWhatsApp);
       }, "No se pudo guardar el cambio"),
-    [run, taskRows, dispatchWhatsAppIfNeeded]
+    [run, taskRows, dispatchWhatsAppIfNeeded, persistCacheDebounced]
   );
 
   const deleteTask = useCallback(
@@ -337,8 +511,9 @@ export function useRoadmap(session) {
         const { error } = await supabase.from("tasks").delete().eq("id", id);
         if (error) throw error;
         setSyncedAt(new Date());
+        persistCacheDebounced();
       }, "No se pudo eliminar la tarea"),
-    [run]
+    [run, persistCacheDebounced]
   );
 
   const addComment = useCallback(
@@ -351,8 +526,9 @@ export function useRoadmap(session) {
           .single();
         if (error) throw error;
         setCommentRows((rows) => upsertRow(rows, data));
+        persistCacheDebounced();
       }, "No se pudo enviar el comentario"),
-    [run]
+    [run, persistCacheDebounced]
   );
 
   const saveTeam = useCallback(
@@ -385,16 +561,18 @@ export function useRoadmap(session) {
           if (error) throw error;
           setMemberRows((rows) => rows.map((x) => (x.id === u.id ? data : x)));
         }
+        persistCacheDebounced();
         showToast("Equipo y teléfonos de WhatsApp actualizados.", "ok");
         return true;
       }, "No se pudo guardar el equipo"),
-    [run, users, showToast]
+    [run, users, showToast, persistCacheDebounced]
   );
 
   const markRead = useCallback(
     (id) => {
       if (readIds.has(id)) return;
       setReadIds((s) => new Set(s).add(id));
+      persistCacheDebounced();
       supabase
         .from("notification_reads")
         .upsert({ notification_id: id }, { onConflict: "notification_id,member_id", ignoreDuplicates: true })
@@ -402,13 +580,14 @@ export function useRoadmap(session) {
           if (error) console.error("No se pudo marcar como leída", error);
         });
     },
-    [readIds]
+    [readIds, persistCacheDebounced]
   );
 
   const markAllRead = useCallback(() => {
     const unread = notifications.filter((n) => n.readBy.length === 0).map((n) => n.id);
     if (!unread.length) return;
     setReadIds((s) => new Set([...s, ...unread]));
+    persistCacheDebounced();
     supabase
       .from("notification_reads")
       .upsert(
@@ -418,7 +597,7 @@ export function useRoadmap(session) {
       .then(({ error }) => {
         if (error) console.error("No se pudo marcar como leídas", error);
       });
-  }, [notifications]);
+  }, [notifications, persistCacheDebounced]);
 
   return {
     phase,

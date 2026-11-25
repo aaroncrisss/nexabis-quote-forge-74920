@@ -8,6 +8,7 @@ import { RefreshCw, Send, Search, MessageCircle, ExternalLink, ArrowLeft, Settin
 import { toast } from "sonner";
 import { useSavedReplies, fillReply } from "./savedReplies";
 import { SavedRepliesDialog } from "./SavedRepliesDialog";
+import { createVisibleInterval, isTabVisible } from "@/lib/realtimeVisibility";
 
 type Conversation = {
   id: string;
@@ -46,11 +47,14 @@ export function InboxPanel({
   connected,
   quickReplies = [],
   onUnread,
+  isActive = true,
 }: {
   invoke: Invoke;
   connected: boolean;
   quickReplies?: string[];
   onUnread?: (n: number) => void;
+  /** True solo cuando la pestaña "bandeja" está abierta (el componente usa forceMount para mantener el contador). */
+  isActive?: boolean;
 }) {
   const [convs, setConvs] = useState<Conversation[]>([]);
   const [loading, setLoading] = useState(false);
@@ -69,8 +73,13 @@ export function InboxPanel({
   const [next, setNext] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
 
+  const inboxInFlight = useRef(false);
+  const threadInFlight = useRef(false);
+  const lastInboxAt = useRef(0);
+
   const loadInbox = useCallback(async () => {
-    if (!connected) return;
+    if (!connected || inboxInFlight.current) return;
+    inboxInFlight.current = true;
     setLoading(true);
     try {
       const r = await invoke({ action: "inbox", limit: 15 });
@@ -79,9 +88,11 @@ export function InboxPanel({
       // Conserva las páginas ya cargadas con "Cargar más"
       setConvs((prev) => [...fresh, ...prev.filter((p) => !fresh.some((f) => f.id === p.id))]);
       setNext((cur) => cur ?? ((r.next as string | null) ?? null));
+      lastInboxAt.current = Date.now();
     } catch (e) {
       toast.error(`Bandeja: ${(e as Error).message}`);
     } finally {
+      inboxInFlight.current = false;
       setLoading(false);
     }
   }, [invoke, connected]);
@@ -104,6 +115,8 @@ export function InboxPanel({
 
   const loadThread = useCallback(
     async (c: Conversation, silent = false) => {
+      if (threadInFlight.current) return;
+      threadInFlight.current = true;
       if (!silent) setLoadingThread(true);
       try {
         const r = await invoke({ action: "thread", conversation_id: c.id });
@@ -113,6 +126,7 @@ export function InboxPanel({
       } catch (e) {
         if (!silent) toast.error((e as Error).message);
       } finally {
+        threadInFlight.current = false;
         setLoadingThread(false);
       }
     },
@@ -123,23 +137,40 @@ export function InboxPanel({
     onUnread?.(convs.filter((c) => !c.last_from_me).length);
   }, [convs, onUnread]);
 
+  // Carga inicial (una vez al conectar) + refresco al abrir la pestaña si pasó ≥60 s.
   useEffect(() => {
-    loadInbox();
-    // Solo refresca con la pestaña del navegador visible (ahorra llamadas a Meta y a la base)
-    const t = setInterval(() => {
-      if (document.visibilityState === "visible") loadInbox();
-    }, 60_000);
-    return () => clearInterval(t);
-  }, [loadInbox]);
+    if (!connected) return;
+    if (lastInboxAt.current === 0 || (isActive && Date.now() - lastInboxAt.current >= 60_000)) {
+      loadInbox();
+    }
+  }, [connected, isActive, loadInbox]);
 
+  // Intervalo pausado cuando la pestaña del navegador está oculta; más lento cuando estás en otra sub-pestaña de IG.
   useEffect(() => {
-    if (!active) return;
+    if (!connected) return;
+    const intervalMs = isActive ? 120_000 : 300_000;
+    const stopPoll = createVisibleInterval(() => {
+      loadInbox();
+    }, intervalMs);
+    const onVisible = () => {
+      if (isTabVisible() && isActive && Date.now() - lastInboxAt.current >= 60_000) loadInbox();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      stopPoll();
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [connected, isActive, loadInbox]);
+
+  // Solo consulta el hilo activo cuando la sub-pestaña "bandeja" está abierta y la pestaña del navegador es visible.
+  useEffect(() => {
+    if (!connected || !isActive || !active) return;
     loadThread(active);
-    const t = setInterval(() => {
-      if (document.visibilityState === "visible") loadThread(active, true);
-    }, 20_000);
-    return () => clearInterval(t);
-  }, [active, loadThread]);
+    const stopPoll = createVisibleInterval(() => {
+      loadThread(active, true);
+    }, 45_000);
+    return () => stopPoll();
+  }, [connected, isActive, active, loadThread]);
 
   useEffect(() => {
     // Solo baja dentro del chat (nunca mueve la página) y solo si llegaron mensajes nuevos

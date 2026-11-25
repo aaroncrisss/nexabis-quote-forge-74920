@@ -36,7 +36,7 @@ import { getRisk, daysUntil, weekRange, inRange, todayISO, addDays } from "@/lib
 import { CATEGORIES, CATEGORY_META, PRIORITIES, getTaskCategory } from "@/lib/constants";
 import { useRoadmap, useTaskHistory } from "@/lib/useRoadmap";
 import { useFbAccess } from "@/lib/useFb";
-import { checkWhatsAppConnection, sendDailySummaryWhatsApp } from "@/lib/whatsapp";
+import { sendDailySummaryWhatsApp } from "@/lib/whatsapp";
 import { supabase } from "@/integrations/supabase/client";
 import { supabaseCRM } from "@/integrations/supabase/crm-client";
 import { NotificationBell } from "@/components/TopBar";
@@ -98,11 +98,6 @@ export default function Tareas({
 
   const activeSession = useMemo(() => (user ? { user } : null), [user]);
 
-  const rm = useRoadmap(activeSession);
-  const { phase, me, users, tasks, notifications, clientes, proyectos } = rm;
-  const fbAccess = useFbAccess(user?.id);
-  const hiddenViews = useMemo(() => (fbAccess.visible ? [] : ["fb"]), [fbAccess.visible]);
-
   const urlView = searchParams.get("vista");
   const urlAmbito = searchParams.get("ambito");
   const urlMes = searchParams.get("mes");
@@ -111,6 +106,12 @@ export default function Tareas({
     ...defaultFilters,
     category: urlAmbito && CATEGORIES.includes(urlAmbito) ? urlAmbito : "all",
   }));
+
+  // Desactiva Realtime y polling de tareas cuando estamos en Feedback (que tiene su propio hook)
+  const rm = useRoadmap(activeSession, { active: view !== "fb" });
+  const { phase, me, users, tasks, notifications, clientes, proyectos } = rm;
+  const fbAccess = useFbAccess(user?.id);
+  const hiddenViews = useMemo(() => (fbAccess.visible ? [] : ["fb"]), [fbAccess.visible]);
 
   // Monthly organization state (defaults to current month YYYY-MM)
   const currentYearMonth = useMemo(() => todayISO().slice(0, 7), []);
@@ -121,7 +122,6 @@ export default function Tareas({
   const [creatingNew, setCreatingNew] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [teamEditOpen, setTeamEditOpen] = useState(false);
-  const [, setWaConnected] = useState<boolean | null>(null);
   const [sendingDailyWa, setSendingDailyWa] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
@@ -169,17 +169,21 @@ export default function Tareas({
     }
   }, [urlAmbito]);
 
+  const userId = user?.id;
+
   useEffect(() => {
-    if (!showExecutiveHeader || !user) return;
+    if (!showExecutiveHeader || !userId) return;
+    let alive = true;
     (async () => {
       try {
         const [pagosRes, presRes, facRes, oppRes, cliRes] = await Promise.all([
-          supabaseCRM.from("pagos").select("monto, estado, fecha_pago, metodo_pago").eq("usuario_id", user.id),
-          supabase.from("presupuestos").select("total, estado").eq("usuario_id", user.id),
-          supabaseCRM.from("facturas").select("total, estado").eq("usuario_id", user.id),
-          supabaseCRM.from("oportunidades").select("valor, estado").eq("usuario_id", user.id),
-          supabaseCRM.from("clientes").select("id").eq("usuario_id", user.id),
+          supabaseCRM.from("pagos").select("monto, estado, fecha_pago, metodo_pago").eq("usuario_id", userId),
+          supabase.from("presupuestos").select("total, estado").eq("usuario_id", userId),
+          supabaseCRM.from("facturas").select("total, estado").eq("usuario_id", userId),
+          supabaseCRM.from("oportunidades").select("valor, estado").eq("usuario_id", userId),
+          supabaseCRM.from("clientes").select("id").eq("usuario_id", userId),
         ]);
+        if (!alive) return;
         const now = new Date();
         const mesStart = new Date(now.getFullYear(), now.getMonth(), 1);
         const pagosMes = (pagosRes.data || []).filter(
@@ -208,7 +212,8 @@ export default function Tareas({
         // non-fatal
       }
     })();
-  }, [showExecutiveHeader, user]);
+    return () => { alive = false; };
+  }, [showExecutiveHeader, userId]);
 
   const setView = useCallback(
     (nextView: string) => {
@@ -234,10 +239,6 @@ export default function Tareas({
     },
     [view, initialView, setSearchParams]
   );
-
-  useEffect(() => {
-    checkWhatsAppConnection().then((st) => setWaConnected(st.connected));
-  }, []);
 
   const liveModalTask = modalTaskId ? tasks.find((t: any) => t.id === modalTaskId) : null;
   const history = useTaskHistory(liveModalTask?.id, liveModalTask?.updatedAt, rm.nameOf);

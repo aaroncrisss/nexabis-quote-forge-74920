@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "./supabase";
 import { addDaysISO, addMonthsISO, todayCL } from "./crm/calendar";
 import { indexForecast, normalizeCortes } from "./crm/weather";
+import { createVisibilityLifecycle, createVisibleInterval, isTabVisible } from "./realtimeVisibility";
 
 /* Reemplaza o agrega una fila por llave, ignorando versiones más antiguas que la que ya tenemos. */
 function upsertBy(rows, row, key = "id") {
@@ -56,6 +57,10 @@ export function mailingPayload(draft) {
 
 const ms = (iso) => (iso ? Date.parse(iso) : NaN);
 
+const LIVE_WEATHER_CHECK_MS = 600_000; // 10 min: consulta 1 fila de crm_clima_ejecuciones si Realtime está vivo
+const FALLBACK_POLL_MS = 120_000;      // 2 min: respaldo si Realtime se cae
+const HIDDEN_GRACE_MS = 30_000;        // desconecta Realtime tras 30 s con la pestaña oculta
+
 /**
  * Estado compartido del módulo Programación CRM: carga, tiempo real y acciones con guardado optimista.
  * Se monta solo cuando se abre el módulo, así quien no lo usa no gasta conexiones.
@@ -79,33 +84,105 @@ export function useCrm({ userId, showToast }) {
   const [config, setConfig] = useState([]);
   const [clima, setClima] = useState([]);
   const [ultimaEjecucion, setUltimaEjecucion] = useState(null);
-  const alive = useRef(true);
 
-  /* ---------------- carga completa ---------------- */
-  const loadAll = useCallback(async () => {
-    const desde = addDaysISO(todayCL(), -7);
-    const [reg, com, cat, res, mai, cmt, fer, reg2, man, cfg, cli, run] = await Promise.all([
-      supabase.from("crm_regiones").select("*").order("orden"),
-      fetchAll(() => supabase.from("crm_comunas").select("*").order("id")),
-      fetchAll(() => supabase.from("crm_catalogo").select("*").order("orden").order("nombre").order("id")),
-      supabase.from("crm_responsables").select("*").order("orden").order("nombre"),
-      fetchAll(() => supabase.from("crm_mailings").select("*").order("fecha").order("id")),
-      fetchAll(() => supabase.from("crm_comentarios_semana").select("*").order("created_at").order("id")),
-      fetchAll(() => supabase.from("crm_feriados").select("*").order("fecha").order("id")),
-      supabase.from("crm_reglas_oportunidad").select("*").order("orden"),
-      fetchAll(() => supabase.from("crm_oportunidad_manual").select("*").order("fecha")),
-      supabase.from("crm_config").select("*"),
-      fetchAll(() => supabase.from("crm_clima_vigente").select("comuna_id,fecha,obtenido_el,prob_precip,mm,tmin,tmax,fuente,obtenido_en").gte("fecha", desde).order("fecha").order("comuna_id")),
-      supabase.from("crm_clima_ejecuciones").select("*").order("inicio", { ascending: false }).limit(1),
-    ]);
-    const failed = [reg, res, reg2, cfg, run].find((x) => x.error);
-    if (failed) throw failed.error;
+  const alive = useRef(true);
+  const liveRef = useRef(false);
+  const inFlightRef = useRef(false);
+  const staticLoadedRef = useRef(false);
+  const lastSyncRef = useRef(0);
+  const lastWeatherRunRef = useRef(null);
+
+  /* ---------------- carga de clima (solo si hubo una nueva ejecución) ---------------- */
+  const checkWeather = useCallback(async ({ force = false } = {}) => {
+    const run = await supabase.from("crm_clima_ejecuciones").select("*").order("inicio", { ascending: false }).limit(1);
+    if (run.error) throw run.error;
     if (!alive.current) return;
-    setRegiones(reg.data); setComunas(com); setCatalogo(cat); setResponsables(res.data); setMailings(mai); setComentarios(cmt);
-    setFeriados(fer); setReglas(reg2.data); setManuales(man); setConfig(cfg.data); setClima(cli); setUltimaEjecucion(run.data[0] || null);
-    setSyncedAt(new Date());
-    setPhase("ready");
+    const latest = run.data[0] || null;
+    const stamp = latest ? `${latest.inicio}|${latest.fin || ""}|${latest.estado || ""}` : "";
+    if (!force && stamp === lastWeatherRunRef.current) return;
+    const desde = addDaysISO(todayCL(), -7);
+    const cli = await fetchAll(() =>
+      supabase
+        .from("crm_clima_vigente")
+        .select("comuna_id,fecha,obtenido_el,prob_precip,mm,tmin,tmax,fuente,obtenido_en")
+        .gte("fecha", desde)
+        .order("fecha")
+        .order("comuna_id")
+    );
+    if (!alive.current) return;
+    lastWeatherRunRef.current = stamp;
+    setUltimaEjecucion(latest);
+    setClima(cli);
   }, []);
+
+  /* ---------------- carga completa (montaje inicial / botón reintentar) ---------------- */
+  const loadAll = useCallback(async () => {
+    if (inFlightRef.current) return;
+    inFlightRef.current = true;
+    try {
+      const desde = addDaysISO(todayCL(), -7);
+      const [reg, com, cat, res, mai, cmt, fer, reg2, man, cfg, cli, run] = await Promise.all([
+        staticLoadedRef.current ? Promise.resolve({ data: null }) : supabase.from("crm_regiones").select("*").order("orden"),
+        staticLoadedRef.current ? Promise.resolve(null) : fetchAll(() => supabase.from("crm_comunas").select("*").order("id")),
+        fetchAll(() => supabase.from("crm_catalogo").select("*").order("orden").order("nombre").order("id")),
+        supabase.from("crm_responsables").select("*").order("orden").order("nombre"),
+        fetchAll(() => supabase.from("crm_mailings").select("*").order("fecha").order("id")),
+        fetchAll(() => supabase.from("crm_comentarios_semana").select("*").order("created_at").order("id")),
+        fetchAll(() => supabase.from("crm_feriados").select("*").order("fecha").order("id")),
+        supabase.from("crm_reglas_oportunidad").select("*").order("orden"),
+        fetchAll(() => supabase.from("crm_oportunidad_manual").select("*").order("fecha")),
+        supabase.from("crm_config").select("*"),
+        fetchAll(() => supabase.from("crm_clima_vigente").select("comuna_id,fecha,obtenido_el,prob_precip,mm,tmin,tmax,fuente,obtenido_en").gte("fecha", desde).order("fecha").order("comuna_id")),
+        supabase.from("crm_clima_ejecuciones").select("*").order("inicio", { ascending: false }).limit(1),
+      ]);
+      const failed = [reg, res, reg2, cfg, run].find((x) => x.error);
+      if (failed) throw failed.error;
+      if (!alive.current) return;
+      if (reg.data) setRegiones(reg.data);
+      if (com) setComunas(com);
+      staticLoadedRef.current = true;
+      setCatalogo(cat); setResponsables(res.data); setMailings(mai); setComentarios(cmt);
+      setFeriados(fer); setReglas(reg2.data); setManuales(man); setConfig(cfg.data); setClima(cli);
+      const latest = run.data[0] || null;
+      lastWeatherRunRef.current = latest ? `${latest.inicio}|${latest.fin || ""}|${latest.estado || ""}` : "";
+      setUltimaEjecucion(latest);
+      lastSyncRef.current = Date.now();
+      setSyncedAt(new Date());
+      setPhase("ready");
+    } finally {
+      inFlightRef.current = false;
+    }
+  }, []);
+
+  /* ---------------- sincronización liviana (omite regiones/comunas estáticas y solo baja clima si cambió) ---------------- */
+  const syncDynamic = useCallback(async () => {
+    if (!staticLoadedRef.current) return loadAll();
+    if (inFlightRef.current) return;
+    inFlightRef.current = true;
+    try {
+      const [cat, res, mai, cmt, fer, reg2, man, cfg] = await Promise.all([
+        fetchAll(() => supabase.from("crm_catalogo").select("*").order("orden").order("nombre").order("id")),
+        supabase.from("crm_responsables").select("*").order("orden").order("nombre"),
+        fetchAll(() => supabase.from("crm_mailings").select("*").order("fecha").order("id")),
+        fetchAll(() => supabase.from("crm_comentarios_semana").select("*").order("created_at").order("id")),
+        fetchAll(() => supabase.from("crm_feriados").select("*").order("fecha").order("id")),
+        supabase.from("crm_reglas_oportunidad").select("*").order("orden"),
+        fetchAll(() => supabase.from("crm_oportunidad_manual").select("*").order("fecha")),
+        supabase.from("crm_config").select("*"),
+      ]);
+      const failed = [res, reg2, cfg].find((x) => x.error);
+      if (failed) throw failed.error;
+      if (!alive.current) return;
+      setCatalogo(cat); setResponsables(res.data); setMailings(mai); setComentarios(cmt);
+      setFeriados(fer); setReglas(reg2.data); setManuales(man); setConfig(cfg.data);
+      await checkWeather();
+      if (!alive.current) return;
+      lastSyncRef.current = Date.now();
+      setSyncedAt(new Date());
+    } finally {
+      inFlightRef.current = false;
+    }
+  }, [loadAll, checkWeather]);
 
   const refresh = useCallback(() => {
     loadAll().catch((e) => {
@@ -116,6 +193,12 @@ export function useCrm({ userId, showToast }) {
     });
   }, [loadAll]);
 
+  const refreshDynamic = useCallback(() => {
+    syncDynamic().catch((e) => {
+      console.error("Error al sincronizar Programación CRM", e);
+    });
+  }, [syncDynamic]);
+
   /* ---------------- tiempo real ---------------- */
   useEffect(() => {
     alive.current = true;
@@ -123,39 +206,95 @@ export function useCrm({ userId, showToast }) {
     setPhase("loading");
     refresh();
 
+    let channel = null;
+    let hasSubscribedOnce = false;
+    let needsResyncOnSubscribe = false;
+
     const touch = () => setSyncedAt(new Date());
-    const watch = (channel, table, setter, key = "id") =>
-      channel.on("postgres_changes", { event: "*", schema: "public", table }, (p) => {
+    const watch = (ch, table, setter, key = "id") =>
+      ch.on("postgres_changes", { event: "*", schema: "public", table }, (p) => {
         setter((rows) => (p.eventType === "DELETE" ? rows.filter((x) => x[key] !== p.old[key]) : upsertBy(rows, p.new, key)));
         touch();
       });
 
-    let channel = supabase.channel(`crm-live-${Math.random().toString(36).slice(2, 8)}`);
-    channel = watch(channel, "crm_mailings", setMailings);
-    channel = watch(channel, "crm_catalogo", setCatalogo);
-    channel = watch(channel, "crm_responsables", setResponsables);
-    channel = watch(channel, "crm_comentarios_semana", setComentarios);
-    channel = watch(channel, "crm_feriados", setFeriados);
-    channel = watch(channel, "crm_reglas_oportunidad", setReglas);
-    channel = watch(channel, "crm_oportunidad_manual", setManuales, "fecha");
-    channel = watch(channel, "crm_config", setConfig, "clave");
-    channel.subscribe((status) => {
-      const ok = status === "SUBSCRIBED";
-      if (alive.current) setLive(ok);
-      if (ok) refresh(); // cubre cualquier cambio ocurrido mientras estuvimos desconectados
+    const detachChannel = () => {
+      if (!channel) return;
+      const ch = channel;
+      channel = null;
+      liveRef.current = false;
+      if (alive.current) setLive(false);
+      supabase.removeChannel(ch);
+    };
+
+    const attachChannel = () => {
+      if (channel || !alive.current || !isTabVisible()) return;
+      // Solo tablas colaborativas activas (catálogos/config/feriados/reglas son de baja frecuencia
+      // y se actualizan localmente al guardar + al sincronizar).
+      let ch = supabase.channel(`crm-live-${Math.random().toString(36).slice(2, 8)}`);
+      ch = watch(ch, "crm_mailings", setMailings);
+      ch = watch(ch, "crm_comentarios_semana", setComentarios);
+      ch.subscribe((status) => {
+        const ok = status === "SUBSCRIBED";
+        liveRef.current = ok;
+        if (alive.current) setLive(ok);
+        if (ok) {
+          // Evita doble carga al montar: solo resincroniza tras desconexión o pausa por pestaña oculta.
+          if (hasSubscribedOnce && needsResyncOnSubscribe) {
+            needsResyncOnSubscribe = false;
+            refreshDynamic();
+          }
+          hasSubscribedOnce = true;
+        } else if (status === "CLOSED" || status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+          needsResyncOnSubscribe = true;
+        }
+      });
+      channel = ch;
+    };
+
+    attachChannel();
+
+    const stopVisibility = createVisibilityLifecycle({
+      hiddenGraceMs: HIDDEN_GRACE_MS,
+      onPause: () => {
+        needsResyncOnSubscribe = true;
+        detachChannel();
+      },
+      onResume: ({ wasPaused, hiddenMs }) => {
+        if (wasPaused || !channel) {
+          if (hiddenMs >= HIDDEN_GRACE_MS) {
+            needsResyncOnSubscribe = false;
+            refreshDynamic();
+          } else {
+            needsResyncOnSubscribe = true;
+          }
+          attachChannel();
+        } else if (!liveRef.current && Date.now() - lastSyncRef.current >= 60_000) {
+          refreshDynamic();
+        }
+      },
     });
 
-    const onVisible = () => { if (document.visibilityState === "visible") refresh(); };
-    document.addEventListener("visibilitychange", onVisible);
-    const poll = setInterval(() => { if (document.visibilityState === "visible") refresh(); }, 120000); // también trae el clima nuevo
+    // Con Realtime vivo: solo revisa si cambió el clima cada 10 min (1 fila).
+    // Sin Realtime: respaldo completo de tablas dinámicas cada 2 min mientras esté visible.
+    const stopPoll = createVisibleInterval(() => {
+      const elapsed = Date.now() - lastSyncRef.current;
+      if (liveRef.current) {
+        if (elapsed >= LIVE_WEATHER_CHECK_MS) {
+          lastSyncRef.current = Date.now();
+          checkWeather().catch(() => {});
+        }
+      } else if (elapsed >= FALLBACK_POLL_MS) {
+        refreshDynamic();
+      }
+    }, 60_000);
 
     return () => {
       alive.current = false;
-      document.removeEventListener("visibilitychange", onVisible);
-      clearInterval(poll);
-      supabase.removeChannel(channel);
+      stopVisibility();
+      stopPoll();
+      detachChannel();
     };
-  }, [userId, refresh]);
+  }, [userId, refresh, refreshDynamic, checkWeather]);
 
   /* ---------------- datos derivados ---------------- */
   const cfgValue = useCallback((clave, def) => config.find((c) => c.clave === clave)?.valor ?? def, [config]);
