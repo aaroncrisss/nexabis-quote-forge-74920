@@ -262,8 +262,29 @@ async function loadAccount(db: SupabaseClient): Promise<Account | null> {
   return null;
 }
 
+// Caché corta (misma instancia de la función) para no repetir la misma consulta en cada pasada/webhook.
+// Se invalida al escribir desde aquí; cambios hechos desde el panel se ven en <= CACHE_TTL_MS.
+const CACHE_TTL_MS = 20_000;
+let settingsCache: { at: number; data: any; error: any } | null = null;
+let campaignsCache: { at: number; rows: Campaign[] } | null = null;
+const invalidateSettingsCache = () => {
+  settingsCache = null;
+};
+const invalidateCampaignsCache = () => {
+  campaignsCache = null;
+};
+
+/** Fila única de ig_settings (select *), cacheada. `error` solo si la consulta falló. */
+async function getSettingsRow(db: SupabaseClient): Promise<{ data: any; error: any }> {
+  if (settingsCache && Date.now() - settingsCache.at < CACHE_TTL_MS) return settingsCache;
+  const { data, error } = await db.from("ig_settings").select("*").eq("id", 1).maybeSingle();
+  if (error) return { data: null, error }; // no se cachean errores
+  settingsCache = { at: Date.now(), data, error: null };
+  return settingsCache;
+}
+
 async function loadSettings(db: SupabaseClient): Promise<Settings> {
-  const { data } = await db.from("ig_settings").select("*").eq("id", 1).maybeSingle();
+  const { data } = await getSettingsRow(db);
   return {
     crm_sync: data?.crm_sync ?? true,
     crm_owner_id: data?.crm_owner_id ?? null,
@@ -277,17 +298,24 @@ async function loadSettings(db: SupabaseClient): Promise<Settings> {
   };
 }
 
-async function loadActiveCampaigns(db: SupabaseClient): Promise<Campaign[]> {
-  const { data, error } = await db
-    .from("ig_campaigns")
-    .select("*")
-    .eq("activa", true)
-    .order("prioridad", { ascending: false })
-    .order("created_at", { ascending: true });
-  if (error) console.error("loadActiveCampaigns", error);
-  // Ventana de fechas opcional (campañas programadas)
+async function loadActiveCampaigns(db: SupabaseClient, fresh = false): Promise<Campaign[]> {
+  let rows: Campaign[];
+  if (!fresh && campaignsCache && Date.now() - campaignsCache.at < CACHE_TTL_MS) {
+    rows = campaignsCache.rows;
+  } else {
+    const { data, error } = await db
+      .from("ig_campaigns")
+      .select("*")
+      .eq("activa", true)
+      .order("prioridad", { ascending: false })
+      .order("created_at", { ascending: true });
+    if (error) console.error("loadActiveCampaigns", error);
+    rows = (data ?? []) as Campaign[];
+    if (!error) campaignsCache = { at: Date.now(), rows };
+  }
+  // Ventana de fechas opcional (campañas programadas); se evalúa siempre con la hora actual
   const now = Date.now();
-  return ((data ?? []) as Campaign[]).filter(
+  return rows.filter(
     (c) =>
       (!c.activa_desde || new Date(c.activa_desde).getTime() <= now) &&
       (!c.activa_hasta || new Date(c.activa_hasta).getTime() > now),
@@ -691,6 +719,7 @@ async function syncMediaStats(db: SupabaseClient, acc: Account): Promise<{ posts
     }
   }
   const { error } = await db.from("ig_settings").update(patch).eq("id", 1);
+  invalidateSettingsCache();
   if (error) console.error("ig_settings stats patch", error.message);
   return { posts: rows.length, audiencia };
 }
@@ -839,6 +868,7 @@ async function runWeeklySummary(db: SupabaseClient, acc: Account | null, opts: {
   datos.whatsapp = st?.resumen_por_whatsapp && st?.whatsapp_numero ? (waError ? `error: ${waError}` : "enviado") : "desactivado";
   await db.from("ig_resumenes").insert({ semana_desde: datos.desde, semana_hasta: datos.hasta, datos, email_enviado: sent, email_error: emailError });
   await db.from("ig_settings").update({ resumen_enviado_at: new Date().toISOString() }).eq("id", 1);
+  invalidateSettingsCache();
   return { datos, sent, email_error: emailError, whatsapp_error: waError };
 }
 
@@ -886,7 +916,7 @@ async function sendWhatsApp(phone: string, text: string): Promise<string | null>
  */
 async function notifyOwner(db: SupabaseClient, text: string, contactId?: string) {
   try {
-    const { data: st } = await db.from("ig_settings").select("alertas_whatsapp, whatsapp_numero").eq("id", 1).maybeSingle();
+    const { data: st } = await getSettingsRow(db);
     if (!st?.alertas_whatsapp || !st.whatsapp_numero) return;
     if (contactId) {
       const { data: c } = await db.from("ig_contacts").select("alerta_at").eq("ig_user_id", contactId).maybeSingle();
@@ -1091,6 +1121,7 @@ async function advancePost(db: SupabaseClient, acc: Account, p: IgPost): Promise
         patch.media_ids = Array.from(new Set([...(camp.media_ids ?? []), mediaId]));
       }
       await db.from("ig_campaigns").update(patch).eq("id", p.campaign_id);
+      invalidateCampaignsCache();
     }
   }
 
@@ -1098,7 +1129,7 @@ async function advancePost(db: SupabaseClient, acc: Account, p: IgPost): Promise
   // esos deben llegar primero a NO seguidores). Consulta aparte por si falta la migración _03.
   if (p.tipo === "reel" && !p.prueba && p.es_video) {
     try {
-      const { data: st, error } = await db.from("ig_settings").select("auto_historia").eq("id", 1).maybeSingle();
+      const { data: st, error } = await getSettingsRow(db);
       if (!error && st?.auto_historia) {
         const { count } = await db.from("ig_posts").select("id", { count: "exact", head: true }).eq("origen_post_id", p.id);
         if (!count) {
@@ -1175,7 +1206,7 @@ async function retryLimitedComments(db: SupabaseClient, acc: Account, campaigns:
 
 /** Aviso por WhatsApp de comentarios nuevos (ig_settings.alerta_comentarios, migración _03 del 17/11). */
 async function commentAlertsOn(db: SupabaseClient): Promise<boolean> {
-  const { data, error } = await db.from("ig_settings").select("alerta_comentarios").eq("id", 1).maybeSingle();
+  const { data, error } = await getSettingsRow(db);
   return !error && !!data?.alerta_comentarios;
 }
 
@@ -1933,7 +1964,7 @@ async function syncRadar(db: SupabaseClient, acc: Account, outOfTime: () => bool
     .select("username", { count: "exact", head: true })
     .eq("activo", true)
     .or(`actualizado_at.is.null,actualizado_at.lt.${dueBefore}`);
-  const { data: st } = await db.from("ig_settings").select("radar_score_min").eq("id", 1).maybeSingle();
+  const { data: st } = await getSettingsRow(db);
   const scoreMin = Number(st?.radar_score_min ?? 3);
   const since = Date.now() - RADAR_DAYS * 86400_000;
   let cuentas = 0;
@@ -1952,6 +1983,7 @@ async function syncRadar(db: SupabaseClient, acc: Account, outOfTime: () => bool
         console.warn("[radar] límite de Meta, se reintenta en 1 h:", msg);
         if (!cuentas) {
           await db.from("ig_settings").update({ radar_synced_at: new Date(Date.now() - RADAR_EVERY_MS + 3600_000).toISOString() }).eq("id", 1);
+          invalidateSettingsCache();
         }
         return { cuentas, posts, limitado: true };
       }
@@ -1998,6 +2030,7 @@ async function syncRadar(db: SupabaseClient, acc: Account, outOfTime: () => bool
   // Limpieza: fuera de la ventana y sin guardar
   await db.from("ig_radar_posts").delete().lt("publicado_at", new Date(since).toISOString()).neq("estado", "guardado");
   await db.from("ig_settings").update({ radar_synced_at: new Date().toISOString() }).eq("id", 1);
+  invalidateSettingsCache();
 
   // Aviso por WhatsApp: las 5 mejores ideas nuevas
   const { data: top } = await db
@@ -2076,11 +2109,7 @@ async function checkDespegue(db: SupabaseClient, acc: Account) {
 async function maintenance(db: SupabaseClient, acc: Account, outOfTime: () => boolean) {
   const out: Record<string, unknown> = {};
   try {
-    const { data: st, error } = await db
-      .from("ig_settings")
-      .select("stats_synced_at, resumen_semanal, resumen_enviado_at")
-      .eq("id", 1)
-      .maybeSingle();
+    const { data: st, error } = await getSettingsRow(db);
     if (error || !st) return { skipped: "sin_migracion" };
     if (!outOfTime() && (!st.stats_synced_at || Date.now() - new Date(st.stats_synced_at).getTime() > STATS_EVERY_MS)) {
       out.stats = await syncMediaStats(db, acc);
@@ -2098,7 +2127,7 @@ async function maintenance(db: SupabaseClient, acc: Account, outOfTime: () => bo
       }
     }
     // Radar (consulta aparte: si falta la migración _02 del 17/11, no rompe lo demás)
-    const { data: rs, error: rErr } = await db.from("ig_settings").select("radar_synced_at").eq("id", 1).maybeSingle();
+    const { data: rs, error: rErr } = await getSettingsRow(db);
     if (!rErr && !outOfTime() && (!rs?.radar_synced_at || Date.now() - new Date(rs.radar_synced_at).getTime() > RADAR_EVERY_MS)) {
       out.radar = await syncRadar(db, acc, outOfTime);
     }
@@ -2301,7 +2330,7 @@ async function actionPollComments(db: SupabaseClient) {
 }
 
 async function actionSimulate(db: SupabaseClient, body: any) {
-  const campaigns = await loadActiveCampaigns(db);
+  const campaigns = await loadActiveCampaigns(db, true);
   const mediaId = String(body.media_id ?? "");
   const text = String(body.text ?? "");
   // Sin post elegido, el simulador prueba solo las palabras clave (ignora la restricción de posts)
